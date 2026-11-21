@@ -121,7 +121,7 @@ const SECTIONS = [
   { k: "racing", label: "Racing", ic: "flag", href: "#/meetings", routes: ["meetings", "meeting", "races", "race", "courses", "course"] },
   { k: "horses", label: "Horses", ic: "horse", href: "#/horses", routes: ["horses", "horse", "horse-table", "pedigrees", "pedigree"] },
   { k: "stables", label: "Stables", ic: "barn", href: "#/stables", routes: ["stables", "stable", "stable-table"] },
-  { k: "people", label: "People", ic: "user", href: "#/people", routes: ["people", "person"] },
+  { k: "people", label: "People", ic: "user", href: "#/people", routes: ["people", "person", "jockeys"] },
   { k: "awards", label: "Awards", ic: "trophy", href: "#/awards", routes: ["awards"] },
   { k: "settings", label: "Settings", ic: "cog", href: "#/settings", routes: ["settings", "databases", "tables", "versions"], right: true },
 ];
@@ -133,7 +133,7 @@ const SIDE = {
   horses: [["Horses", [["#/horses", "horse", "All horses"], ["#/horse-table", "table", "Horse table"]]],
     ["Breeding", [["#/pedigrees", "tree", "Top sires"], ["#/pedigrees?kind=dams", "tree", "Top dams"], ["#/pedigrees?kind=damsires", "tree", "Broodmare sires"]]]],
   stables: [["Stables", [["#/stables", "barn", "All stables"], ["#/stable-table", "grid", "Stable table"]]]],
-  people: [["People", [["#/people", "user", "All people"], ["#/people?role=Jockey&sort=jockey_wins", "trophy", "Top jockeys"], ["#/people?role=Jockey", "user", "Jockeys"],
+  people: [["People", [["#/people", "user", "All people"], ["#/jockeys", "trophy", "Jockey stats"], ["#/people?role=Jockey&sort=jockey_wins", "trophy", "Top jockeys"], ["#/people?role=Jockey", "user", "Jockeys"],
     ["#/people?role=Trainer", "user", "Trainers"], ["#/people?role=Head%20trainer", "user", "Head trainers"], ["#/people?role=Manager", "user", "Managers"]]]],
   awards: [["Awards", [["#/awards", "trophy", "Awards by year"], ["#/awards?view=winners", "star", "Most awards"], ["#/awards?group=hof", "star", "Hall of Fame"]]],
     ["By award", [["#/awards?group=year", "trophy", "Horse of the Year"], ["#/awards?group=age", "horse", "Age divisions"], ["#/awards?group=distance", "flag", "Distance champions"],
@@ -320,7 +320,7 @@ const PAGES = {
       b.textContent = open ? "Close all form" : "Open all form";
     }));
   } }),
-  stables: stablesPage, stable: (r) => (r.parts[2] === "races" ? stableRacesPage(r) : r.parts[2] === "financials" ? stableFinancePage(r) : r.parts[2] === "horse-money" ? stableHorseMoneyPage(r) : stablePage(r.parts[1])), people: peoplePage, person: (r) => personPage(r.parts[1]),
+  stables: stablesPage, stable: (r) => (r.parts[2] === "races" ? stableRacesPage(r) : r.parts[2] === "financials" ? stableFinancePage(r) : r.parts[2] === "horse-money" ? stableHorseMoneyPage(r) : stablePage(r.parts[1])), people: peoplePage, jockeys: careersPage, person: (r) => personPage(r.parts[1]),
   courses: coursesPage, course: Object.assign((r) => coursePage(r.parts[1]), { after: (r) => coursePage.after && coursePage.after(r) }), tables: tablesPage,
   pedigrees: pedigreesPage, pedigree: Object.assign((r) => pedigreePage(r.parts[1], r.q), { after: (r) => pedigreePage.after && pedigreePage.after(r) }), "horse-table": horseTablePage, "stable-table": stableTablePage,
   versions: versionsPage, meetings: meetingsPage, awards: (r) => awardsPage(r.q || {}), settings: Object.assign(() => settingsPage(), { after: () => settingsPage.after() }), databases: Object.assign(() => databasesPage(), { after: () => databasesPage.after() }),
@@ -365,9 +365,12 @@ function table(cols, rows, opts = {}) {
     const asc = c.sort && opts.ascCols && opts.ascCols.includes(c.sort) ? ' data-asc="1"' : "";
     return `<th class="${cls}" ${c.sort ? `data-sort="${c.sort}"` : ""}${asc}>${c.h}${arrow}</th>`;
   }).join("");
+  // optional row of group headings above the column headings: [[label, columns spanned, class], ...]
+  const groups = opts.groups ? `<tr class="grp-row">${opts.groups.map(([t, n, c]) => `<th colspan="${n}" class="grp ${c || ""}">${t}</th>`).join("")}</tr>` : "";
   const body = rows.map((r) => `<tr class="${opts.rowClass ? opts.rowClass(r) : ""}">${cols.map((c) => `<td class="${c.cls || ""}">${c.f(r)}</td>`).join("")}</tr>`).join("");
-  return opts.wide ? `<div class="wide-wrap"><table class="data wide"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>`
-    : `<div class="tbl-wrap"><table class="data"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>`;
+  const tcls = opts.tcls ? " " + opts.tcls : "";
+  return opts.wide ? `<div class="wide-wrap"><table class="data wide${tcls}"><thead>${groups}<tr>${head}</tr></thead><tbody>${body}</tbody></table></div>`
+    : `<div class="tbl-wrap"><table class="data${tcls}"><thead>${groups}<tr>${head}</tr></thead><tbody>${body}</tbody></table></div>`;
 }
 const PAGE_SIZES = [25, 50, 100, 250, 500, 1000, 2500, 5000];
 function prefPageSize() { try { const v = parseInt(localStorage.getItem("hrm.pageSize"), 10); return PAGE_SIZES.includes(v) ? v : null; } catch (e) { return null; } }
@@ -1265,7 +1268,7 @@ async function listPage(cfg, route) {
   const exp = expUrl ? `<a class="btn btn-csv" href="${expUrl}?${new URLSearchParams(q)}" download data-tip="Download every matching row (all pages, with your filters and sort) as a spreadsheet (CSV) file">${ICON_DL}Export CSV</a>` : "";
   return `<div class="page-head"><div><h1>${cfg.title}</h1><div class="sub">${fNum(data.total)} ${cfg.noun}</div></div>${exp}</div>
     <section class="panel"><div class="filters">${cfg.filters(q, data)}</div>${cfg.intro ? `<div class="note-line">${cfg.intro}</div>` : ""}
-    ${table(cfg.cols, data.rows, { sort, dir, rowClass: cfg.rowClass, wide: cfg.wide, ascCols: cfg.ascDefault, empty: "No matches. Try a different search or filter." })}
+    ${table(cfg.cols, data.rows, { sort, dir, rowClass: cfg.rowClass, wide: cfg.wide, ascCols: cfg.ascDefault, empty: "No matches. Try a different search or filter.", ...(cfg.tableOpts || {}) })}
     ${pager(data)}</section>`;
 }
 function searchBox(q, placeholder) {
@@ -2171,7 +2174,10 @@ function stableHead(d, on) {
   const s = d.stable, id = s.stable_stable_id;
   return myStableBar(id, on === "overview" ? "" : "/" + on) + `<div class="page-head"><div><div class="crumb"><a href="#/stables">Stables</a></div>
     <h1>${esc(s.stable_name)} ${s.stable_liquidated ? '<span class="badge dead">Closed</span>' : ""}${removedBadge(d)}</h1>
-    <div class="sub">Owner ${d.owner ? L.person(d.owner.id, d.owner.name) : "—"}${d.city ? ` · ${esc(d.city.city)}, ${esc(d.city.country)}` : ""} · Founded ${fDate(s.stable_founded_date)}</div>${removedNote(d)}</div>
+    <div class="sub">Owner ${d.owner ? L.person(d.owner.id, d.owner.name) : "—"}${(() => {
+      const mg = (d.staff || []).filter((x) => x.role === "Manager");
+      return mg.length ? ` · Manager ${mg.map((x) => `${L.person(x.id, x.name)}${x.id === (STATUS.meta || {}).player_id ? ' <span class="badge good">You</span>' : ""}`).join(", ")}` : "";
+    })()}${d.city ? ` · ${esc(d.city.city)}, ${esc(d.city.country)}` : ""} · Founded ${fDate(s.stable_founded_date)}</div>${removedNote(d)}</div>
     <div style="display:flex;gap:8px"><a class="btn primary" href="#/stable/${id}/races">Every race</a><a class="btn" href="#/horses?stable=${id}&status=all">All horses ever</a></div></div>
     <div class="subtabs"><a href="#/stable/${id}" class="${on === "overview" ? "on" : ""}">Overview</a><a href="#/stable/${id}/financials" class="${on === "financials" ? "on" : ""}">Financials</a><a href="#/stable/${id}/horse-money" class="${on === "horse-money" ? "on" : ""}">Horse finances</a></div>`;
 }
@@ -2552,6 +2558,44 @@ async function peoplePage(route) {
       { h: "Fame", cls: "num", sort: "fame", f: (r) => fNum(r.fame, 0) },
     ],
   }, route);
+}
+
+// People → Jockeys: each person's jockey, trainer and stable numbers side by side
+const CAREER_VIEWS = [["jockeys", "Jockeys"], ["trainers", "Trainers"], ["managers", "Stable managers"], ["all", "Everyone"]];
+async function careersPage(route) {
+  const q = route.q, view = CAREER_VIEWS.some(([v]) => v === q.view) ? q.view : "jockeys";
+  const dflt = { jockeys: "jockey_wins", trainers: "trainer_wins", managers: "mgmt_winnings", all: "jockey_wins" }[view];
+  const me = (STATUS.meta || {}).player_id;
+  const strike = (w, n) => (n ? pct(w, n) : "—");
+  const z = (v, f) => (v ? f(v) : '<span class="muted">—</span>');
+  const html = await listPage({
+    title: "Jockeys, trainers & stables", noun: "people", endpoint: "careers", defaultSort: dflt, ascDefault: ["name"], wide: true,
+    intro: "Everyone's riding, training and stable-management record side by side. Trainer numbers include head trainer races. Stable numbers are for the stable where they work now (their main job). Click a heading to sort.",
+    filters: (qq) => seg("view", qq, CAREER_VIEWS, "jockeys") + searchBox(qq, "Search by name") +
+      select("job", qq, [["", "Any job now"], ["Jockey", "Jockey now"], ["Trainer", "Trainer now"], ["Head trainer", "Head trainer now"], ["Manager", "Manager now"], ["Assistant manager", "Assistant manager now"]]) +
+      seg("status", qq, [["alive", "Alive"], ["all", "Include deceased"]], "alive"),
+    tableOpts: { tcls: "careers", groups: [["", 3], ["Jockey", 4, "g-j"], ["Trainer", 4, "g-t"], ["Stable", 5, "g-s"]] },
+    rowClass: (r) => (r.id === me ? "me" : ""),
+    cols: [
+      { h: "Name", sort: "name", f: (r) => `${L.person(r.id, r.name)}${r.died ? ' <span class="badge dead">Dead</span>' : ""}${r.id === me ? ' <span class="badge good">You</span>' : ""}` },
+      { h: "Age", cls: "num", sort: "birth", f: (r) => fNum(age(r.birth, r.died)) },
+      { h: "Job now", f: (r) => (r.jobs && r.jobs.length ? [...new Set(r.jobs.map((j) => j.role))].map(esc).join(", ") : '<span class="muted">—</span>') },
+      { h: "Rides", cls: "num g-j", sort: "jockey_starts", f: (r) => z(r.j_starts, fNum) },
+      { h: "Wins", cls: "num g-j", sort: "jockey_wins", f: (r) => z(r.j_wins, fNum) },
+      { h: "Strike", cls: "num g-j", sort: "jockey_strike", f: (r) => strike(r.j_wins, r.j_starts) },
+      { h: "Prize money", cls: "num g-j", sort: "jockey_winnings", f: (r) => z(r.j_prize, fMoneyShort) },
+      { h: "Starts", cls: "num g-t", sort: "trainer_starts", f: (r) => z(r.t_starts, fNum) },
+      { h: "Wins", cls: "num g-t", sort: "trainer_wins", f: (r) => z(r.t_wins, fNum) },
+      { h: "Strike", cls: "num g-t", sort: "trainer_strike", f: (r) => strike(r.t_wins, r.t_starts) },
+      { h: "Prize money", cls: "num g-t", sort: "trainer_winnings", f: (r) => z(r.t_prize, fMoneyShort) },
+      { h: "Name", cls: "g-s", f: (r) => (r.stable_id ? L.stable(r.stable_id, r.stable) : '<span class="muted">—</span>') },
+      { h: "Wins", cls: "num g-s", f: (r) => (r.stable_id ? `${fNum(r.s_wins)} <span class="muted small">/ ${fNum(r.s_starts)}</span>` : "") },
+      { h: "Prize money", cls: "num g-s", f: (r) => (r.stable_id ? fMoneyShort(r.s_prize) : "") },
+      { h: "Managed", cls: "num g-s", f: (r) => (r.managed_ever ? `${fNum(r.managed_ever)} stable${r.managed_ever === 1 ? "" : "s"}` : '<span class="muted">—</span>') },
+      { h: "As manager", cls: "num g-s", sort: "mgmt_winnings", f: (r) => z(r.m_prize, fMoneyShort) },
+    ],
+  }, route);
+  return html;
 }
 
 async function personPage(id) {
@@ -3544,7 +3588,13 @@ document.addEventListener("click", (e) => { if (e.target.closest("#auto-ind")) l
 function tableToCsv(tbl) {
   const clean = (el) => (el.offsetParent !== null ? el.innerText : el.textContent).replace(/[▲▼▸▾⤓]/g, "").replace(/\s*\n\s*(of \d)/g, " $1").replace(/\s*\n\s*/g, " · ").replace(/\s+/g, " ").trim();
   const q = (v) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
-  const head = [...tbl.tHead.rows[0].cells].map(clean);
+  const hr = tbl.tHead.rows;
+  let head = [...hr[hr.length - 1].cells].map(clean);
+  if (hr.length > 1) {     // group headings: "Jockey Wins", "Trainer Wins", ...
+    const grp = [];
+    for (const c of hr[0].cells) for (let i = 0; i < (c.colSpan || 1); i++) grp.push(c.textContent.trim());
+    head = head.map((h, i) => (grp[i] && h ? `${grp[i]} ${h}` : h));
+  }
   const keep = head.map((h) => h !== "");
   const lines = [head.filter((_, i) => keep[i]).map(q).join(",")];
   for (const tr of tbl.tBodies[0] ? tbl.tBodies[0].rows : []) {
@@ -3946,7 +3996,7 @@ function settingsPage() {
     `<div class="set-stack">` + panel("Your stables", ms.length ? [
     row("Main stable", "Opened by “Your stables” and “Your horses” in the left menu.",
       `<select id="set-stable">${ms.map((x) => `<option value="${x.id}" ${String(x.id) === String(cur) ? "selected" : ""}>${esc(x.name)} — ${esc(x.role)}</option>`).join("")}</select>`),
-    `<div class="set-h" style="margin-top:6px">${ms.length} stable${ms.length === 1 ? "" : "s"} you own or hold shares in. Use ◀ ▶ at the top of their pages to move between them.</div>`,
+    `<div class="set-h" style="margin-top:6px">${ms.length} stable${ms.length === 1 ? "" : "s"} you manage, own or hold shares in. Use ◀ ▶ at the top of their pages to move between them.</div>`,
   ].join("") : '<div class="empty">No stables found for your player in this database.</div>') +
     panel("Viewer", [
     row("Version", `HRM Viewer <b>${esc(a.version || "")}</b>`, `<a class="btn" href="#/versions">Versions &amp; changes</a>`),

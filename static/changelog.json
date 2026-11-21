@@ -1,5 +1,16 @@
 [
   {
+    "version": "12.6",
+    "date": "2026-11-21",
+    "title": "Stables you manage, and Jockey stats",
+    "changes": [
+      "Your stables now includes the stables you manage, listed first and marked Manager (or Owner & manager). The side menu, the \u25c0 \u25b6 bar on stable pages and Settings \u2192 Main stable all follow.",
+      "Stable pages show the stable's manager next to its owner.",
+      "New People \u2192 Jockey stats page: every person's jockey, trainer and stable numbers side by side. Rides, wins, strike rate and prize money as a jockey and as a trainer (head trainer races included), the stable they work at now with its wins and prize money, how many stables they've managed and what they've earned as a manager.",
+      "Switch between Jockeys, Trainers, Stable managers and Everyone, search by name, filter by the job they do now, and sort by any heading. Your own row is highlighted."
+    ]
+  },
+  {
     "version": "12.5",
     "date": "2026-11-21",
     "title": "All, alive or deceased on the home page",

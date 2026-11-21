@@ -1265,9 +1265,15 @@ def name_map(con, table, idcol, namecol, ids):
 # --------------------------------------------------------------------------- API: endpoints
 
 def my_stables(con, player_id, active_id):
-    """Stables the player owns (and their sub-stables) or holds shares in, directly or through one of their stables."""
+    """Stables the player manages, owns (and their sub-stables) or holds shares in, directly or through one of their stables.
+    Stables the player manages come first."""
     if not player_id:
         return []
+    managed = [r[0] for r in con.execute("""select distinct staff_stable_id from staff where staff_person_id=? and staff_end_date is null
+        and staff_current_role in ('Manager','Assistant manager') order by staff_current_role='Assistant manager', staff_start_date""", (player_id,))] \
+        if has_table(con, "staff") else []
+    jobs = dict(con.execute("""select staff_stable_id, staff_current_role from staff where staff_person_id=? and staff_end_date is null
+        and staff_current_role in ('Manager','Assistant manager')""", (player_id,)).fetchall()) if managed else {}
     owned = [r[0] for r in con.execute("select stable_stable_id from stables where stable_owner_id=?", (player_id,))]
     if active_id and active_id not in owned:
         owned.append(active_id)
@@ -1283,7 +1289,7 @@ def my_stables(con, player_id, active_id):
             shares[sid][0] += n or 0
             if holder and holder != sid:
                 shares[sid][1].add(holder)
-    ids = list(dict.fromkeys(owned + list(shares)))
+    ids = list(dict.fromkeys(managed + owned + list(shares)))
     if not ids:
         return []
     q = ",".join("?" * len(ids))
@@ -1297,18 +1303,24 @@ def my_stables(con, player_id, active_id):
         r = info.get(i)
         if not r:
             continue
-        mine = r["owner_id"] == player_id or i in owned
+        mine = r["owner_id"] == player_id or i in owned or i in jobs
         n, via = shares.get(i, [0, set()])
         pct_ = (100.0 * n / r["total_shares"]) if r["total_shares"] else None
-        if r["owner_id"] == player_id:
+        job = jobs.get(i)
+        if job and r["owner_id"] == player_id:
+            role = "Owner & %s" % job.lower()
+        elif job:
+            role = job
+        elif r["owner_id"] == player_id:
             role = "Owner"
         elif i in owned:
             role = "Part of %s" % names.get(r["parent_id"], "your stable")
         else:
             role = "Shareholder"
-        out.append(dict(r, role=role, mine=mine, shares=n, share_pct=pct_, via=[{"id": v, "name": names.get(v)} for v in via if v in names],
+        out.append(dict(r, role=role, mine=mine, managed=bool(job), shares=n, share_pct=pct_, via=[{"id": v, "name": names.get(v)} for v in via if v in names],
                         active=i == active_id, closed=r["closed"] in (1, "1", "true", True)))
-    out.sort(key=lambda r: (not r["active"], not r["mine"], r["closed"], -(r["share_pct"] or 0), r["name"] or ""))
+    order = {i: n for n, i in enumerate(managed)}
+    out.sort(key=lambda r: (not r["managed"], not r["active"], order.get(r["id"], 99), not r["mine"], r["closed"], -(r["share_pct"] or 0), r["name"] or ""))
     return out
 
 
@@ -2272,6 +2284,75 @@ def api_people(con, q):
     for r in data:
         r["stable_name"] = sn.get(r["stable_id"])
     return {"total": total, "page": page, "page_size": page_size(), "rows": data}
+
+
+# People → Jockeys: every person's jockey, trainer and stable (management) numbers side by side
+CAREER_SORTS = {"name": "p.person_full_name", "birth": "p.person_birth_date",
+                "jockey_starts": "p.person_jockey_starts", "jockey_wins": "p.person_jockey_wins", "jockey_winnings": "p.person_jockey_winnings",
+                "jockey_strike": "(1.0*p.person_jockey_wins/nullif(p.person_jockey_starts,0))",
+                "trainer_starts": "(coalesce(p.person_trainer_starts,0)+coalesce(p.person_head_trainer_starts,0))",
+                "trainer_wins": "(coalesce(p.person_trainer_wins,0)+coalesce(p.person_head_trainer_wins,0))",
+                "trainer_winnings": "(coalesce(p.person_trainer_winnings,0)+coalesce(p.person_head_trainer_career_winnings,0))",
+                "trainer_strike": "(1.0*(coalesce(p.person_trainer_wins,0)+coalesce(p.person_head_trainer_wins,0))/nullif(coalesce(p.person_trainer_starts,0)+coalesce(p.person_head_trainer_starts,0),0))",
+                "mgmt_winnings": "p.person_management_career_winnings", "mgmt_exp": "p.person_management_experience",
+                "reputation": "p.person_reputation"}
+CAREER_VIEWS = {
+    "jockeys": ("coalesce(p.person_jockey_starts,0) > 0", "jockey_wins"),
+    "trainers": ("coalesce(p.person_trainer_starts,0) + coalesce(p.person_head_trainer_starts,0) > 0", "trainer_wins"),
+    "managers": ("(coalesce(p.person_management_career_winnings,0) > 0 or p.person_person_id in (select staff_person_id from staff where staff_current_role='Manager'))", "mgmt_winnings"),
+    "all": ("(coalesce(p.person_jockey_starts,0) + coalesce(p.person_trainer_starts,0) + coalesce(p.person_head_trainer_starts,0) > 0 or coalesce(p.person_management_career_winnings,0) > 0)", "jockey_wins"),
+}
+
+
+def api_careers(con, q):
+    view = q.get("view") if q.get("view") in CAREER_VIEWS else "jockeys"
+    cond, default_sort = CAREER_VIEWS[view]
+    where, params = [cond], []
+    if q.get("q"):
+        where.append("p.person_full_name like ?")
+        params.append("%" + q["q"] + "%")
+    if (q.get("status") or "alive") == "alive":
+        where.append("p.person_deceased_date is null and p.person_person_id not in (select pk from hrmv_removed where tbl='persons')")
+    if q.get("job"):     # what they do now
+        where.append("p.person_person_id in (select staff_person_id from staff where staff_end_date is null and staff_current_role=?)")
+        params.append(q["job"])
+    sort, d = sort_args(q, CAREER_SORTS, default_sort)
+    page, off = page_args(q)
+    w = " where " + " and ".join(where)
+    total = count_rows(con, "select count(*) from persons p" + w, params)
+    data = rows(con, """select p.person_person_id as id, p.person_full_name as name, p.person_birth_date as birth, p.person_deceased_date as died,
+        p.person_is_player as is_player, p.person_reputation as reputation,
+        p.person_jockey_starts as j_starts, p.person_jockey_wins as j_wins, p.person_jockey_winnings as j_prize, p.person_jockey_ranking as j_rank,
+        coalesce(p.person_trainer_starts,0)+coalesce(p.person_head_trainer_starts,0) as t_starts,
+        coalesce(p.person_trainer_wins,0)+coalesce(p.person_head_trainer_wins,0) as t_wins,
+        coalesce(p.person_trainer_winnings,0)+coalesce(p.person_head_trainer_career_winnings,0) as t_prize,
+        p.person_head_trainer_wins as ht_wins,
+        p.person_management_career_winnings as m_prize, p.person_management_experience as m_exp
+        from persons p""" + w + " order by %s %s nulls last, p.person_person_id limit %d offset %d" % (sort, d, page_size(), off), params)
+    ids = [r["id"] for r in data]
+    if ids:
+        qm = ",".join("?" * len(ids))
+        jobs = {}
+        for r in rows(con, """select f.staff_person_id as pid, f.staff_current_role as role, f.staff_stable_id as sid, s.stable_name as stable,
+                t.wins as s_wins, t.starts as s_starts, t.prize as s_prize, t.g1 as s_g1
+                from staff f left join stables s on s.stable_stable_id=f.staff_stable_id left join hrmv_stable_stats t on t.stable_id=f.staff_stable_id
+                where f.staff_end_date is null and f.staff_person_id in (%s) order by f.staff_start_date""" % qm, ids):
+            jobs.setdefault(r["pid"], []).append(r)
+        managed = {}
+        for r in rows(con, """select f.staff_person_id as pid, count(distinct f.staff_stable_id) as n from staff f
+                where f.staff_current_role='Manager' and f.staff_person_id in (%s) group by 1""" % qm, ids):
+            managed[r["pid"]] = r["n"]
+        for r in data:
+            js = jobs.get(r["id"]) or []
+            # their main job: managing first, then training, then riding
+            rank = {"Manager": 0, "Assistant manager": 1, "Head trainer": 2, "Trainer": 3, "Jockey": 4}
+            js.sort(key=lambda j: (rank.get(j["role"], 9), j["sid"] != META.get("player_stable_id")))
+            r["jobs"] = [{"role": j["role"], "stable_id": j["sid"], "stable": j["stable"]} for j in js]
+            top = js[0] if js else None
+            r.update({"stable_id": top and top["sid"], "stable": top and top["stable"], "s_wins": top and top["s_wins"],
+                      "s_starts": top and top["s_starts"], "s_prize": top and top["s_prize"], "s_g1": top and top["s_g1"],
+                      "managed_ever": managed.get(r["id"], 0)})
+    return {"total": total, "page": page, "page_size": page_size(), "rows": data, "view": view}
 
 
 def api_person(con, pid):
@@ -3318,6 +3399,7 @@ EXPORTS = {"horse_table": horse_table_query, "stable_table": stable_table_query,
 
 LIST_EXPORTS = {"horses": lambda con, q: api_horses(con, q), "races": lambda con, q: api_races(con, q),
                 "stables": lambda con, q: api_stables(con, q), "people": lambda con, q: api_people(con, q),
+                "careers": lambda con, q: api_careers(con, q),
                 "courses": lambda con, q: api_courses(con, q), "meetings": lambda con, q: api_meetings(con, q)}
 
 
@@ -3372,6 +3454,7 @@ ROUTES = [
     (re.compile(r"^/api/stable_finance/(-?\d+)$"), lambda con, m, q: api_stable_finance(con, int(m.group(1)), q)),
     (re.compile(r"^/api/stable_horse_money/(-?\d+)$"), lambda con, m, q: api_stable_horse_money(con, int(m.group(1)), q)),
     (re.compile(r"^/api/people$"), lambda con, m, q: api_people(con, q)),
+    (re.compile(r"^/api/careers$"), lambda con, m, q: api_careers(con, q)),
     (re.compile(r"^/api/person/(-?\d+)$"), lambda con, m, q: api_person(con, int(m.group(1)))),
     (re.compile(r"^/api/courses$"), lambda con, m, q: api_courses(con, q)),
     (re.compile(r"^/api/course/(-?\d+)$"), lambda con, m, q: api_course(con, int(m.group(1)))),
@@ -4003,7 +4086,7 @@ class Handler(BaseHTTPRequestHandler):
 
 # --------------------------------------------------------------------------- in-app updates
 
-VERSION = "12.5"
+VERSION = "12.6"
 BACKUP_DIR = os.path.join(APP_DIR, "backups")
 UPDATE_PENDING = os.path.join(DATA_DIR, "update_pending.json")
 UPDATE_RESULT = os.path.join(DATA_DIR, "update_result.json")
