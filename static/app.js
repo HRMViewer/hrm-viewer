@@ -344,7 +344,7 @@ const PAGES = {
       b.textContent = open ? "Close all form" : "Open all form";
     }));
   } }),
-  stables: stablesPage, stable: (r) => (r.parts[2] === "races" ? stableRacesPage(r) : r.parts[2] === "financials" ? stableFinancePage(r) : r.parts[2] === "horse-money" ? stableHorseMoneyPage(r) : stablePage(r.parts[1])), people: peoplePage, jockeys: careersPage, person: (r) => personPage(r.parts[1]),
+  stables: stablesPage, stable: (r) => (r.parts[2] === "races" ? stableRacesPage(r) : r.parts[2] === "financials" ? stableFinancePage(r) : r.parts[2] === "horse-money" ? stableHorseMoneyPage(r) : r.parts[2] === "awards" ? stableAwardsPage(r) : stablePage(r.parts[1])), people: peoplePage, jockeys: careersPage, person: (r) => personPage(r.parts[1]),
   courses: coursesPage, course: Object.assign((r) => coursePage(r.parts[1]), { after: (r) => coursePage.after && coursePage.after(r) }), tables: tablesPage,
   pedigrees: pedigreesPage, pedigree: Object.assign((r) => pedigreePage(r.parts[1], r.q), { after: (r) => pedigreePage.after && pedigreePage.after(r) }), "horse-table": horseTablePage, "stable-table": stableTablePage,
   versions: versionsPage, meetings: meetingsPage, awards: (r) => awardsPage(r.q || {}), settings: Object.assign(() => settingsPage(), { after: () => settingsPage.after() }), databases: Object.assign(() => databasesPage(), { after: () => databasesPage.after() }),
@@ -2215,7 +2215,7 @@ function stableHead(d, on) {
       return mg.length ? ` · Manager ${mg.map((x) => `${L.person(x.id, x.name)}${x.id === (STATUS.meta || {}).player_id ? ' <span class="badge good">You</span>' : ""}`).join(", ")}` : "";
     })()}${d.city ? ` · ${esc(d.city.city)}, ${esc(d.city.country)}` : ""} · Founded ${fDate(s.stable_founded_date)}</div>${removedNote(d)}</div>
     <div style="display:flex;gap:8px"><a class="btn primary" href="#/stable/${id}/races">Every race</a><a class="btn" href="#/horses?stable=${id}&status=all">All horses ever</a></div></div>
-    <div class="subtabs"><a href="#/stable/${id}" class="${on === "overview" ? "on" : ""}">Overview</a><a href="#/stable/${id}/financials" class="${on === "financials" ? "on" : ""}">Financials</a><a href="#/stable/${id}/horse-money" class="${on === "horse-money" ? "on" : ""}">Horse finances</a></div>`;
+    <div class="subtabs"><a href="#/stable/${id}" class="${on === "overview" ? "on" : ""}">Overview</a><a href="#/stable/${id}/financials" class="${on === "financials" ? "on" : ""}">Financials</a><a href="#/stable/${id}/horse-money" class="${on === "horse-money" ? "on" : ""}">Horse finances</a><a href="#/stable/${id}/awards" class="${on === "awards" ? "on" : ""}">Awards</a></div>`;
 }
 // the stable's money charts (moved here from the Overview tab in 10.2): same data, now on a log scale
 const STABLE_LOG = { scale: "symlog", logC: 1000, yFmt: fMoneyShort, tipFmt: fMoney };
@@ -2485,6 +2485,59 @@ document.addEventListener("input", (e) => {
   });
   panel.querySelector(".fd-none").hidden = any;
 });
+
+// ------------------------------------------------------------------ stable awards tab
+// Every award tied to the stable: awards to the stable itself, awards won by its horses while they were in this stable
+// (season awards and Group/Listed race wins) and awards won by its employees while they worked here.
+async function stableAwardsPage(route) {
+  const id = route.parts[1], q = route.q || {};
+  const [d, aw] = await Promise.all([api("stable/" + id), api("stable_awards/" + id)]);
+  let html = stableHead(d, "awards");
+  const all = aw.awards || [];
+  if (!all.length) {
+    return html + `<div class="empty">${esc(d.stable.stable_name)}, its horses and its employees haven't won or placed in any awards yet.
+      <div class="help" style="margin-top:6px">Stable, horse, race-win and employee awards appear here once they have been given out. <a href="#/awards">See all awards</a></div></div>`;
+  }
+  // what the filter calls each row: the stable itself, a horse's season award, a horse's Group/Listed race win, or an employee
+  const group = (a) => (a.etype === "stable" ? "stable" : a.etype === "person" ? "staff" : a.kind === "race" ? "race" : "horse");
+  // a race win, a first place, or no place at all (a Hall of Fame induction) is a win; 2nd and 3rd are the runners-up the game lists
+  const result = (a) => (a.kind === "race" ? "won" : a.cat === "hall_of_fame_nominee" ? "nominee" : (a.rank || 1) === 1 ? "won" : "placed");
+  const count = (list) => list.length;
+  const wins = (list) => list.filter((a) => result(a) === "won").length;
+  const by = { stable: all.filter((a) => group(a) === "stable"), horse: all.filter((a) => group(a) === "horse"), race: all.filter((a) => group(a) === "race"), staff: all.filter((a) => group(a) === "staff") };
+  const grades = ["g1_race", "g2_race", "g3_race", "listed_race"].map((c) => [c, by.race.filter((a) => a.cat === c).length]).filter(([, n]) => n)
+    .map(([c, n]) => `${n}× ${{ g1_race: "G1", g2_race: "G2", g3_race: "G3", listed_race: "Listed" }[c]}`).join(" · ");
+  html += tiles([
+    ["Stable awards", fNum(count(by.stable)), count(by.stable) ? `${fNum(wins(by.stable))} won` : "None yet"],
+    ["Horse awards", fNum(count(by.horse)), count(by.horse) ? `${fNum(wins(by.horse))} won · season awards` : "None yet"],
+    ["Race wins", fNum(count(by.race)), grades || "No Group or Listed wins yet"],
+    ["Employee awards", fNum(count(by.staff)), count(by.staff) ? `${fNum(wins(by.staff))} won` : "None yet"],
+  ]);
+  // filters: what kind, wins only or placings too, which year, and a text search
+  const years = [...new Set(all.map((a) => a.year).filter(Boolean))].sort((a, b) => b - a);
+  const type = q.type || "all", res = q.result || "all", yr = q.year || "", term = (q.q || "").toLowerCase();
+  const rows = all.filter((a) => (type === "all" || group(a) === type) && (res === "all" || result(a) === "won") && (!yr || String(a.year) === String(yr))
+    && (!term || `${a.who || d.stable.stable_name} ${a.label} ${a.description || ""}`.toLowerCase().includes(term)));
+  const tabs = `<div class="filters" style="margin-bottom:12px">
+    ${seg("type", q, [["all", `Everything (${all.length})`], ["stable", `Stable (${by.stable.length})`], ["horse", `Horse awards (${by.horse.length})`], ["race", `Race wins (${by.race.length})`], ["staff", `Employees (${by.staff.length})`]], "all")}
+    ${seg("result", q, [["all", "Wins and places"], ["won", "Wins only"]], "all")}
+    ${select("year", q, [["", "All years"]].concat(years.map((y) => [String(y), String(y)])), "Only this year's awards")}
+    ${searchBox(q, "Search names or awards")}</div>`;
+  const who = (a) => (a.etype === "horse" ? `${L.horse(a.eid, a.who)} <span class="small muted">horse</span>` : a.etype === "person" ? `${L.person(a.eid, a.who)} <span class="small muted">employee</span>`
+    : `${esc(d.stable.stable_name)} <span class="small muted">stable</span>`);
+  const badge = (a) => ({ won: `<span class="badge good">${a.kind === "race" ? "Won" : a.cat === "hall_of_fame" ? "Inducted" : "Winner"}</span>`,
+    placed: `<span class="badge">Runner-up · ${ord(a.rank)}</span>`, nominee: `<span class="badge">Nominated</span>` }[result(a)]);
+  const gradeOf = { g1_race: "G1", g2_race: "G2", g3_race: "G3", listed_race: "listed" };
+  html += `<section class="panel">${tabs}${table([
+    { h: "Year", cls: "nowrap", f: (a) => (a.year ? `<b>${a.year}</b>` : "—") },
+    { h: "Who", f: who },
+    { h: "Award", f: (a) => (a.kind === "race" ? `${grade(gradeOf[a.cat])} <span class="small muted">race win</span>` : esc(a.label)) },
+    { h: "Result", cls: "nowrap", f: badge },
+    { h: "Details", f: (a) => (a.kind === "race" ? (a.race_id ? L.race(a.race_id, a.description, "Race") : esc(a.description || "—")) : a.description ? esc(a.description) : '<span class="muted">—</span>') },
+  ], rows, { rowClass: (a) => (result(a) === "won" ? "win" : ""), empty: "No awards match these filters." })}
+    <div class="help">Horses and employees are counted for the time they were at this stable: a horse that wins here and is later sold keeps the award with this stable. <a href="#/awards">All season awards</a></div></section>`;
+  return html;
+}
 
 // ------------------------------------------------------------------ stable horse finances tab
 const HM_STATUS = { current: ["In the stable", "good"], sold: ["Sold", ""], died: ["Died", "dead"], left: ["Left", ""] };

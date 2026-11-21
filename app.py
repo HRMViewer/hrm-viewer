@@ -2804,6 +2804,35 @@ def stable_table_query(con, q):
     return sel + base + w + order, "select count(*) " + base + w, params
 
 
+STABLE_RACE_WINS = {"g1_race": "G1 win", "g2_race": "G2 win", "g3_race": "G3 win", "listed_race": "Listed win"}
+
+
+def api_stable_awards(con, sid, q):
+    """Every award tied to this stable: awards to the stable itself, awards won by its horses while they were in this stable
+    (season awards and Group/Listed race wins) and awards won by its employees while they worked here. The save records the
+    stable on each horse and staff award at the time, so a horse or employee who has since moved on keeps the award with the
+    stable they won it for."""
+    if not has_table(con, "awards"):
+        return {"awards": []}
+    concepts = dict(con.execute("select concept_id, concept_name from concepts").fetchall()) if has_table(con, "concepts") else {}
+    data = rows(con, """select a.award_id as id, a.award_entity_type as etype, a.award_entity_id as eid, a.award_category as cat,
+        a.award_year as year, a.award_date as date, a.award_rank as rank, a.award_description as description, a.award_race_id as race_id,
+        h.horse_name as horse, p.person_full_name as person
+        from awards a
+        left join horses h on a.award_entity_type='horse' and h.horse_horse_id=a.award_entity_id
+        left join persons p on a.award_entity_type='person' and p.person_person_id=a.award_entity_id
+        where (a.award_entity_type='stable' and a.award_entity_id=?1) or (a.award_entity_type in ('horse','person') and a.award_stable_id=?1)
+        order by a.award_year desc, a.award_date desc, coalesce(a.award_rank, 99), a.award_category""", (sid,))
+    for r in data:
+        cat = r["cat"]
+        r["kind"] = "race" if cat in STABLE_RACE_WINS else "season"
+        r["label"] = STABLE_RACE_WINS.get(cat) or ("Hall of Fame nominee" if cat == "hall_of_fame_nominee" else award_label(cat, concepts))
+        r["who"] = r.pop("horse") if r["etype"] == "horse" else r.pop("person") if r["etype"] == "person" else None
+        r.pop("horse", None)
+        r.pop("person", None)
+    return {"awards": data}
+
+
 def api_stable_table(con, q):
     sql, count_sql, params = stable_table_query(con, q)
     page = max(1, to_int(q.get("page"), 1))
@@ -3474,6 +3503,7 @@ ROUTES = [
     (re.compile(r"^/api/stable/(-?\d+)$"), lambda con, m, q: api_stable(con, int(m.group(1)))),
     (re.compile(r"^/api/stable_finance/(-?\d+)$"), lambda con, m, q: api_stable_finance(con, int(m.group(1)), q)),
     (re.compile(r"^/api/stable_horse_money/(-?\d+)$"), lambda con, m, q: api_stable_horse_money(con, int(m.group(1)), q)),
+    (re.compile(r"^/api/stable_awards/(-?\d+)$"), lambda con, m, q: api_stable_awards(con, int(m.group(1)), q)),
     (re.compile(r"^/api/people$"), lambda con, m, q: api_people(con, q)),
     (re.compile(r"^/api/careers$"), lambda con, m, q: api_careers(con, q)),
     (re.compile(r"^/api/person/(-?\d+)$"), lambda con, m, q: api_person(con, int(m.group(1)))),
@@ -4117,7 +4147,7 @@ class Handler(BaseHTTPRequestHandler):
 
 # --------------------------------------------------------------------------- in-app updates
 
-VERSION = "13.2"
+VERSION = "13.3"
 BACKUP_DIR = os.path.join(APP_DIR, "backups")
 UPDATE_PENDING = os.path.join(DATA_DIR, "update_pending.json")
 UPDATE_RESULT = os.path.join(DATA_DIR, "update_result.json")

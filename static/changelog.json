@@ -1,5 +1,15 @@
 [
   {
+    "version": "13.3",
+    "date": "2026-11-20",
+    "title": "Awards tab on the stable page",
+    "changes": [
+      "New Awards tab on every stable's page, next to Horse finances. It lists every award tied to the stable: the stable's own awards (Stable of the Year, Thravang, Breeder of the Year, Hall of Fame and race-series awards), every award its horses won while they were in the stable (season awards and Group and Listed race wins), and every award its employees won while they worked there.",
+      "Filter by Stable, Horse awards, Race wins or Employees, show wins only, pick a year, or search by name. The filters are kept in the page address, so refreshing keeps them.",
+      "A horse or employee who moves on later keeps the award with the stable they won it for."
+    ]
+  },
+  {
     "version": "13.2",
     "date": "2026-11-21",
     "title": "Refresh button; dark mode table headings",
