@@ -1,5 +1,19 @@
 [
   {
+    "version": "15.2",
+    "date": "2026-11-22",
+    "title": "Favourites and shortcut keys",
+    "changes": [
+      "New: favourites. Every page has a star (☆) in the menu bar, next to refresh. Click it to add the page you're on to a new Favourites list at the top of the side menu; the star turns gold while the page is a favourite, and clicking it again takes it off. Any page can be a favourite: a horse, a person, a stable's financials, a race, a filtered list such as Trainers or Group 1 results.",
+      "Favourites get the page's name (for example \"Northwind Marine Archer Racing NZ · Financials\"). To rename one, click Rename on the message that appears, or point at it in the side menu and click ✎. ✕ removes it (with Undo), and you can drag favourites up and down to change the order.",
+      "Favourites belong to the database that's open, because a horse or stable number means something different in another save. With the side menu shrunk to icons they show as icons.",
+      "New: shortcut keys, on a new Settings → Shortcuts tab. It lists every page in the side menus, the You pages (your profile, stable, horses and stable's races), your favourites and the menu-bar buttons (back, forward, refresh, add to favourites, search, side menu, light/dark, load new database). None have a key to start with.",
+      "To set one, click Set a key and press the keys you want, such as Ctrl + Shift + H, Alt + 1, F2 or a single letter. Keys already used by the viewer, Windows, the Mac or the browser (copy, paste, undo, F5, zoom, Alt + arrows…) are refused with the reason. If the key is already on another page it moves to the new one and says so. ✕ or Backspace removes a key, Esc stops without changing anything, and Remove all shortcuts clears them all. A search box finds pages quickly.",
+      "Shortcuts don't fire while you're typing in a box, unless they use Ctrl, Alt or Cmd, and they wait while a window such as Load new database is open. The favourites star shows its key when you point at it.",
+      "Settings → Reset settings leaves your favourites and shortcuts alone."
+    ]
+  },
+  {
     "version": "15.1",
     "date": "2026-11-22",
     "title": "HRM Viewer for Mac",

@@ -112,6 +112,13 @@ const ICON_PATHS = {
   list: '<path d="M5.5 4.5h8M5.5 8h8M5.5 11.5h8M2.5 4.5h.5M2.5 8h.5M2.5 11.5h.5"/>',
   upload: '<path d="M8 10.5V3M5 6l3-3 3 3M3 10.5v2.5h10v-2.5"/>',
   star: '<path d="m8 2.5 1.7 3.6 3.8.4-2.9 2.6.8 3.8L8 11l-3.4 1.9.8-3.8-2.9-2.6 3.8-.4z"/>',
+  back: '<path d="M10 3 5 8l5 5"/>',
+  fwd: '<path d="M6 3l5 5-5 5"/>',
+  refresh: '<path d="M13 8a5 5 0 1 1-1.5-3.6M13 2.5V5h-2.5"/>',
+  search: '<circle cx="7" cy="7" r="4.5"/><path d="m10.5 10.5 3 3"/>',
+  side: '<rect x="2" y="3" width="12" height="10" rx="1.2"/><path d="M6 3v10"/>',
+  moon: '<path d="M12.5 10A5.2 5.2 0 0 1 6 3.5a5.2 5.2 0 1 0 6.5 6.5z"/>',
+  key: '<rect x="1.5" y="4" width="13" height="8.5" rx="1.5"/><path d="M4 6.8h.5M6.6 6.8h.5M9.2 6.8h.5M11.8 6.8h.2M4.5 9.8h7"/>',
 };
 const icon = (k) => `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">${ICON_PATHS[k] || ""}</svg>`;
 // Navigation: the top menu holds the main sections (what you're looking at); the side menu shows "You" shortcuts
@@ -123,7 +130,7 @@ const SECTIONS = [
   { k: "stables", label: "Stables", ic: "barn", href: "#/stables", routes: ["stables", "stable", "stable-table", "stable-rankings"] },
   { k: "people", label: "People", ic: "user", href: "#/people-overview", routes: ["people-overview", "people", "person", "jockeys"] },
   { k: "awards", label: "Awards", ic: "trophy", href: "#/awards", routes: ["awards"] },
-  { k: "settings", label: "Settings", ic: "cog", href: "#/settings", routes: ["settings", "databases", "tables", "versions"], right: true },
+  { k: "settings", label: "Settings", ic: "cog", href: "#/settings", routes: ["settings", "databases", "tables", "versions", "shortcuts"], right: true },
 ];
 const SIDE = {
   home: null,   // filled in below: every other area's pages
@@ -138,12 +145,13 @@ const SIDE = {
   awards: [["Awards", [["#/awards", "trophy", "Awards by year"], ["#/awards?view=winners", "star", "Most awards"], ["#/awards?group=hof", "star", "Hall of Fame"]]],
     ["By award", [["#/awards?group=year", "trophy", "Horse of the Year"], ["#/awards?group=age", "horse", "Age divisions"], ["#/awards?group=distance", "flag", "Distance champions"],
       ["#/awards?group=breeding", "tree", "Breeding"], ["#/awards?group=people", "user", "People"], ["#/awards?group=stables", "barn", "Stables"], ["#/awards?group=special", "star", "Special awards"]]]],
-  settings: [["Settings", [["#/settings", "cog", "General"], ["#/databases", "db", "Databases"], ["#/tables", "table", "All tables"], ["#/versions", "info", "Versions & changes"]]]],
+  settings: [["Settings", [["#/settings", "cog", "General"], ["#/databases", "db", "Databases"], ["#/tables", "table", "All tables"], ["#/shortcuts", "key", "Shortcuts"], ["#/versions", "info", "Versions & changes"]]]],
 };
 // on Home the side menu lists every area, each under its own heading
 SIDE.home = [["Home", [["#/", "home", "Overview"]]]].concat(
   ["racing", "horses", "stables", "people", "awards", "settings"].map((k) => [SECTIONS.find((x) => x.k === k).label, SIDE[k].flatMap((g) => g[1])]));
 function sectionOf(key) { return (SECTIONS.find((x) => x.routes.includes(key)) || SECTIONS[0]).k; }
+const STAR_SVG = `<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="m8 1.9 1.8 3.8 4.1.5-3 2.8.8 4.1L8 11.1l-3.7 2 .8-4.1-3-2.8 4.1-.5z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>`;
 function renderNav() {
   const item = (x) => `<a href="${x.href}" data-k="${x.k}">${icon(x.ic)}<span>${x.label}</span></a>`;
   const chev = (d) => `<svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><path d="${d}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
@@ -151,6 +159,7 @@ function renderNav() {
     `<button class="sb-toggle nav-hist" id="nav-back" data-tip="Back (Alt + ←)" aria-label="Back">${chev("M10 3 5 8l5 5")}</button>` +
     `<button class="sb-toggle nav-hist" id="nav-fwd" data-tip="Forward (Alt + →)" aria-label="Forward">${chev("M6 3l5 5-5 5")}</button>` +
     `<button class="sb-toggle nav-hist" id="nav-reload" data-tip="Refresh this page (F5)" aria-label="Refresh this page">${chev("M13 8a5 5 0 1 1-1.5-3.6M13 2.5V5h-2.5")}</button>` +
+    `<button class="sb-toggle nav-fav" id="nav-fav" data-tip="Add this page to your favourites" aria-label="Add this page to your favourites" aria-pressed="false">${STAR_SVG}</button>` +
     SECTIONS.filter((x) => !x.right).map(item).join("") + `<span class="grow"></span>` + SECTIONS.filter((x) => x.right).map(item).join("");
 }
 renderNav();
@@ -178,6 +187,7 @@ document.addEventListener("click", (e) => {
   if (e.target.closest("#nav-back")) history.back();
   else if (e.target.closest("#nav-fwd")) history.forward();
   else if (e.target.closest("#nav-reload")) refreshPage();
+  else if (e.target.closest("#nav-fav")) toggleFav();
 });
 // refresh: fetch the page's data again and redraw it, keeping your place
 let REFRESHING = false;
@@ -283,6 +293,7 @@ function renderSidebar() {
   SIDE_SECTION = sec;
   const link = (href, ic, label) => `<a href="${href}" data-href="${href}" data-tip="${esc(label)}">${icon(ic)}<span>${label}</span></a>`;
   let h = `<button class="sb-collapse" id="sb-collapse" title="Shrink or expand the side menu">«</button>`;
+  h += favSideHtml();
   // You: always here, whatever section you're in
   const ms = (STATUS && STATUS.my_stables) || [];
   const cur = myStableId();
@@ -301,6 +312,7 @@ function renderSidebar() {
   }
   if (sec === "settings") h += `<a onclick="openLoad()" data-tip="Load new database">${icon("upload")}<span>Load new database</span></a>`;
   $("#sidebar").innerHTML = h;
+  favSideWire();
   const sel = $("#sb-stable");
   if (sel) sel.addEventListener("change", () => { setMyStable(sel.value); location.hash = `#/stable/${sel.value}`; });
   markSidebar();
@@ -323,6 +335,358 @@ function markSidebar() {
   }
   if (best) best.classList.add("on");
 }
+
+// ------------------------------------------------------------------ favourites and shortcut keys (15.2)
+// Favourites: the ☆ in the menu bar adds the page you're on to the top of the side menu. They belong to the
+// database (a horse or stable number means something different in another save), and are kept in this browser.
+// Shortcut keys: any page, favourite or menu-bar action can have a key. None are set until you choose them.
+const dbKeyId = () => ((STATUS && STATUS.db) || {}).id || "";
+function normHash(h) {
+  h = String(h || "").replace(/^#/, "") || "/";
+  const [p, qs] = h.split("?");
+  const q = [...new URLSearchParams(qs || "")].filter(([, v]) => v !== "").sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
+  return "#" + (p || "/") + (q.length ? "?" + new URLSearchParams(q).toString() : "");
+}
+function getFavs() {
+  try { const v = JSON.parse(localStorage.getItem("hrm.favs:" + dbKeyId()) || "[]"); return Array.isArray(v) ? v.filter((f) => f && f.h) : []; } catch (e) { return []; }
+}
+function setFavs(list) {
+  try { localStorage.setItem("hrm.favs:" + dbKeyId(), JSON.stringify(list)); } catch (e) { /* this session only */ }
+  renderSidebar(); favSync();
+  if ((parseHash().parts[0] || "") === "shortcuts") drawShortcutLists();
+}
+const findFav = (h) => getFavs().find((f) => normHash(f.h) === normHash(h));
+// the name a new favourite gets: its side-menu name if it's in the menu, otherwise the page's heading (+ the tab you're on)
+const FAV_NAMES = { "#/": "Home", "#/people-overview": "People overview", "#/settings": "Settings", "#/stable-rankings": "Stable rankings", "#/horse-table": "Horse table", "#/stable-table": "Stable table" };
+function sideLinks() { return SIDE.home.flatMap((g) => g[1]); }
+function favIcon(h) {
+  const k = (normHash(h).slice(2).split(/[/?]/)[0]) || "";
+  const side = sideLinks().find((x) => normHash(x[0]) === normHash(h));
+  if (side) return side[1];
+  return ({ "": "home", horse: "horse", horses: "horse", "horse-table": "horse", person: "user", people: "user", jockeys: "trophy", "people-overview": "user", stable: "barn", stables: "barn",
+    "stable-table": "grid", "stable-rankings": "trophy", race: "flag", races: "flag", meeting: "list", meetings: "list", course: "pin", courses: "pin", pedigree: "tree", pedigrees: "tree",
+    awards: "trophy", settings: "cog", databases: "db", tables: "table", versions: "info", shortcuts: "key" })[k] || "star";
+}
+function pageTitle() {
+  const cur = normHash(location.hash);
+  if (FAV_NAMES[cur]) return FAV_NAMES[cur];
+  const side = sideLinks().find((x) => normHash(x[0]) === cur);
+  if (side) return side[2];
+  let t = "";
+  const h1 = APP.querySelector("h1");
+  if (h1) {
+    const c = h1.cloneNode(true);
+    c.querySelectorAll(".badge, .tab-n").forEach((x) => x.remove());
+    t = c.textContent.replace(/\s+/g, " ").trim();
+  }
+  const tabs = [...APP.querySelectorAll(".subtabs a")], on = tabs.find((a) => a.classList.contains("on"));
+  if (on && tabs.indexOf(on) > 0) {
+    const c = on.cloneNode(true); c.querySelectorAll(".tab-n").forEach((x) => x.remove());
+    const lab = c.textContent.trim();
+    if (lab && !t.toLowerCase().includes(lab.toLowerCase())) t = t ? `${t} · ${lab}` : lab;
+  }
+  return (t || (SECTIONS.find((x) => x.k === sectionOf(parseHash().parts[0] || "")) || {}).label || "Page").slice(0, 80);
+}
+function toggleFav() {
+  const h = normHash(location.hash), list = getFavs(), i = list.findIndex((f) => normHash(f.h) === h);
+  if (i >= 0) {
+    const [gone] = list.splice(i, 1);
+    setFavs(list);
+    toast(`Removed <b>${esc(gone.t)}</b> from your favourites`, ["Undo", () => { const l = getFavs(); l.splice(i, 0, gone); setFavs(l); }], 4500);
+  } else {
+    const f = { h, t: pageTitle(), ic: favIcon(h) };
+    list.push(f); setFavs(list);
+    toast(`<span class="fav-star-t">★</span> Added <b>${esc(f.t)}</b> to your favourites`, ["Rename", () => favRename(h)], 4500);
+  }
+}
+function favSync() {
+  const b = $("#nav-fav");
+  if (!b) return;
+  const on = !!findFav(location.hash);
+  b.classList.toggle("on", on);
+  b.setAttribute("aria-pressed", on ? "true" : "false");
+  const k = keyFor("act:fav"), tip = (on ? "Remove this page from your favourites" : "Add this page to your favourites") + (k ? ` (${keyText(k)})` : "");
+  b.dataset.tip = tip; b.setAttribute("aria-label", tip);
+  $$("#sidebar a[data-fav]").forEach((a) => a.classList.toggle("on", normHash(a.dataset.fav) === normHash(location.hash)));
+}
+window.addEventListener("hashchange", favSync);
+function favSideHtml() {
+  const favs = getFavs();
+  let h = `<div class="sb-sec sb-fav-h">Favourites</div>`;
+  if (!favs.length) return h + `<div class="sb-hint">Click <span class="fav-star-t">☆</span> in the menu bar to add the page you're on.</div>`;
+  return h + `<div class="sb-favs">` + favs.map((f, i) => `<div class="sb-fav" data-i="${i}" draggable="true"><a href="${esc(f.h)}" data-fav="${esc(f.h)}" class="${normHash(f.h) === normHash(location.hash) ? "on" : ""}" draggable="false" data-tip="${esc(f.t)}${f.k ? ` (${esc(keyText(f.k))})` : ""}">${icon(f.ic || favIcon(f.h))}<span>${esc(f.t)}</span></a>` +
+    `<span class="sb-fav-acts"><button class="sb-fav-b" data-fav-ren="${i}" data-tip="Rename" aria-label="Rename ${esc(f.t)}">✎</button><button class="sb-fav-b" data-fav-del="${i}" data-tip="Remove from favourites" aria-label="Remove ${esc(f.t)} from favourites">✕</button></span></div>`).join("") + `</div>`;
+}
+function favRename(h) {
+  const list = getFavs(), i = list.findIndex((f) => normHash(f.h) === normHash(h));
+  if (i < 0) return;
+  if (isNarrow()) sideDrawer(true); else if (sideMenuMode() !== "full") setSideMenu("full");
+  const a = $(`#sidebar .sb-fav[data-i="${i}"]`);
+  if (!a) return;
+  const inp = document.createElement("input");
+  inp.type = "text"; inp.className = "sb-fav-in"; inp.value = list[i].t; inp.maxLength = 80; inp.setAttribute("aria-label", "Favourite's name");
+  a.replaceWith(inp); inp.focus(); inp.select();
+  let done = false;
+  const finish = (keep) => {
+    if (done) return; done = true;
+    const v = inp.value.trim(), l = getFavs();
+    if (keep && v && l[i]) { l[i].t = v; setFavs(l); } else renderSidebar();
+  };
+  inp.addEventListener("keydown", (e) => { e.stopPropagation(); if (e.key === "Enter") finish(true); if (e.key === "Escape") finish(false); });
+  inp.addEventListener("blur", () => finish(true));
+}
+function favSideWire() {
+  const box = $("#sidebar .sb-favs");
+  if (!box) return;
+  box.addEventListener("click", (e) => {
+    const r = e.target.closest("[data-fav-ren]"), d = e.target.closest("[data-fav-del]");
+    if (!r && !d) return;
+    e.preventDefault(); e.stopPropagation();
+    const l = getFavs();
+    if (r) return favRename(l[+r.dataset.favRen].h);
+    const i = +d.dataset.favDel, [gone] = l.splice(i, 1);
+    setFavs(l);
+    toast(`Removed <b>${esc(gone.t)}</b> from your favourites`, ["Undo", () => { const x = getFavs(); x.splice(i, 0, gone); setFavs(x); }]);
+  });
+  // drag a favourite up or down to change the order
+  let from = null;
+  box.addEventListener("dragstart", (e) => { const a = e.target.closest(".sb-fav[data-i]"); if (!a) return; from = +a.dataset.i; a.classList.add("dragging"); e.dataTransfer.effectAllowed = "move"; try { e.dataTransfer.setData("text/plain", a.dataset.fav); } catch (er) { /* fine */ } });
+  box.addEventListener("dragover", (e) => {
+    if (from == null) return;
+    e.preventDefault();
+    const a = e.target.closest(".sb-fav[data-i]");
+    $$(".drop-above, .drop-below", box).forEach((x) => x.classList.remove("drop-above", "drop-below"));
+    if (a) { const r = a.getBoundingClientRect(); a.classList.add(e.clientY < r.top + r.height / 2 ? "drop-above" : "drop-below"); }
+  });
+  box.addEventListener("drop", (e) => {
+    if (from == null) return;
+    e.preventDefault();
+    const a = e.target.closest(".sb-fav[data-i]");
+    if (a) {
+      let to = +a.dataset.i + (a.classList.contains("drop-below") ? 1 : 0);
+      const l = getFavs(), [m] = l.splice(from, 1);
+      if (to > from) to--;
+      l.splice(to, 0, m);
+      from = null; setFavs(l);
+    }
+  });
+  box.addEventListener("dragend", () => { from = null; renderSidebar(); });
+}
+// --- shortcut keys
+const IS_MAC = () => (STATUS && STATUS.platform === "mac") || /Mac/.test(navigator.platform || "");
+const KEY_NAMES = { Minus: "-", Equal: "=", BracketLeft: "[", BracketRight: "]", Semicolon: ";", Quote: "'", Backquote: "`", Backslash: "\\", Comma: ",", Period: ".", Slash: "/",
+  ArrowUp: "Up", ArrowDown: "Down", ArrowLeft: "Left", ArrowRight: "Right", Home: "Home", End: "End", PageUp: "PageUp", PageDown: "PageDown", Insert: "Insert", Delete: "Delete",
+  Space: "Space", Enter: "Enter", NumpadEnter: "Enter", Escape: "Esc", Tab: "Tab", Backspace: "Backspace", NumpadAdd: "NumPlus", NumpadSubtract: "NumMinus", NumpadMultiply: "NumTimes", NumpadDivide: "NumSlash", NumpadDecimal: "NumDot" };
+function comboOf(e) {
+  const c = e.code || "";
+  const k = /^Key[A-Z]$/.test(c) ? c.slice(3) : /^Digit\d$/.test(c) ? c.slice(5) : /^Numpad\d$/.test(c) ? "Num" + c.slice(6) : /^F\d{1,2}$/.test(c) ? c : KEY_NAMES[c];
+  if (!k) return null;   // a modifier on its own, or a key the viewer doesn't know
+  return [e.ctrlKey && "Ctrl", e.altKey && "Alt", e.shiftKey && "Shift", e.metaKey && "Meta", k].filter(Boolean).join("+");
+}
+function keyParts(combo) {
+  const mac = IS_MAC(), names = mac ? { Ctrl: "⌃ Control", Alt: "⌥ Option", Shift: "⇧ Shift", Meta: "⌘ Cmd" } : { Meta: "Win" };
+  const arrows = { Up: "↑", Down: "↓", Left: "←", Right: "→", NumPlus: "Num +", NumMinus: "Num −", NumTimes: "Num ×", NumSlash: "Num /", NumDot: "Num ." };
+  return String(combo).split("+").map((p) => names[p] || arrows[p] || (/^Num\d$/.test(p) ? "Num " + p.slice(3) : p));
+}
+const keyText = (combo) => keyParts(combo).join(" + ");
+const keyChips = (combo) => keyParts(combo).map((p) => `<kbd>${esc(p)}</kbd>`).join('<span class="kplus">+</span>');
+// keys the viewer, the window or the browser already use
+function reservedWhy(combo) {
+  const plain = { F5: "Refresh this page", F11: "Full screen", F12: "Developer tools", Esc: "Closing things", Tab: "Moving between buttons", "Shift+Tab": "Moving between buttons", Enter: "Pressing the button you're on",
+    Space: "Scrolling", Backspace: "Deleting text", Up: "Scrolling", Down: "Scrolling", Left: "Scrolling", Right: "Scrolling", PageUp: "Scrolling", PageDown: "Scrolling", Home: "Scrolling", End: "Scrolling",
+    "Shift+Space": "Scrolling", "Alt+Left": "Back", "Alt+Right": "Forward", "Alt+F4": "Closing the window", "Ctrl+F5": "Reloading the viewer", "Shift+F5": "Reloading the viewer", "Ctrl+Shift+F5": "Reloading the viewer",
+    "Ctrl+Tab": "Switching tabs", "Ctrl+Shift+Tab": "Switching tabs", "Meta+Tab": "Switching apps", "Alt+Tab": "Switching apps", "Ctrl+Alt+Delete": "Windows" };
+  if (plain[combo]) return plain[combo];
+  const mods = { C: "Copy", V: "Paste", X: "Cut", A: "Select all", Z: "Undo", Y: "Redo", "Shift+Z": "Redo", F: "Find", G: "Find next", P: "Print", R: "Reload", "Shift+R": "Reload", W: "Close", "Shift+W": "Close the window",
+    Q: "Quit", N: "New window", "Shift+N": "New window", T: "New tab", "Shift+T": "Reopen tab", L: "The address bar", S: "Save", O: "Open", H: "Hide (Mac)", M: "Minimise (Mac)", "Shift+I": "Developer tools", "Shift+J": "Developer tools",
+    "=": "Zoom in", "Shift+=": "Zoom in", "-": "Zoom out", "0": "Reset zoom", NumPlus: "Zoom in", NumMinus: "Zoom out", Num0: "Reset zoom", ",": "Preferences (Mac)", "[": "Back (Mac)", "]": "Forward (Mac)", Left: "Back (Mac)", Right: "Forward (Mac)" };
+  // Ctrl (or Cmd on a Mac) with a letter: copy, paste, zoom and the rest, with or without Shift
+  const parts = combo.split("+"), key = parts.pop(), has = (x) => parts.includes(x);
+  if ((has("Ctrl") || has("Meta")) && !has("Alt") && !(has("Ctrl") && has("Meta"))) { const w = mods[(has("Shift") ? "Shift+" : "") + key]; if (w && (has("Meta") || !/Mac/.test(w))) return w; }
+  if (has("Alt") && has("Meta") && key === "H") return "Hide others (Mac)";
+  return "";
+}
+function getKeys() { try { const v = JSON.parse(localStorage.getItem("hrm.keys") || "{}"); return v && typeof v === "object" ? v : {}; } catch (e) { return {}; } }
+function setKeys(k) { try { localStorage.setItem("hrm.keys", JSON.stringify(k)); } catch (e) { /* this session only */ } }
+const keyFor = (id) => (id.startsWith("fav:") ? (findFav(id.slice(4)) || {}).k : getKeys()[id]) || "";
+function setKeyFor(id, combo) {
+  if (id.startsWith("fav:")) {
+    const l = getFavs(), f = l.find((x) => normHash(x.h) === normHash(id.slice(4)));
+    if (!f) return;
+    if (combo) f.k = combo; else delete f.k;
+    try { localStorage.setItem("hrm.favs:" + dbKeyId(), JSON.stringify(l)); } catch (e) { /* this session only */ }
+    renderSidebar();
+  } else {
+    const k = getKeys();
+    if (combo) k[id] = combo; else delete k[id];
+    setKeys(k);
+  }
+  favSync();
+}
+// everything that can have a key, in the order the Shortcuts tab lists it
+const KEY_ACTIONS = [["act:back", "Back", "back"], ["act:fwd", "Forward", "fwd"], ["act:refresh", "Refresh this page", "refresh"], ["act:fav", "Add or remove this page from favourites", "star"],
+  ["act:search", "Search box", "search"], ["act:side", "Show or hide the side menu", "side"], ["act:theme", "Switch between light and dark", "moon"], ["act:load", "Load new database", "upload"]];
+const KEY_YOU = [["you:profile", "Your profile", "user"], ["you:stable", "Your stable", "barn"], ["you:horses", "Your horses", "horse"], ["you:races", "Your stable's races", "flag"]];
+function keyTargets() {
+  const groups = [["Favourites", getFavs().map((f) => ["fav:" + f.h, f.t, f.ic || favIcon(f.h), f.h])], ["Menu bar", KEY_ACTIONS], ["You", KEY_YOU], ["Home", [["#/", "Home", "home", "#/"]]]];
+  for (const s of SECTIONS.filter((x) => x.k !== "home")) {
+    const seen = new Set(), rows = [];
+    for (const [title, links] of SIDE[s.k]) for (const [href, ic, lab] of links) {
+      if (seen.has(href)) continue; seen.add(href);
+      rows.push([href, SIDE[s.k].length > 1 && title !== s.label ? `${lab}` : lab, ic, href, title]);
+    }
+    groups.push([s.label, rows]);
+  }
+  return groups;
+}
+function keyLabel(id) {
+  for (const [g, rows] of keyTargets()) { const r = rows.find((x) => x[0] === id); if (r) return g === "Favourites" ? `${r[1]} (favourite)` : r[1]; }
+  return id;
+}
+function keyOwner(combo) {
+  if (!combo) return null;
+  for (const [id, c] of Object.entries(getKeys())) if (c === combo) return id;
+  const f = getFavs().find((x) => x.k === combo);
+  return f ? "fav:" + f.h : null;
+}
+function runShortcut(id) {
+  const m = (STATUS && STATUS.meta) || {}, st = myStableId();
+  const need = (v, what) => { if (!v) toast(`There's no ${what} in this database.`); return v; };
+  if (id.startsWith("fav:")) { location.hash = id.slice(4); return; }
+  if (id.startsWith("#")) { if (normHash(location.hash) !== normHash(id)) location.hash = id; return; }
+  switch (id) {
+    case "act:back": history.back(); break;
+    case "act:fwd": history.forward(); break;
+    case "act:refresh": refreshPage(); break;
+    case "act:fav": toggleFav(); break;
+    case "act:search": window.scrollTo(0, 0); searchInput.focus(); searchInput.select(); break;
+    case "act:side": $("#sb-toggle").click(); break;
+    case "act:theme": setTheme(document.documentElement.classList.contains("dark") ? "light" : "dark"); if ((parseHash().parts[0] || "") === "settings") render(); break;
+    case "act:load": openLoad(); break;
+    case "you:profile": if (need(m.player_id, "player profile")) location.hash = `#/person/${m.player_id}`; break;
+    case "you:stable": if (need(st, "stable of yours")) location.hash = `#/stable/${st}`; break;
+    case "you:horses": if (need(st, "stable of yours")) location.hash = `#/horse-table?stable=${st}`; break;
+    case "you:races": if (need(st, "stable of yours")) location.hash = `#/stable/${st}/races`; break;
+  }
+}
+let KEY_REC = null;   // the shortcut being set on the Shortcuts tab: { id, btn }
+document.addEventListener("keydown", (e) => {
+  if (KEY_REC || e.repeat || e.defaultPrevented) return;
+  if (document.querySelector(".overlay")) return;   // a picture, chart or form is open on top
+  const t = e.target;
+  const typing = t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName || ""));
+  // while you type, only keys held with Ctrl / Alt / Cmd (or F1–F12) count, and never AltGr (Ctrl + Alt), which types characters
+  if (typing && (!(e.ctrlKey || e.altKey || e.metaKey) && !/^F\d/.test(e.code || "") || (e.ctrlKey && e.altKey))) return;
+  const c = comboOf(e), id = c && keyOwner(c);
+  if (!id) return;
+  e.preventDefault();
+  runShortcut(id);
+});
+// recording a key on the Shortcuts tab: this runs before anything else so the key you press isn't acted on
+window.addEventListener("keydown", (e) => {
+  if (!KEY_REC) return;
+  e.preventDefault(); e.stopPropagation();
+  const { id, btn } = KEY_REC, mods = e.ctrlKey || e.altKey || e.shiftKey || e.metaKey;
+  const msg = (h, cls) => { const m = btn.closest(".kb-row").querySelector(".kb-msg"); if (m) { m.className = "kb-msg " + (cls || ""); m.innerHTML = h; } };
+  if (e.code === "Escape" && !mods) return stopKeyRec();
+  if ((e.code === "Backspace" || e.code === "Delete") && !mods) { setKeyFor(id, ""); stopKeyRec(); msg("Shortcut removed."); return; }
+  const c = comboOf(e);
+  if (!c) { btn.innerHTML = `<span class="kb-live">${[e.ctrlKey && "Ctrl", e.altKey && "Alt", e.shiftKey && "Shift", e.metaKey && "Meta"].filter(Boolean).map((p) => keyChips(p)).join('<span class="kplus">+</span>')} + …</span>`; return; }
+  const why = reservedWhy(c);
+  if (why) { msg(`${esc(keyText(c))} is already used for <b>${esc(why)}</b>. Try another key, or press Esc to stop.`, "bad-t"); return; }
+  const owner = keyOwner(c);
+  if (owner === id) return stopKeyRec();
+  if (owner) setKeyFor(owner, "");
+  setKeyFor(id, c);
+  stopKeyRec();
+  if (owner) drawShortcutLists(`${esc(keyText(c))} was on <b>${esc(keyLabel(owner))}</b>, so it's been moved here.`, id);
+  else drawShortcutLists("", id);
+}, true);
+function startKeyRec(btn) {
+  stopKeyRec(true);
+  KEY_REC = { id: btn.dataset.kid, btn };
+  btn.classList.add("rec");
+  btn.innerHTML = '<span class="kb-live">Press a key…</span>';
+  const m = btn.closest(".kb-row").querySelector(".kb-msg");
+  if (m) { m.className = "kb-msg"; m.innerHTML = `Hold ${IS_MAC() ? "⌘ Cmd, ⌥ Option or ⇧ Shift" : "Ctrl, Alt or Shift"} with a letter or number, or use F1–F12. Esc stops, Backspace removes it.`; }
+}
+function stopKeyRec(quiet) {
+  if (!KEY_REC) return;
+  const { btn, id } = KEY_REC;
+  KEY_REC = null;
+  if (!quiet && btn.isConnected) { btn.classList.remove("rec"); btn.innerHTML = keyBtnInner(keyFor(id)); const m = btn.closest(".kb-row").querySelector(".kb-msg"); if (m && !m.classList.contains("bad-t")) m.innerHTML = ""; }
+  else if (btn.isConnected) { btn.classList.remove("rec"); btn.innerHTML = keyBtnInner(keyFor(id)); }
+}
+document.addEventListener("mousedown", (e) => { if (KEY_REC && !e.target.closest(".kb-set.rec")) stopKeyRec(); });
+window.addEventListener("hashchange", () => { KEY_REC = null; });
+const keyBtnInner = (combo) => (combo ? keyChips(combo) : '<span class="kb-none">Set a key</span>');
+function shortcutsPage() {
+  return settingsTabs("shortcuts") + `<div class="page-head"><div><h1>Shortcuts</h1><div class="sub">Give any page, favourite or menu-bar button its own key, then press it from anywhere in the viewer to go straight there. None are set to start with.</div></div>
+    <div class="kb-tools fd-tools"><input type="search" id="kb-find" placeholder="Search pages" aria-label="Search pages"><button class="btn" id="kb-clear-all">Remove all shortcuts</button></div></div>
+    <div class="kb-note" id="kb-note"></div><div id="kb-lists"></div>
+    <div class="set-h" style="margin-top:14px">Shortcuts are kept in this browser on this computer. Favourites and their keys belong to the database that's open, so each save has its own. Keys don't do anything while you're typing in a box unless they use Ctrl, Alt or ${IS_MAC() ? "⌘ Cmd" : "the Windows key"}.</div>`;
+}
+function drawShortcutLists(note, flashId) {
+  const box = $("#kb-lists");
+  if (!box) return;
+  const q = (($("#kb-find") || {}).value || "").trim().toLowerCase();
+  const rowHtml = (g, [id, label, ic, href, sub]) => {
+    const k = keyFor(id), fav = g === "Favourites", i = fav ? getFavs().findIndex((f) => "fav:" + f.h === id) : -1;
+    const name = href ? `<a href="${esc(href)}">${esc(label)}</a>` : esc(label);
+    return `<div class="kb-row${flashId === id ? " flash" : ""}" data-row="${esc(id)}"><span class="kb-ic">${icon(ic)}</span><div class="kb-name">${name}${sub && sub !== g ? ` <span class="muted small">${esc(sub)}</span>` : ""}<div class="kb-msg"></div></div>
+      ${fav ? `<span class="kb-fav-acts"><button class="btn sm" data-fav-up="${i}" title="Move up" ${i === 0 ? "disabled" : ""}>▲</button><button class="btn sm" data-fav-down="${i}" title="Move down" ${i === getFavs().length - 1 ? "disabled" : ""}>▼</button><button class="btn sm" data-fav-rn="${i}" title="Rename">Rename</button><button class="btn sm" data-fav-rm="${i}" title="Remove from favourites">Remove</button></span>` : ""}
+      <button class="kb-set" data-kid="${esc(id)}" title="Click, then press the key you want">${keyBtnInner(k)}</button>
+      <button class="kb-x" data-kclear="${esc(id)}" title="Remove this shortcut" aria-label="Remove this shortcut" ${k ? "" : "hidden"}>✕</button></div>`;
+  };
+  let h = "", any = false;
+  for (const [g, rows] of keyTargets()) {
+    const show = rows.filter((r) => !q || (r[1] + " " + g + " " + (r[4] || "")).toLowerCase().includes(q) || (keyFor(r[0]) && keyText(keyFor(r[0])).toLowerCase().includes(q)));
+    if (g === "Favourites" && !q) {
+      h += panel(`Favourites <span class="muted small" style="font-weight:400">· this database</span>`, rows.length ? show.map((r) => rowHtml(g, r)).join("")
+        : `<div class="empty">No favourites yet. Click <span class="fav-star-t">☆</span> in the menu bar on any page to add it to the side menu, then give it a key here.</div>`);
+      continue;
+    }
+    if (!show.length) continue;
+    any = true;
+    h += panel(g, show.map((r) => rowHtml(g, r)).join(""));
+  }
+  if (q && !any && !h) h = `<div class="empty">No pages match “${esc(q)}”.</div>`;
+  box.innerHTML = `<div class="kb-grid">${h}</div>`;
+  const n = $("#kb-note");
+  if (n) { n.innerHTML = note || ""; n.hidden = !note; }
+  const used = Object.keys(getKeys()).length + getFavs().filter((f) => f.k).length, ca = $("#kb-clear-all");
+  if (ca) { ca.disabled = !used; ca.textContent = used ? `Remove all shortcuts (${used})` : "Remove all shortcuts"; delete ca.dataset.sure; }
+}
+shortcutsPage.after = () => {
+  drawShortcutLists();
+  const box = $("#kb-lists");
+  $("#kb-find").addEventListener("input", () => drawShortcutLists());
+  box.addEventListener("click", (e) => {
+    const set = e.target.closest(".kb-set"), clr = e.target.closest("[data-kclear]");
+    if (set) { if (set.classList.contains("rec")) stopKeyRec(); else startKeyRec(set); return; }
+    if (clr) { setKeyFor(clr.dataset.kclear, ""); drawShortcutLists(); return; }
+    const l = getFavs(), up = e.target.closest("[data-fav-up]"), dn = e.target.closest("[data-fav-down]"), rn = e.target.closest("[data-fav-rn]"), rm = e.target.closest("[data-fav-rm]");
+    if (up || dn) { const i = +(up ? up.dataset.favUp : dn.dataset.favDown), j = up ? i - 1 : i + 1; if (j < 0 || j >= l.length) return; [l[i], l[j]] = [l[j], l[i]]; setFavs(l); return; }
+    if (rm) { const i = +rm.dataset.favRm, [gone] = l.splice(i, 1); setFavs(l); toast(`Removed <b>${esc(gone.t)}</b> from your favourites`, ["Undo", () => { const x = getFavs(); x.splice(i, 0, gone); setFavs(x); }]); return; }
+    if (rn) {
+      const i = +rn.dataset.favRn, row = rn.closest(".kb-row"), nm = row.querySelector(".kb-name a");
+      const inp = document.createElement("input"); inp.type = "text"; inp.value = l[i].t; inp.maxLength = 80; inp.className = "kb-rename"; inp.setAttribute("aria-label", "Favourite's name");
+      nm.replaceWith(inp); inp.focus(); inp.select();
+      let done = false;
+      const fin = (keep) => { if (done) return; done = true; const v = inp.value.trim(), x = getFavs(); if (keep && v && x[i]) { x[i].t = v; setFavs(x); } else drawShortcutLists(); };
+      inp.addEventListener("keydown", (ev) => { if (ev.key === "Enter") fin(true); if (ev.key === "Escape") fin(false); });
+      inp.addEventListener("blur", () => fin(true));
+    }
+  });
+  const ca = $("#kb-clear-all");
+  ca.onclick = () => {
+    if (!ca.dataset.sure) { ca.dataset.sure = "1"; ca.textContent = "Click again to remove them all"; ca.classList.add("danger"); return; }
+    setKeys({});
+    const l = getFavs(); l.forEach((f) => delete f.k);
+    try { localStorage.setItem("hrm.favs:" + dbKeyId(), JSON.stringify(l)); } catch (e) { /* this session only */ }
+    ca.classList.remove("danger"); renderSidebar(); favSync(); drawShortcutLists("All shortcuts removed.");
+  };
+};
 
 // ------------------------------------------------------------------ routing
 function parseHash() {
@@ -349,6 +713,7 @@ const PAGES = {
   courses: coursesPage, course: Object.assign((r) => coursePage(r.parts[1]), { after: (r) => coursePage.after && coursePage.after(r) }), tables: tablesPage,
   pedigrees: pedigreesPage, pedigree: Object.assign((r) => pedigreePage(r.parts[1], r.q), { after: (r) => pedigreePage.after && pedigreePage.after(r) }), "horse-table": horseTablePage, "stable-table": stableTablePage, "stable-rankings": stableRankingsPage,
   versions: versionsPage, meetings: meetingsPage, awards: (r) => awardsPage(r.q || {}), settings: Object.assign(() => settingsPage(), { after: () => settingsPage.after() }), databases: Object.assign(() => databasesPage(), { after: () => databasesPage.after() }),
+  shortcuts: Object.assign(() => shortcutsPage(), { after: () => shortcutsPage.after() }),
   meeting: Object.assign((r) => meetingPage(r.parts[1]), { after: (r) => meetingPage.after && meetingPage.after(r) }),
 };
 
@@ -360,7 +725,8 @@ async function render() {
   $$("#nav a").forEach((a) => a.classList.toggle("active", a.dataset.k === sec));
   if (sec !== SIDE_SECTION) renderSidebar(); else markSidebar();
   closeSearch();
-  if ((!STATUS || !STATUS.loaded) && !["databases", "versions", "settings"].includes(key)) return welcome();
+  favSync();
+  if ((!STATUS || !STATUS.loaded) && !["databases", "versions", "settings", "shortcuts"].includes(key)) return welcome();
   const fn = PAGES[key];
   if (!fn) { APP.innerHTML = `<div class="err-box">Page not found. <a href="#/">Go home</a></div>`; return; }
   if (!APP.dataset.keep) APP.innerHTML = `<div class="loading">Loading…</div>`;
@@ -875,6 +1241,8 @@ document.addEventListener("mouseover", (e) => {
     } catch (err) { /* no card */ }
   }, 500);
 });
+// a tooltip mustn't stay behind when its button goes away with the page
+window.addEventListener("hashchange", () => { clearTimeout(TIP_TIMER); TIP.hidden = true; TIP_FOR = null; });
 document.addEventListener("mouseout", (e) => {
   const tEl = e.target.closest && e.target.closest("[data-tip]");
   if (tEl && !tEl.contains(e.relatedTarget)) { clearTimeout(TIP_TIMER); TIP.hidden = true; if (TIP_FOR === tEl) TIP_FOR = null; }
@@ -4860,7 +5228,7 @@ async function drawFontDropdowns() {
 // ------------------------------------------------------------------ settings
 function settingsTabs(on) {
   return `<div class="subtabs"><a href="#/settings" class="${on === "settings" ? "on" : ""}">General</a><a href="#/databases" class="${on === "databases" ? "on" : ""}">Databases</a>
-    <a href="#/tables" class="${on === "tables" ? "on" : ""}">All tables</a><a href="#/versions" class="${on === "versions" ? "on" : ""}">Versions &amp; changes</a></div>`;
+    <a href="#/tables" class="${on === "tables" ? "on" : ""}">All tables</a><a href="#/shortcuts" class="${on === "shortcuts" ? "on" : ""}">Shortcuts</a><a href="#/versions" class="${on === "versions" ? "on" : ""}">Versions &amp; changes</a></div>`;
 }
 function settingsPage() {
   const ms = (STATUS && STATUS.my_stables) || [], cur = myStableId();
@@ -4912,7 +5280,7 @@ function settingsPage() {
     row("Install an update", "Or choose an HRM-Viewer-update zip file you've downloaded. Your data isn't touched.", `<button class="btn primary" data-open-update>Install an update</button>`),
     row("Quick Guide", "How to use the main features, as a PDF. It's updated with every version (also in your HRM Viewer folder).",
       `<span style="display:inline-flex;gap:8px"><button class="btn" data-guide>Open the guide</button><a class="btn" href="/quick-guide.pdf" download="HRM Viewer - Quick Guide.pdf">Download PDF</a></span>`),
-    row("Reset settings", "Put every setting on this page back to how it started. Your data isn't touched.", `<button class="btn" id="set-reset">Reset settings</button>`),
+    row("Reset settings", "Put every setting on this page back to how it started. Your data, favourites and shortcuts aren't touched.", `<button class="btn" id="set-reset">Reset settings</button>`),
   ].join("")) +
     panel("Database", [
     row("Open database", `<b>${esc((STATUS && STATUS.db && STATUS.db.name) || "—")}</b>${STATUS && STATUS.meta && STATUS.meta.game_date ? ` · game date ${fDate(STATUS.meta.game_date)}` : ""}`,
@@ -4990,7 +5358,7 @@ settingsPage.after = () => {
     if (!r.ok) sc.insertAdjacentHTML("afterend", `<div class="err" style="margin-top:6px">${esc(j.error || "Couldn't add the shortcuts.")}</div>`);
   };
   $("#set-reset").onclick = () => {
-    try { Object.keys(localStorage).filter((k) => k.startsWith("hrm.")).forEach((k) => localStorage.removeItem(k)); } catch (e) { /* nothing stored */ }
+    try { Object.keys(localStorage).filter((k) => k.startsWith("hrm.") && !k.startsWith("hrm.favs:") && k !== "hrm.keys").forEach((k) => localStorage.removeItem(k)); } catch (e) { /* nothing stored */ }
     HOVER_CARDS = true; ANC_COLOURS = true; setTableSize(TS_DEFAULT); setSideMenu("full"); setTheme("light"); setFont("Segoe UI", "system"); setInk(""); renderSidebar(); render();
   };
 };
@@ -5062,7 +5430,11 @@ databasesPage.after = () => {
   const mig = $("#mig-go");
   if (mig) mig.onclick = async () => {
     mig.disabled = true; $("#mig-msg").textContent = "Moving…";
-    try { await dbPost("migrate", { name: $("#mig-name").value.trim() }); await afterDbChange(false); }
+    try {
+      const favs = (() => { try { return localStorage.getItem("hrm.favs:" + dbKeyId()); } catch (e) { return null; } })();
+      await dbPost("migrate", { name: $("#mig-name").value.trim() }); await afterDbChange(false);
+      if (favs && dbKeyId() !== "_legacy") { try { if (!localStorage.getItem("hrm.favs:" + dbKeyId())) localStorage.setItem("hrm.favs:" + dbKeyId(), favs); } catch (e) { /* not kept */ } renderSidebar(); favSync(); }
+    }
     catch (e) { $("#mig-msg").innerHTML = `<span class="bad-t">${esc(e.message)}</span>`; mig.disabled = false; }
   };
   $$("[data-dbopen]", APP).forEach((b) => (b.onclick = async () => {
