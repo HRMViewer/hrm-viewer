@@ -14,6 +14,7 @@ import json
 import os
 import re
 import shutil
+import socket
 import sqlite3
 import sys
 import threading
@@ -4086,7 +4087,7 @@ class Handler(BaseHTTPRequestHandler):
 
 # --------------------------------------------------------------------------- in-app updates
 
-VERSION = "12.7"
+VERSION = "12.8"
 BACKUP_DIR = os.path.join(APP_DIR, "backups")
 UPDATE_PENDING = os.path.join(DATA_DIR, "update_pending.json")
 UPDATE_RESULT = os.path.join(DATA_DIR, "update_result.json")
@@ -4442,6 +4443,17 @@ def mark_started():
             pass
 
 
+class ViewerServer(ThreadingHTTPServer):
+    """On Windows, SO_REUSEADDR lets a second program bind a port another one is already using (and the other one keeps
+    getting the visitors), so the viewer asks for its port to itself there: if anything else has it, starting says so."""
+    allow_reuse_address = os.name != "nt"
+
+    def server_bind(self):
+        if os.name == "nt" and hasattr(socket, "SO_EXCLUSIVEADDRUSE"):
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+        super().server_bind()
+
+
 def main():
     if "--child" not in sys.argv[1:] and os.environ.get("HRMV_NO_SUPERVISOR") != "1":
         # Run the real viewer in a child process so it can restart itself after an update.
@@ -4514,9 +4526,9 @@ def main():
             print("Loaded.")
 
     try:
-        server = ThreadingHTTPServer(("127.0.0.1", args.port), Handler)
+        server = ViewerServer(("127.0.0.1", args.port), Handler)
     except OSError:
-        print("Port %d is busy - the viewer may already be running. Opening it in your browser." % args.port)
+        print("Port %d is busy - the viewer may already be running, or another program is using it. Opening it in your browser." % args.port)
         if not args.no_browser:
             webbrowser.open("http://127.0.0.1:%d/" % args.port)
         return

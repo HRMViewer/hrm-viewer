@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -23,7 +24,8 @@ import (
 )
 
 const (
-	port      = 8765
+	firstPort = 8765 // the viewer's usual address; the next free one is used if another program has it
+	lastPort  = 8785
 	title     = "HRM Viewer"
 	exeName   = "HRM Viewer.exe"
 	newExe    = "HRM Viewer.new.exe"
@@ -34,7 +36,8 @@ const (
 )
 
 var (
-	base     = fmt.Sprintf("http://127.0.0.1:%d/", port)
+	port     = firstPort
+	base     = fmt.Sprintf("http://127.0.0.1:%d/", firstPort)
 	user32   = windows.NewLazySystemDLL("user32.dll")
 	shell32  = windows.NewLazySystemDLL("shell32.dll")
 	pMsgBox  = user32.NewProc("MessageBoxW")
@@ -87,6 +90,32 @@ func swapInNewExe() bool {
 	cmd := exec.Command(self, os.Args[1:]...)
 	cmd.Dir = appDir
 	return cmd.Start() == nil
+}
+
+// Which port to use: one where HRM Viewer is already running, otherwise the first one nothing else is using.
+// (Another program sitting on 8765 used to leave the window stuck on "Almost there…".)
+func choosePort() {
+	for p := firstPort; p <= lastPort; p++ {
+		setPort(p)
+		if serverUp() {
+			logf("HRM Viewer is already running on port %d", p)
+			return
+		}
+		if l, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", p)); err == nil {
+			l.Close()
+			if p != firstPort {
+				logf("port %d is used by another program, so port %d is used instead", firstPort, p)
+			}
+			return
+		}
+		logf("port %d is used by another program", p)
+	}
+	setPort(firstPort)
+}
+
+func setPort(p int) {
+	port = p
+	base = fmt.Sprintf("http://127.0.0.1:%d/", p)
 }
 
 // Is the viewer already answering on its port?
@@ -256,6 +285,7 @@ func main() {
 	owned := false
 	ready := make(chan error, 1)
 	go func() {
+		choosePort()
 		if serverUp() {
 			if importPath != "" {
 				body, _ := json.Marshal(map[string]string{"path": importPath})

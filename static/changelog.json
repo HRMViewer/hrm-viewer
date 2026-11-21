@@ -1,5 +1,15 @@
 [
   {
+    "version": "12.8",
+    "date": "2026-11-21",
+    "title": "Fix: stuck on \u201cAlmost there\u2026\u201d",
+    "changes": [
+      "If another program on the computer was already using the viewer's usual address (port 8765), HRM Viewer.exe waited forever on \u201cAlmost there\u2026\u201d. It now notices and uses the next free port instead, so the window opens.",
+      "On Windows the viewer now takes its port to itself, so it can't end up sharing one with another program.",
+      "If you were stuck, update by downloading HRM-Viewer-12.8-full.zip from the download page and copying your old data folder into it (or close the other program and open HRM Viewer again)."
+    ]
+  },
+  {
     "version": "12.7",
     "date": "2026-11-21",
     "title": "New home on GitHub",
