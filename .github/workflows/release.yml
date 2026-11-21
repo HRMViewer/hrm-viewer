@@ -41,6 +41,8 @@ jobs:
     needs: check
     if: needs.check.outputs.new == 'yes'
     uses: ./.github/workflows/desktop-builds.yml
+    with:
+      mac: false   # the Mac app is still being tried out on the desktop-test branch; switch on when it passes
 
   release:
     needs: [check, mac-linux]
@@ -64,15 +66,15 @@ jobs:
           mkdir -p "$RUNNER_TEMP/python" && unzip -q "$RUNNER_TEMP/py.zip" -d "$RUNNER_TEMP/python"
           ls "$RUNNER_TEMP/python"
 
-      - name: Build the Windows zips
-        run: python3 tools/ci_build.py "$RUNNER_TEMP/HRM Viewer.exe" dist "$RUNNER_TEMP/python"
-
       - name: Get the Mac and Linux downloads
         uses: actions/download-artifact@v4
         with:
           pattern: "*-package"
           path: dist
           merge-multiple: true
+
+      - name: Build the Windows zips and the notes
+        run: python3 tools/ci_build.py "$RUNNER_TEMP/HRM Viewer.exe" dist "$RUNNER_TEMP/python"
 
       - name: Publish the release
         env:
@@ -81,5 +83,7 @@ jobs:
         run: |
           ls -la dist
           TITLE="HRM Viewer $V — $(python3 -c "import json,os;v=os.environ['V'];print(next(e['title'] for e in json.load(open('static/changelog.json')) if e['version']==v))")"
-          gh release create "v$V" "dist/HRM-Viewer-update-$V.zip" "dist/HRM-Viewer-$V-full.zip" "dist/HRM-Viewer-$V-mac.zip" "dist/HRM-Viewer-$V-linux.tar.gz" \
+          FILES=("dist/HRM-Viewer-update-$V.zip" "dist/HRM-Viewer-$V-full.zip")
+          for f in "dist/HRM-Viewer-$V-mac.zip" "dist/HRM-Viewer-$V-linux.tar.gz"; do [ -f "$f" ] && FILES+=("$f"); done
+          gh release create "v$V" "${FILES[@]}" \
             --target "$GITHUB_SHA" --title "$TITLE" --notes-file dist/notes.md --latest

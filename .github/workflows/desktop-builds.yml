@@ -5,6 +5,11 @@ name: Mac and Linux builds
 
 on:
   workflow_call:
+    inputs:
+      mac:
+        description: "Build the Mac app too"
+        type: boolean
+        default: true
   workflow_dispatch:
   push:
     branches: [desktop-test]
@@ -88,6 +93,8 @@ jobs:
           if-no-files-found: error
 
   mac:
+    # left out of a release with mac: false (test pushes and manual runs always build it)
+    if: ${{ inputs.mac != false }}
     timeout-minutes: 40
     runs-on: macos-14
     steps:
