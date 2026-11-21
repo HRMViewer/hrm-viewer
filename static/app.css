@@ -909,3 +909,12 @@ table.careers tr.me td { background: color-mix(in srgb, var(--blue) 7%, transpar
 .nav-hist + .nav-hist { margin-right: 4px; }
 #nav-reload { margin-right: 8px; }
 #nav-reload.spinning svg { animation: spin .7s linear infinite; }
+/* 13.5: month by month */
+table.fin-monthly tr.mb-total td { font-weight: 700; border-top: 2px solid var(--line); background: var(--bg); }
+.mb-cats { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; padding: 4px 6px 8px 28px; }
+.mb-cats h4 { margin: 4px 0; font-size: var(--fs-sm); color: var(--muted); }
+table.mb-cat td { padding: 2px 6px; font-size: var(--fs-sm); }
+@media (max-width: 800px) { .mb-cats { grid-template-columns: 1fr; } }
+.subtabs .tab-n { display: inline-block; margin-left: 4px; padding: 0 6px; border-radius: 999px; background: #eef1f6; color: var(--muted); font-size: var(--fs-xs); font-weight: 700; }
+table.fin-detail.is-in .sbar.cat i { background: #2f7d5b; }
+table.fin-detail.is-in .sbar.type i { background: #9fcbb6; }

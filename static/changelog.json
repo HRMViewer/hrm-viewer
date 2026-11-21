@@ -1,5 +1,18 @@
 [
   {
+    "version": "13.5",
+    "date": "2026-11-21",
+    "title": "Awards tabs for horses and people; month by month",
+    "changes": [
+      "Horse pages and people's pages now have an Awards tab, like stables. A horse's lists every season award and Group/Listed race win, with the jockey and stable. A person's lists their own awards plus every Group/Listed race win they rode, trained, managed or looked after, with a filter for each role. Filter by kind, wins only, year, or search.",
+      "Stable Financials: new Month by month panel with each month's income, expenses and net for the year you pick; \u25b8 opens that month's categories.",
+      "Stable Financials: the payment detail has an Expenses \u00b7 Income switch, so you can see every payment the stable received, grouped the same way, with who paid (people, stables and racecourses by name).",
+      "Stable Overview: the Latest month panel is gone (the figures are on Financials, month by month).",
+      "The CSV button on tables that show one year at a time exports the year you're looking at.",
+      "Quick Guide updated for all of this."
+    ]
+  },
+  {
     "version": "13.4",
     "date": "2026-11-21",
     "title": "Stable awards: Worst Horse of the Year",

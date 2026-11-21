@@ -1427,6 +1427,58 @@ def award_label(cat, concepts):
     return cat.replace("_", " ").capitalize()
 
 
+AWARD_RACE_CATS = {"G1": "g1_race", "G2": "g2_race", "G3": "g3_race", "listed": "listed_race"}
+AWARD_ROLE_COLS = [("award_jockey_id", "Jockey"), ("award_trainer_id", "Trainer"), ("award_head_trainer_id", "Head trainer"),
+                   ("award_stable_manager_id", "Manager"), ("award_caretaker_id", "Caretaker")]
+
+
+def api_awards_of(con, kind, eid):
+    """The Awards tab of a horse or a person: every season award, and every Group/Listed race win.
+    A person's race wins are the ones they rode, trained, managed or looked after (the role is given)."""
+    if not has_table(con, "awards"):
+        return {"awards": []}
+    concepts = dict(con.execute("select concept_id, concept_name from concepts").fetchall()) if has_table(con, "concepts") else {}
+    acols = columns(con, "awards")
+    sel = """select a.award_id as id, a.award_category as cat, a.award_year as year, a.award_date as date, a.award_rank as rank,
+        a.award_value as value, a.award_description as description, a.award_race_id as race_id, a.award_entity_type as etype,
+        a.award_entity_id as eid, a.award_horse_id as horse_id, a.award_stable_id as stable_id, a.award_jockey_id as jockey_id %s
+        from awards a"""
+    roles = [(c, r) for c, r in AWARD_ROLE_COLS if c in acols]
+    if kind == "horse":
+        data = rows(con, sel % "" + " where a.award_entity_type='horse' and a.award_entity_id=?", (eid,))
+        for r in data:
+            r["horse_id"] = r["horse_id"] or eid
+    else:
+        data = rows(con, sel % "" + " where a.award_entity_type='person' and a.award_entity_id=?", (eid,))
+        if roles:     # race wins they took part in
+            role_case = "case " + " ".join("when a.%s=?1 then '%s'" % (c, r) for c, r in roles) + " end"
+            data += rows(con, sel % (", %s as role" % role_case) + " where a.award_category in ('g1_race','g2_race','g3_race','listed_race') and ("
+                         + " or ".join("a.%s=?1" % c for c, _ in roles) + ")", (eid,))
+    # Group 2/3 and Listed wins the awards table doesn't hold, from the results (for a person: the races they rode)
+    have = {r["race_id"] for r in data if r.get("race_id")}
+    who = "r.race_result_horse_id=?" if kind == "horse" else "r.race_result_person_jockey_id=?"
+    for w in rows(con, """select r.race_result_date as date, r.race_result_cash_received as value, x.races_race_name as description,
+            x.races_race_id as race_id, x.races_type_of_race as race_type, r.race_result_horse_id as horse_id,
+            r.race_result_person_jockey_id as jockey_id, r.race_result_stable_id as stable_id
+            from race_results r join races x on x.races_race_id=r.race_result_race_id
+            where %s and r.race_result_rank=1 and x.races_type_of_race in ('G1','G2','G3','listed')""" % who, (eid,)) if has_table(con, "race_results") and "race_result_stable_id" in columns(con, "race_results") else []:
+        if w["race_id"] in have:
+            continue
+        yr = (datetime.datetime(1970, 1, 1) + datetime.timedelta(seconds=w["date"])).year if w["date"] is not None else None
+        data.append(dict(w, id=None, cat=AWARD_RACE_CATS[w.pop("race_type")], year=yr, rank=None, etype=kind, eid=eid,
+                         role="Jockey" if kind == "person" else None))
+    hn = name_map(con, "horses", "horse_horse_id", "horse_name", [r["horse_id"] for r in data])
+    sn = name_map(con, "stables", "stable_stable_id", "stable_name", [r["stable_id"] for r in data])
+    pn = name_map(con, "persons", "person_person_id", "person_full_name", [r["jockey_id"] for r in data])
+    for r in data:
+        r["kind"] = "race" if r["cat"] in AWARD_RACE_CATS.values() else "season"
+        r["label"] = award_label(r["cat"], concepts) if r["kind"] == "season" else None
+        r["horse"], r["stable"], r["jockey"] = hn.get(r["horse_id"]), sn.get(r["stable_id"]), pn.get(r["jockey_id"])
+        r.setdefault("role", None)
+    data.sort(key=lambda r: (r["date"] or 0, -(r["rank"] or 0)), reverse=True)
+    return {"awards": data}
+
+
 def api_awards(con, q):
     """Season awards year by year (Group and Listed race wins are left out)."""
     if not has_table(con, "awards"):
@@ -2040,6 +2092,13 @@ def api_stable_finance(con, sid, q):
                 "income": {c[len("snapshot_income_"):]: r[c] or 0 for c in inc}, "income_total": r["snapshot_income_total"] or 0,
                 "expenses": {c[len("snapshot_expense_"):]: r[c] or 0 for c in exp}, "expense_total": r["snapshot_expense_total"] or 0,
             })
+        # month by month (the Financials tab's monthly breakdown)
+        cols_m = ", ".join(qident(c) for c in inc + exp + ["snapshot_income_total", "snapshot_expense_total"])
+        out["months"] = [{"date": m["date"], "year": m["year"], "income": {c[len("snapshot_income_"):]: m[c] or 0 for c in inc},
+                          "income_total": m["snapshot_income_total"] or 0,
+                          "expenses": {c[len("snapshot_expense_"):]: m[c] or 0 for c in exp}, "expense_total": m["snapshot_expense_total"] or 0}
+                         for m in rows(con, "select snapshot_date as date, %s as year, %s from stable_financial_snapshots where snapshot_stable_id=? order by snapshot_date"
+                                       % (FIN_YEAR.format("snapshot_date"), cols_m), (sid,))]
         # a year still in progress is compared with the same months of the year before ("prev_same")
         part = [y for y in out["years"] if y["months"] < 12]
         if part:
@@ -2058,9 +2117,13 @@ def api_stable_finance(con, sid, q):
                         "expense_total": sum(m["snapshot_expense_total"] or 0 for m in prev),
                     }
     if has_table(con, "transactions"):
-        # money paid out by the stable; the game's "Yearly Summary" rows roll up years it no longer keeps in detail, so they're left out
-        base = """from transactions where transaction_from_entity_type='stable' and transaction_from_entity_id=?
-            and coalesce(transaction_type,'') <> 'Yearly Summary'"""
+        # money paid out by the stable (or, with dir=in, paid to it); the game's "Yearly Summary" rows roll up years it no longer
+        # keeps in detail, so they're left out
+        incoming = q.get("dir") == "in"
+        out["detail_dir"] = "in" if incoming else "out"
+        me, other = ("to", "from") if incoming else ("from", "to")
+        base = """from transactions where transaction_%s_entity_type='stable' and transaction_%s_entity_id=?
+            and coalesce(transaction_type,'') <> 'Yearly Summary'""" % (me, me)
         yr = FIN_YEAR.format("transaction_date")
         out["detail_years"] = [r["year"] for r in rows(con, "select distinct %s as year %s order by 1" % (yr, base), (sid,))]
         year = to_int(q.get("year"), 0) or (out["detail_years"][-1] if out["detail_years"] else 0)
@@ -2074,8 +2137,8 @@ def api_stable_finance(con, sid, q):
                 c["n"] += r["n"]
                 c["types"].append({"type": r["type"] or "", "n": r["n"], "total": r["total"] or 0, "items": []})
             items = rows(con, """select transaction_category as cat, transaction_type as type, transaction_date as date, transaction_amount as amount,
-                    transaction_note as note, transaction_to_entity_type as to_type, transaction_to_entity_id as to_id
-                    %s and transaction_date >= ? and transaction_date < ? order by transaction_date desc, transaction_transaction_id desc""" % base, (sid, lo, hi))
+                    transaction_note as note, transaction_%s_entity_type as to_type, transaction_%s_entity_id as to_id
+                    %s and transaction_date >= ? and transaction_date < ? order by transaction_date desc, transaction_transaction_id desc""" % (other, other, base), (sid, lo, hi))
             # names for who was paid (people and stables; other payees are the bank, a racecourse and so on)
             def to_int_id(v):
                 try:
@@ -2084,9 +2147,11 @@ def api_stable_finance(con, sid, q):
                     return None
             pn = name_map(con, "persons", "person_person_id", "person_full_name", [to_int_id(i["to_id"]) for i in items if i["to_type"] == "person"])
             sn = name_map(con, "stables", "stable_stable_id", "stable_name", [to_int_id(i["to_id"]) for i in items if i["to_type"] == "stable"])
+            cn = name_map(con, "racecourses", "racecourse_racecourse_id", "racecourse_name", [to_int_id(i["to_id"]) for i in items if i["to_type"] == "racecourse"]) \
+                if has_table(con, "racecourses") else {}
             for it in items:
                 it["to_id"] = to_int_id(it["to_id"])
-                it["to_name"] = (pn if it["to_type"] == "person" else sn if it["to_type"] == "stable" else {}).get(it["to_id"])
+                it["to_name"] = {"person": pn, "stable": sn, "racecourse": cn}.get(it["to_type"], {}).get(it["to_id"])
             find = {(c["cat"], t["type"]): t for c in cats.values() for t in c["types"]}
             for it in items:
                 t = find.get((it["cat"] or "", it["type"] or ""))
@@ -3504,6 +3569,7 @@ ROUTES = [
     (re.compile(r"^/api/stable_finance/(-?\d+)$"), lambda con, m, q: api_stable_finance(con, int(m.group(1)), q)),
     (re.compile(r"^/api/stable_horse_money/(-?\d+)$"), lambda con, m, q: api_stable_horse_money(con, int(m.group(1)), q)),
     (re.compile(r"^/api/stable_awards/(-?\d+)$"), lambda con, m, q: api_stable_awards(con, int(m.group(1)), q)),
+    (re.compile(r"^/api/awards_of/(horse|person)/(-?\d+)$"), lambda con, m, q: api_awards_of(con, m.group(1), int(m.group(2)))),
     (re.compile(r"^/api/people$"), lambda con, m, q: api_people(con, q)),
     (re.compile(r"^/api/careers$"), lambda con, m, q: api_careers(con, q)),
     (re.compile(r"^/api/person/(-?\d+)$"), lambda con, m, q: api_person(con, int(m.group(1)))),
@@ -4147,7 +4213,7 @@ class Handler(BaseHTTPRequestHandler):
 
 # --------------------------------------------------------------------------- in-app updates
 
-VERSION = "13.4"
+VERSION = "13.5"
 BACKUP_DIR = os.path.join(APP_DIR, "backups")
 UPDATE_PENDING = os.path.join(DATA_DIR, "update_pending.json")
 UPDATE_RESULT = os.path.join(DATA_DIR, "update_result.json")

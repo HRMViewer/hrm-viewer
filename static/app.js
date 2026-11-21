@@ -337,14 +337,14 @@ function hashFor(parts, q = {}) {
 function go(parts, q) { location.hash = hashFor(parts, q); }
 
 const PAGES = {
-  "": homePage, horses: horsesPage, horse: (r) => horsePage(r.parts[1]), races: racesPage, race: Object.assign((r) => racePage(r.parts[1]), { after: () => {
+  "": homePage, horses: horsesPage, horse: (r) => (r.parts[2] === "awards" ? entityAwardsPage("horse", r) : horsePage(r.parts[1])), races: racesPage, race: Object.assign((r) => racePage(r.parts[1]), { after: () => {
     $$("[data-openall]", APP).forEach((b) => b.addEventListener("click", () => {
       const open = b.textContent.startsWith("Open");
       $$(".rtoggle", APP).forEach((t) => { if (t.classList.contains("open") !== open) t.click(); });
       b.textContent = open ? "Close all form" : "Open all form";
     }));
   } }),
-  stables: stablesPage, stable: (r) => (r.parts[2] === "races" ? stableRacesPage(r) : r.parts[2] === "financials" ? stableFinancePage(r) : r.parts[2] === "horse-money" ? stableHorseMoneyPage(r) : r.parts[2] === "awards" ? stableAwardsPage(r) : stablePage(r.parts[1])), people: peoplePage, jockeys: careersPage, person: (r) => personPage(r.parts[1]),
+  stables: stablesPage, stable: (r) => (r.parts[2] === "races" ? stableRacesPage(r) : r.parts[2] === "financials" ? stableFinancePage(r) : r.parts[2] === "horse-money" ? stableHorseMoneyPage(r) : r.parts[2] === "awards" ? stableAwardsPage(r) : stablePage(r.parts[1])), people: peoplePage, jockeys: careersPage, person: (r) => (r.parts[2] === "awards" ? entityAwardsPage("person", r) : personPage(r.parts[1])),
   courses: coursesPage, course: Object.assign((r) => coursePage(r.parts[1]), { after: (r) => coursePage.after && coursePage.after(r) }), tables: tablesPage,
   pedigrees: pedigreesPage, pedigree: Object.assign((r) => pedigreePage(r.parts[1], r.q), { after: (r) => pedigreePage.after && pedigreePage.after(r) }), "horse-table": horseTablePage, "stable-table": stableTablePage,
   versions: versionsPage, meetings: meetingsPage, awards: (r) => awardsPage(r.q || {}), settings: Object.assign(() => settingsPage(), { after: () => settingsPage.after() }), databases: Object.assign(() => databasesPage(), { after: () => databasesPage.after() }),
@@ -1530,21 +1530,27 @@ async function horsesPage(route) {
   }, route);
 }
 
+// a horse's page heading and its tabs (Overview · Awards)
+function horseHead(d, on) {
+  const h = d.horse, id = h.horse_horse_id;
+  const a = age(h.horse_birth_date, h.horse_deceased_date);
+  const dead = isNum(h.horse_deceased_date);
+  const pic = horsePic(h.horse_horse_id);
+  // the main photo is the horse's profile picture, next to its name
+  return `<div class="page-head"><div class="hp-head">${pic ? `<img class="hp-avatar" src="${pic}" alt="${esc(h.horse_name)}" data-gallery="${h.horse_horse_id}" data-gname="${esc(h.horse_name)}" data-tip="Open the gallery">` : ""}<div><div class="crumb"><a href="#/horses">Horses</a></div>
+    <h1>${esc(h.horse_name)} ${dead ? '<span class="badge dead">Deceased</span>' : ""}${removedBadge(d)}</h1>
+    <div class="sub">${a !== null ? a + "yo " : ""}${esc(h.horse_color || "")} ${esc((h.horse_gender || "").toLowerCase())} · ${esc(h.horse_breed || "")}
+    · Foaled ${fDate(h.horse_birth_date)}${dead ? ` · Died ${fDate(h.horse_deceased_date)} ${esc(h.horse_death_cause || "")}` : ""}
+    ${d.stable ? ` · ${L.stable(d.stable.id, d.stable.name)}` : ""}</div>${removedNote(d)}</div></div>
+    <div style="display:flex;gap:8px"><button class="btn" data-gallery="${h.horse_horse_id}" data-gname="${esc(h.horse_name)}">${ICON_PHOTO}${pic ? "Gallery" : "Add photos"}</button></div></div>
+    <div class="subtabs"><a href="#/horse/${id}" class="${on === "overview" ? "on" : ""}">Overview</a><a href="#/horse/${id}/awards" class="${on === "awards" ? "on" : ""}">Awards${(d.awards || []).length ? ` <span class="tab-n">${fNum(d.awards.length)}</span>` : ""}</a></div>`;
+}
 async function horsePage(id) {
   const d = await api("horse/" + id);
   const h = d.horse;
   const res = d.results || [];
   const wins = res.filter((r) => r.rank === 1).length, seconds = res.filter((r) => r.rank === 2).length, thirds = res.filter((r) => r.rank === 3).length;
-  const a = age(h.horse_birth_date, h.horse_deceased_date);
-  const dead = isNum(h.horse_deceased_date);
-  const pic = horsePic(h.horse_horse_id);
-  // the main photo is the horse's profile picture, next to its name
-  let html = `<div class="page-head"><div class="hp-head">${pic ? `<img class="hp-avatar" src="${pic}" alt="${esc(h.horse_name)}" data-gallery="${h.horse_horse_id}" data-gname="${esc(h.horse_name)}" data-tip="Open the gallery">` : ""}<div><div class="crumb"><a href="#/horses">Horses</a></div>
-    <h1>${esc(h.horse_name)} ${dead ? '<span class="badge dead">Deceased</span>' : ""}${removedBadge(d)}</h1>
-    <div class="sub">${a !== null ? a + "yo " : ""}${esc(h.horse_color || "")} ${esc((h.horse_gender || "").toLowerCase())} · ${esc(h.horse_breed || "")}
-    · Foaled ${fDate(h.horse_birth_date)}${dead ? ` · Died ${fDate(h.horse_deceased_date)} ${esc(h.horse_death_cause || "")}` : ""}
-    ${d.stable ? ` · ${L.stable(d.stable.id, d.stable.name)}` : ""}</div>${removedNote(d)}</div></div>
-    <div style="display:flex;gap:8px"><button class="btn" data-gallery="${h.horse_horse_id}" data-gname="${esc(h.horse_name)}">${ICON_PHOTO}${pic ? "Gallery" : "Add photos"}</button></div></div>`;
+  let html = horseHead(d, "overview");
   html += tiles([
     ["Rating", fNum(h.horse_international_rating), `Peak ${fNum(h.horse_peak_rating)}`],
     ["Career earnings", fMoneyShort(h.horse_career_earnings)],
@@ -1705,7 +1711,7 @@ async function horsePage(id) {
   ], aw, { empty: "No awards.", rowClass: (r) => (aw.indexOf(r) >= SHOW ? "more-row" : "") });
   const ev = d.events || [];
   html += `<div class="grid cols-2" style="margin-top:16px">
-    ${panel("Awards", expandable(awTable, aw.length, SHOW), aw.length ? (awSummary ? awSummary + " · " : "") + `${aw.length} in all` : "")}
+    ${panel("Awards", expandable(awTable, aw.length, SHOW), (aw.length ? (awSummary ? awSummary + " · " : "") + `${aw.length} in all · ` : "") + `<a href="#/horse/${h.horse_horse_id}/awards">Awards tab</a>`)}
     ${panel("News", events(ev, SHOW), ev.length > SHOW ? `latest ${SHOW} of ${ev.length}` : "")}</div>`;
 
   html += `<div style="margin-top:16px">${panel("Offspring", table([
@@ -2244,13 +2250,10 @@ async function stablePage(id) {
     { h: "Condition", cls: "num", f: (r) => fNum(r.condition) + "%" }, { h: "Value", cls: "num", f: (r) => fMoneyShort(r.value) },
     { h: "Earnings", cls: "num", f: (r) => fMoney(r.earnings) },
   ], d.horses, { empty: "No horses." }))}</div>`;
-  const breakdown = Object.entries(lf).filter(([k, v]) => /^snapshot_(income|expense)_/.test(k) && !/_total$/.test(k) && isNum(v) && v !== 0)
-    .map(([k, v]) => [esc(k.replace("snapshot_", "").replace(/_/g, " ").replace(/^./, (x) => x.toUpperCase())), fMoney(v)]);
   html += `<div class="grid cols-2" style="margin-top:16px">${panel("Staff", table([
     { h: "Role", f: (r) => esc(r.role) }, { h: "Name", f: (r) => L.person(r.id, r.name) }, { h: "Since", cls: "nowrap", f: (r) => fDate(r.start) },
     { h: "Salary", cls: "num", f: (r) => fMoney(r.salary) },
   ], d.staff, { empty: "No staff." }))}
-    ${panel("Latest month", breakdown.length ? kv(breakdown) : '<div class="empty">No figures.</div>', lf.snapshot_date ? fDate(lf.snapshot_date) : "")}
     ${panel("Top shareholders", table([
       { h: "Investor", f: (r) => L.person(r.id, r.name) }, { h: "Shares", cls: "num", f: (r) => fNum(r.shares) },
       { h: "Stake", cls: "num", f: (r) => (s.stable_total_shares ? ((100 * r.shares) / s.stable_total_shares).toFixed(1) + "%" : "—") },
@@ -2343,9 +2346,57 @@ document.addEventListener("click", (e) => {
   box.querySelector(".fc-table").classList.toggle("pct-mode", b.dataset.fcmode === "pct");
 });
 
+// Financials → Month by month: one year at a time (newest first), each month with ▸ for its categories
+function finMonthly(months) {
+  if (!months.length) return '<div class="empty">No monthly figures for this stable.</div>';
+  const MN = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+  const years = [...new Set(months.map((m) => m.year))].sort((a, b) => b - a);
+  const cats = (o, sign) => Object.entries(o || {}).filter(([, v]) => v).sort((a, b) => b[1] - a[1])
+    .map(([k, v]) => `<tr><td>${esc(finLabel(k))}</td><td class="num">${finAmt(v)}</td></tr>`).join("") || `<tr><td class="muted" colspan="2">No ${sign}.</td></tr>`;
+  const body = years.map((y, yi) => {
+    const ms = months.filter((m) => m.year === y).sort((a, b) => b.date - a.date);
+    const tot = ms.reduce((a, m) => [a[0] + m.income_total, a[1] + m.expense_total], [0, 0]);
+    return `<tbody data-mb-year="${y}" ${yi ? "hidden" : ""}>${ms.map((m, i) => {
+      const net = m.income_total - m.expense_total, d = new Date(m.date * 1000), key = `${y}-${i}`;
+      return `<tr class="mb-row"><td><button class="fin-tg" data-mb="${key}" title="Show the categories">▸</button> <b>${MN[d.getUTCMonth()]}</b> <span class="muted small">${d.getUTCFullYear()}</span></td>
+        <td class="num">${finAmt(m.income_total)}</td><td class="num">${finAmt(m.expense_total)}</td><td class="num">${finAmt(net, net >= 0 ? "pos" : "neg")}</td></tr>
+        <tr class="fin-items" data-mb-row="${key}" hidden><td colspan="4"><div class="mb-cats">
+          <div><h4>Income</h4><table class="data nosort mb-cat">${cats(m.income, "income")}</table></div>
+          <div><h4>Expenses</h4><table class="data nosort mb-cat">${cats(m.expenses, "expenses")}</table></div></div></td></tr>`;
+    }).join("")}<tr class="mb-total"><td>${y} total <span class="muted small">${ms.length} month${ms.length === 1 ? "" : "s"}</span></td><td class="num">${finAmt(tot[0])}</td><td class="num">${finAmt(tot[1])}</td>
+      <td class="num">${finAmt(tot[0] - tot[1], tot[0] - tot[1] >= 0 ? "pos" : "neg")}</td></tr></tbody>`;
+  }).join("");
+  return `<div class="fd-tools"><div class="seg" role="group" aria-label="Year">${years.map((y, i) => `<button data-mb-y="${y}" class="${i ? "" : "on"}">${y}</button>`).join("")}</div>
+    <span class="grow"></span><button class="btn sm" data-mb-all="open">Open all</button><button class="btn sm" data-mb-all="close">Close all</button></div>
+    <div class="tbl-wrap"><table class="data fin-monthly nosort"><thead><tr><th>Month</th><th class="num">Income</th><th class="num">Expenses</th><th class="num">Net</th></tr></thead>${body}</table></div>`;
+}
+document.addEventListener("click", (e) => {
+  const y = e.target.closest("[data-mb-y]");
+  if (y) {
+    const p = y.closest(".panel");
+    p.querySelectorAll("[data-mb-y]").forEach((b) => b.classList.toggle("on", b === y));
+    p.querySelectorAll("tbody[data-mb-year]").forEach((tb) => (tb.hidden = tb.dataset.mbYear !== y.dataset.mbY));
+    return;
+  }
+  const t = e.target.closest("[data-mb]");
+  if (t) {
+    const row = t.closest("table").querySelector(`[data-mb-row="${t.dataset.mb}"]`);
+    row.hidden = !row.hidden; t.textContent = row.hidden ? "▸" : "▾";
+    return;
+  }
+  const all = e.target.closest("[data-mb-all]");
+  if (all) {
+    const tb = all.closest(".panel").querySelector("tbody[data-mb-year]:not([hidden])");
+    if (!tb) return;
+    const open = all.dataset.mbAll === "open";
+    tb.querySelectorAll("[data-mb-row]").forEach((r) => (r.hidden = !open));
+    tb.querySelectorAll("[data-mb]").forEach((b) => (b.textContent = open ? "▾" : "▸"));
+  }
+});
+
 async function stableFinancePage(route) {
   const id = route.parts[1], q = route.q;
-  const [d, fin] = await Promise.all([api("stable/" + id), api(`stable_finance/${id}?` + new URLSearchParams(q.year ? { year: q.year } : {}))]);
+  const [d, fin] = await Promise.all([api("stable/" + id), api(`stable_finance/${id}?` + new URLSearchParams({ ...(q.year ? { year: q.year } : {}), ...(q.dir === "in" ? { dir: "in" } : {}) }))]);
   let html = stableHead(d, "financials");
   const lf = d.latest_finance || {}, monthly = d.finance || [];
   const years = (fin.years || []).map((y) => ({ ...y, net: (y.income_total || 0) - (y.expense_total || 0) }));
@@ -2382,13 +2433,19 @@ async function stableFinancePage(route) {
       { name: "Net", color: "#3e6e9e", dash: true, points: years.map((y) => [yearStart(y.year) + 182 * 86400, y.net]) }], { ...STABLE_LOG, ranges: false }), "Each dot is a whole year") : ""}</div>`;
   html += `<div style="margin-top:16px">${panel("Income by category", finYearTable(years, fin.income_cats || [], "income", "income_total"))}</div>
     <div style="margin-top:16px">${panel("Expenses by category", finYearTable(years, fin.expense_cats || [], "expenses", "expense_total", true), "The game's own expense categories · the detail below breaks them down")}</div>`;
+  html += `<div style="margin-top:16px">${panel("Month by month", finMonthly(fin.months || []), "Each month's income and expenses · ▸ shows the categories")}</div>`;
   // detail: the transaction log, one year at a time: category → type → each payment
   const det = fin.detail, dys = fin.detail_years || [];
-  const pick = dys.length > 1 ? seg("year", { year: String(det ? det.year : "") }, dys.slice().reverse().map((y) => [String(y), String(y)]), String(dys[dys.length - 1])) : "";
+  const inc = fin.detail_dir === "in";
+  const W = inc ? { what: "Income", paid: "Received in", payee: "Paid by", total: "Total received", filter: "Filter by type, note or who paid…", payments: "Payments", none: "No money received that year." }
+    : { what: "Expense", paid: "Paid out in", payee: "Paid to", total: "Total paid out", filter: "Filter by type, note or who was paid…", payments: "Payments", none: "No payments recorded that year." };
+  const dirSeg = seg("dir", q, [["out", "Expenses"], ["in", "Income"]], "out");
+  const pick = dirSeg + (dys.length > 1 ? seg("year", { year: String(det ? det.year : "") }, dys.slice().reverse().map((y) => [String(y), String(y)]), String(dys[dys.length - 1])) : "");
   let body;
-  if (!det || !det.categories.length) body = (pick ? `<div class="fd-tools">${pick}</div>` : "") + `<div class="empty">${dys.length ? "No payments recorded that year." : "The game hasn't kept individual payments for this stable (older years are only kept as yearly totals)."}</div>`;
+  if (!det || !det.categories.length) body = `<div class="fd-tools">${pick}</div>` + `<div class="empty">${dys.length ? W.none : "The game hasn't kept individual payments for this stable (older years are only kept as yearly totals)."}</div>`;
   else {
-    const payee = (x) => (x.to_type === "person" && x.to_name ? L.person(x.to_id, x.to_name) : x.to_type === "stable" && x.to_name ? L.stable(x.to_id, x.to_name) : esc(finLabel(x.to_type || "—")));
+    const payee = (x) => (x.to_type === "person" && x.to_name ? L.person(x.to_id, x.to_name) : x.to_type === "stable" && x.to_name ? L.stable(x.to_id, x.to_name)
+      : x.to_type === "racecourse" && x.to_name ? L.course(x.to_id, x.to_name) : esc(finLabel(x.to_type || "—")));
     const bar = (pct, cls) => `<span class="sbar ${cls}"><i style="width:${Math.max(0, Math.min(100, pct)).toFixed(1)}%"></i></span>`;
     const top = det.categories[0];
     // long lists start tidy: only the biggest category is opened out
@@ -2407,24 +2464,24 @@ async function stableFinancePage(route) {
         rowsHtml += `<tr class="fin-type" data-fcat-of="${ci}" data-fsearch="${esc(search)}" ${shut ? "hidden" : ""}><td><button class="fin-tg" data-fin="${key}" title="Show each payment">▸</button> ${esc(t.type || "Other")}</td>
           <td class="num">${fNum(t.n)}</td><td class="num">${finAmt(t.total)}</td><td class="num">${t.n ? finAmt(t.total / t.n) : "—"}</td>
           <td class="fd-share">${bar(tp, "type")}<span class="sval muted">${fNum(tp, 0)}% of ${esc(finLabel(c.cat).toLowerCase())}</span></td></tr>
-          <tr class="fin-items" data-fin-row="${key}" hidden><td colspan="5"><table class="data fd-pay nosort"><thead><tr><th>Date</th><th>Paid to</th><th>Note</th><th class="num">Amount</th></tr></thead><tbody>
+          <tr class="fin-items" data-fin-row="${key}" hidden><td colspan="5"><table class="data fd-pay nosort"><thead><tr><th>Date</th><th>${W.payee}</th><th>Note</th><th class="num">Amount</th></tr></thead><tbody>
           ${t.items.map((x) => `<tr data-fsearch="${esc(`${x.note || ""} ${x.to_name || ""} ${t.type} ${finLabel(c.cat)}`.toLowerCase())}"><td class="nowrap">${fDate(x.date)}</td><td>${payee(x)}</td><td>${esc(x.note || "")}</td><td class="num">${fMoney(x.amount)}</td></tr>`).join("") || '<tr><td colspan="4" class="muted">No payments.</td></tr>'}
           </tbody></table>${t.n > t.items.length ? `<div class="muted small">Newest ${fNum(t.items.length)} of ${fNum(t.n)} payments.</div>` : ""}</td></tr>`;
       });
     });
     const nPay = det.categories.reduce((a, c) => a + c.n, 0);
     body = `<div class="fd-summary">
-        <div><span class="lbl">Paid out in ${det.year}</span><b>${finAmt(det.total)}</b></div>
+        <div><span class="lbl">${W.paid} ${det.year}</span><b>${finAmt(det.total)}</b></div>
         <div><span class="lbl">Payments</span><b>${fNum(nPay)}</b></div>
         <div><span class="lbl">Biggest category</span><b>${esc(finLabel(top.cat))}</b> <span class="muted">${det.total ? fNum((100 * top.total) / det.total, 0) + "%" : ""}</span></div>
       </div>
-      <div class="fd-tools">${pick}<input type="search" class="fd-filter" placeholder="Filter by type, note or who was paid…" aria-label="Filter payments">
+      <div class="fd-tools">${pick}<input type="search" class="fd-filter" placeholder="${W.filter}" aria-label="Filter payments">
         <span class="grow"></span><button class="btn sm" data-fd-all="open" data-tip="Show every type in every category">Open all</button><button class="btn sm" data-fd-all="close" data-tip="Fold everything back to the categories">Close all</button></div>
       <div class="fd-none empty" hidden>Nothing matches that filter.</div>
-      <div class="tbl-wrap"><table class="data fin-detail nosort"><thead><tr><th>Category / type</th><th class="num">Payments</th><th class="num">Total</th><th class="num">Average</th><th class="fd-share">Share</th></tr></thead>
-      <tbody>${rowsHtml}</tbody><tfoot><tr><td>Total paid out</td><td class="num">${fNum(nPay)}</td><td class="num">${finAmt(det.total)}</td><td class="num">${nPay ? finAmt(det.total / nPay) : "—"}</td><td></td></tr></tfoot></table></div>`;
+      <div class="tbl-wrap"><table class="data fin-detail nosort${inc ? " is-in" : ""}"><thead><tr><th>Category / type</th><th class="num">Payments</th><th class="num">Total</th><th class="num">Average</th><th class="fd-share">Share</th></tr></thead>
+      <tbody>${rowsHtml}</tbody><tfoot><tr><td>${W.total}</td><td class="num">${fNum(nPay)}</td><td class="num">${finAmt(det.total)}</td><td class="num">${nPay ? finAmt(det.total / nPay) : "—"}</td><td></td></tr></tfoot></table></div>`;
   }
-  html += `<div style="margin-top:16px">${panel(`Expense detail${det ? " · " + det.year : ""}`, body,
+  html += `<div style="margin-top:16px">${panel(`${W.what} detail${det ? " · " + det.year : ""}`, body,
     "From the game's payment log, so it can differ a little from the monthly totals above · ▸ shows each payment")}</div>`;
   return html;
 }
@@ -2485,6 +2542,54 @@ document.addEventListener("input", (e) => {
   });
   panel.querySelector(".fd-none").hidden = any;
 });
+
+// ------------------------------------------------------------------ horse / person awards tab
+// Every season award and Group/Listed race win of a horse, or of a person (their own awards, and the race wins they rode,
+// trained, managed or looked after).
+async function entityAwardsPage(kind, route) {
+  const id = route.parts[1], q = route.q || {};
+  const [d, aw] = await Promise.all([api(kind + "/" + id), api(`awards_of/${kind}/${id}`)]);
+  let html = kind === "horse" ? horseHead(d, "awards") : personHead(d, "awards");
+  const all = aw.awards || [];
+  const name = kind === "horse" ? d.horse.horse_name : d.person.person_full_name;
+  if (!all.length) return html + `<div class="empty">${esc(name)} hasn't won or placed in any awards yet. <a href="#/awards">See all awards</a></div>`;
+  const GR = { g1_race: "G1", g2_race: "G2", g3_race: "G3", listed_race: "listed" };
+  const result = (a) => (a.kind === "race" ? "won" : a.cat === "hall_of_fame_nominee" ? "nominee" : a.cat === "worst_overall" ? "worst" : (a.rank || 1) === 1 ? "won" : "placed");
+  const season = all.filter((a) => a.kind === "season"), races = all.filter((a) => a.kind === "race");
+  const grades = Object.keys(GR).map((c) => [c, races.filter((a) => a.cat === c).length]).filter(([, n]) => n)
+    .map(([c, n]) => `${n}× ${GR[c] === "listed" ? "Listed" : GR[c]}`).join(" · ");
+  const roles = [...new Set(races.map((a) => a.role).filter(Boolean))];
+  const tl = [
+    ["Season awards", fNum(season.length), season.length ? `${fNum(season.filter((a) => result(a) === "won").length)} won` : "None yet"],
+    ["Group & Listed wins", fNum(races.length), grades || "None yet"],
+  ];
+  if (kind === "person") roles.forEach((r) => tl.push([`Race wins as ${r.toLowerCase()}`, fNum(races.filter((a) => a.role === r).length)]));
+  html += tiles(tl);
+  const years = [...new Set(all.map((a) => a.year).filter(Boolean))].sort((a, b) => b - a);
+  const type = q.type || "all", res = q.result || "all", yr = q.year || "", term = (q.q || "").toLowerCase();
+  const typeOpts = [["all", `Everything (${all.length})`], ["season", `Season awards (${season.length})`], ["race", `Race wins (${races.length})`]]
+    .concat(kind === "person" && roles.length > 1 ? roles.map((r) => [r, `As ${r.toLowerCase()} (${races.filter((a) => a.role === r).length})`]) : []);
+  const rows = all.filter((a) => (type === "all" || a.kind === type || a.role === type) && (res === "all" || result(a) === "won") && (!yr || String(a.year) === String(yr))
+    && (!term || `${a.label || ""} ${a.description || ""} ${a.horse || ""} ${a.stable || ""} ${a.jockey || ""}`.toLowerCase().includes(term)));
+  const badge = (a) => ({ won: `<span class="badge good">${a.kind === "race" ? "Won" : a.cat === "hall_of_fame" ? "Inducted" : "Winner"}</span>`,
+    placed: `<span class="badge">Runner-up · ${ord(a.rank)}</span>`, nominee: `<span class="badge">Nominated</span>`, worst: `<span class="badge dead">Worst of the year</span>` }[result(a)]);
+  const cols = [
+    { h: "Year", cls: "nowrap", f: (a) => (a.year ? `<b>${a.year}</b>` : "—") },
+    { h: "Award", f: (a) => (a.kind === "race" ? `${grade(GR[a.cat])} <span class="small muted">race win</span>` : esc(a.label)) },
+    { h: "Result", cls: "nowrap", f: badge },
+    { h: "Details", f: (a) => (a.kind === "race" && a.race_id ? L.race(a.race_id, a.description, "Race") : a.description ? esc(a.description) : '<span class="muted">—</span>') },
+  ];
+  if (kind === "person") cols.splice(2, 0, { h: "Role", f: (a) => (a.role ? esc(a.role) : '<span class="muted">Own award</span>') }, { h: "Horse", f: (a) => (a.kind === "race" && a.horse_id ? L.horse(a.horse_id, a.horse) : '<span class="muted">—</span>') });
+  else cols.splice(2, 0, { h: "Jockey", f: (a) => (a.jockey_id ? L.person(a.jockey_id, a.jockey) : '<span class="muted">—</span>') });
+  cols.push({ h: "Stable", f: (a) => (a.stable_id ? L.stable(a.stable_id, a.stable) : '<span class="muted">—</span>') });
+  html += `<section class="panel"><div class="filters" style="margin-bottom:12px">
+    ${seg("type", q, typeOpts, "all")}${seg("result", q, [["all", "Wins and places"], ["won", "Wins only"]], "all")}
+    ${select("year", q, [["", "All years"]].concat(years.map((y) => [String(y), String(y)])), "Only this year's awards")}
+    ${searchBox(q, kind === "person" ? "Search awards, horses or stables" : "Search awards, jockeys or stables")}</div>
+    ${table(cols, rows, { rowClass: (a) => (result(a) === "won" ? "win" : ""), empty: "No awards match these filters." })}
+    <div class="help">The stable is the one ${kind === "horse" ? "the horse raced for" : "they worked for"} at the time.${kind === "person" ? " Race wins are Group and Listed races they rode, trained, managed or looked after." : ""} <a href="#/awards">All season awards</a></div></section>`;
+  return html;
+}
 
 // ------------------------------------------------------------------ stable awards tab
 // Every award tied to the stable: awards to the stable itself, awards won by its horses while they were in this stable
@@ -2689,16 +2794,22 @@ async function careersPage(route) {
   return html;
 }
 
-async function personPage(id) {
-  const d = await api("person/" + id);
-  const p = d.person, rs = d.ride_summary || {};
+// a person's page heading and its tabs (Overview · Awards)
+function personHead(d, on) {
+  const p = d.person, id = p.person_person_id;
   const dead = isNum(p.person_deceased_date);
   const current = (d.jobs || []).filter((j) => !j.end);
-  let html = `<div class="page-head"><div><div class="crumb"><a href="#/people">People</a></div>
+  return `<div class="page-head"><div><div class="crumb"><a href="#/people">People</a></div>
     <h1>${esc(p.person_full_name)} ${dead ? '<span class="badge dead">Deceased</span>' : ""}${removedBadge(d)}${p.person_is_player === "true" ? ' <span class="badge good">You</span>' : ""}</h1>
     <div class="sub">${fNum(age(p.person_birth_date, p.person_deceased_date))} years old · ${esc(p.person_sex || "")}${d.city ? ` · ${esc(d.city.city)}, ${esc(d.city.country)}` : ""}
     ${current.length ? " · " + current.map((j) => `${esc(j.role)} at ${L.stable(j.stable_id, j.stable)}`).join(", ") : ""}
-    ${d.owns && d.owns.length ? " · Owns " + d.owns.map((s) => L.stable(s.id, s.name)).join(", ") : ""}</div>${removedNote(d)}</div></div>`;
+    ${d.owns && d.owns.length ? " · Owns " + d.owns.map((s) => L.stable(s.id, s.name)).join(", ") : ""}</div>${removedNote(d)}</div></div>
+    <div class="subtabs"><a href="#/person/${id}" class="${on === "overview" ? "on" : ""}">Overview</a><a href="#/person/${id}/awards" class="${on === "awards" ? "on" : ""}">Awards</a></div>`;
+}
+async function personPage(id) {
+  const d = await api("person/" + id);
+  const p = d.person, rs = d.ride_summary || {};
+  let html = personHead(d, "overview");
   html += tiles([
     ["Rides", fNum(rs.rides)], ["Wins", fNum(rs.wins), `Strike rate ${pct(rs.wins, rs.rides)}`], ["Placed (top 3)", fNum(rs.places), pct(rs.places, rs.rides)],
     ["Prize money as jockey", fMoneyShort(rs.prize)], ["Reputation", fNum(p.person_reputation, 1)], ["Fame", fNum(p.person_fame_calculated, 0)],
@@ -2728,7 +2839,7 @@ async function personPage(id) {
     { h: "From", cls: "nowrap", f: (r) => fDate(r.start) }, { h: "To", cls: "nowrap", f: (r) => (r.end ? fDate(r.end) : "Now") }, { h: "Salary", cls: "num", f: (r) => fMoney(r.salary) },
   ], d.jobs, { empty: "No jobs on record." }))}
     ${panel("Traits", chips(d.traits))}
-    ${panel("Awards", table([{ h: "Year", f: (r) => esc(r.year) }, { h: "Award", f: (r) => esc((r.category || "").replace(/_/g, " ")) }, { h: "For", f: (r) => esc(r.description || "") }], d.awards, { empty: "No awards." }))}
+    ${panel("Awards", table([{ h: "Year", f: (r) => esc(r.year) }, { h: "Award", f: (r) => esc((r.category || "").replace(/_/g, " ")) }, { h: "For", f: (r) => esc(r.description || "") }], d.awards, { empty: "No awards of their own." }), `<a href="#/person/${p.person_person_id}/awards">Awards tab · with race wins</a>`)}
     ${panel("News", events(d.events))}</div>`;
   html += `<div style="margin-top:16px">${allFields(p)}</div>`;
   return html;
@@ -3694,7 +3805,9 @@ function tableToCsv(tbl) {
   }
   const keep = head.map((h) => h !== "");
   const lines = [head.filter((_, i) => keep[i]).map(q).join(",")];
-  for (const tr of tbl.tBodies[0] ? tbl.tBodies[0].rows : []) {
+  // every visible body (tables like Month by month keep one body per year and show one at a time)
+  const trs = [...tbl.tBodies].filter((tb) => !tb.hidden).flatMap((tb) => [...tb.rows]);
+  for (const tr of trs) {
     if (tr.cells.length === 1 && tr.cells[0].colSpan > 1) continue;   // fold-out form panels
     lines.push([...tr.cells].filter((_, i) => keep[i]).map((td) => q(td.dataset.csv !== undefined ? td.dataset.csv : clean(td))).join(","));
   }
