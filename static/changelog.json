@@ -1,5 +1,17 @@
 [
   {
+    "version": "14.5",
+    "date": "2026-11-21",
+    "title": "Stable rankings",
+    "changes": [
+      "New Rankings tab under Stables: league tables of every open stable, like the game's own. Choose Cash earnings, Times, Staff, Prestige, Horses, Traders, Breeders or Value.",
+      "Each table shows the rank, stable, owner and country (with its flag), and your stables are highlighted. Your stables shows just yours with their rank, and search finds a stable, owner or country.",
+      "Cash earnings, Times and Traders can be seen for any year or all time. Prestige shows how many places each stable has moved since 1 January.",
+      "Value uses the stable's market value with its horses, property (racecourses and auction houses), cash, loans and net worth.",
+      "Country flags now show on Windows too, using a small bundled flag font (Twemoji, CC BY 4.0)."
+    ]
+  },
+  {
     "version": "14.4",
     "date": "2026-11-21",
     "title": "Fix: People page error on Windows",

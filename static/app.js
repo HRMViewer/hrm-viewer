@@ -120,7 +120,7 @@ const SECTIONS = [
   { k: "home", label: "Home", ic: "home", href: "#/", routes: [""] },
   { k: "racing", label: "Racing", ic: "flag", href: "#/meetings", routes: ["meetings", "meeting", "races", "race", "courses", "course"] },
   { k: "horses", label: "Horses", ic: "horse", href: "#/horses", routes: ["horses", "horse", "horse-table", "pedigrees", "pedigree"] },
-  { k: "stables", label: "Stables", ic: "barn", href: "#/stables", routes: ["stables", "stable", "stable-table"] },
+  { k: "stables", label: "Stables", ic: "barn", href: "#/stables", routes: ["stables", "stable", "stable-table", "stable-rankings"] },
   { k: "people", label: "People", ic: "user", href: "#/people-overview", routes: ["people-overview", "people", "person", "jockeys"] },
   { k: "awards", label: "Awards", ic: "trophy", href: "#/awards", routes: ["awards"] },
   { k: "settings", label: "Settings", ic: "cog", href: "#/settings", routes: ["settings", "databases", "tables", "versions"], right: true },
@@ -132,7 +132,7 @@ const SIDE = {
     ["Places", [["#/courses", "pin", "Racecourses"]]]],
   horses: [["Horses", [["#/horses", "horse", "All horses"], ["#/horse-table", "table", "Horse table"]]],
     ["Breeding", [["#/pedigrees", "tree", "Top sires"], ["#/pedigrees?kind=dams", "tree", "Top dams"], ["#/pedigrees?kind=damsires", "tree", "Broodmare sires"]]]],
-  stables: [["Stables", [["#/stables", "barn", "All stables"], ["#/stable-table", "grid", "Stable table"]]]],
+  stables: [["Stables", [["#/stables", "barn", "All stables"], ["#/stable-table", "grid", "Stable table"], ["#/stable-rankings", "trophy", "Rankings"]]]],
   people: [["People", [["#/people-overview", "home", "Overview"], ["#/people", "user", "All people"], ["#/jockeys", "trophy", "Jockey stats"], ["#/people?role=Jockey&sort=jockey_wins", "trophy", "Top jockeys"], ["#/people?role=Jockey", "user", "Jockeys"],
     ["#/people?role=Trainer", "user", "Trainers"], ["#/people?role=Head%20trainer", "user", "Head trainers"], ["#/people?role=Manager", "user", "Managers"]]]],
   awards: [["Awards", [["#/awards", "trophy", "Awards by year"], ["#/awards?view=winners", "star", "Most awards"], ["#/awards?group=hof", "star", "Hall of Fame"]]],
@@ -347,7 +347,7 @@ const PAGES = {
   stables: stablesPage, stable: (r) => (r.parts[2] === "races" ? stableRacesPage(r) : r.parts[2] === "financials" ? stableFinancePage(r) : r.parts[2] === "horse-money" ? stableHorseMoneyPage(r) : r.parts[2] === "awards" ? stableAwardsPage(r) : stablePage(r.parts[1])), people: peoplePage, "people-overview": peopleOverviewPage, jockeys: careersPage, person: Object.assign((r) => (r.parts[2] === "awards" ? entityAwardsPage("person", r) : r.parts[2] === "family" ? personFamilyPage(r) : r.parts[2] === "tree" ? personTreePage(r)
     : r.parts[2] === "dynasty" ? personDynastyPage(r) : personPage(r.parts[1])), { after: (r) => r.parts[2] === "tree" && tcInit() }),
   courses: coursesPage, course: Object.assign((r) => coursePage(r.parts[1]), { after: (r) => coursePage.after && coursePage.after(r) }), tables: tablesPage,
-  pedigrees: pedigreesPage, pedigree: Object.assign((r) => pedigreePage(r.parts[1], r.q), { after: (r) => pedigreePage.after && pedigreePage.after(r) }), "horse-table": horseTablePage, "stable-table": stableTablePage,
+  pedigrees: pedigreesPage, pedigree: Object.assign((r) => pedigreePage(r.parts[1], r.q), { after: (r) => pedigreePage.after && pedigreePage.after(r) }), "horse-table": horseTablePage, "stable-table": stableTablePage, "stable-rankings": stableRankingsPage,
   versions: versionsPage, meetings: meetingsPage, awards: (r) => awardsPage(r.q || {}), settings: Object.assign(() => settingsPage(), { after: () => settingsPage.after() }), databases: Object.assign(() => databasesPage(), { after: () => databasesPage.after() }),
   meeting: Object.assign((r) => meetingPage(r.parts[1]), { after: (r) => meetingPage.after && meetingPage.after(r) }),
 };
@@ -370,7 +370,7 @@ async function render() {
     const html = await fn(route);
     if (seq !== RENDER_SEQ) return;
     if (typeof html === "string") {
-      const tabKey = { courses: "racing", horses: "horses", "horse-table": "horses", pedigrees: "horses", stables: "stables", "stable-table": "stables" }[key];
+      const tabKey = { courses: "racing", horses: "horses", "horse-table": "horses", pedigrees: "horses", stables: "stables", "stable-table": "stables", "stable-rankings": "stables" }[key];
       APP.innerHTML = (tabKey && !route.parts[1] ? sectionTabs(tabKey, key) : "") + html;
     }
     if (fn.after) fn.after(route);
@@ -1907,7 +1907,7 @@ function bindRunnerToggles(root) {
 const SECTION_TABS = {
   racing: [["meetings", "#/meetings", "Meetings"], ["races", "#/races", "Races"], ["courses", "#/courses", "Racecourses"]],
   horses: [["horses", "#/horses", "All horses"], ["horse-table", "#/horse-table", "Horse table"], ["pedigrees", "#/pedigrees", "Pedigrees"]],
-  stables: [["stables", "#/stables", "All stables"], ["stable-table", "#/stable-table", "Stable table"]],
+  stables: [["stables", "#/stables", "All stables"], ["stable-table", "#/stable-table", "Stable table"], ["stable-rankings", "#/stable-rankings", "Rankings"]],
 };
 function sectionTabs(sec, active) {
   return `<div class="subtabs">${(SECTION_TABS[sec] || []).map(([k, h, t]) => `<a href="${h}" class="${k === active ? "on" : ""}">${t}</a>`).join("")}</div>`;
@@ -2219,7 +2219,7 @@ async function stablesPage(route) {
     title: "Stables", noun: "stables", endpoint: "stables", defaultSort: "prestige", ascDefault: ["name"], wide: true,
     filters: (q) => searchBox(q, "Search by name") + seg("status", q, [["active", "Active"], ["all", "Include closed"]], "active"),
     cols: [
-      { h: "Stable", sort: "name", f: (r) => `${L.stable(r.id, r.name)}${r.liquidated ? ' <span class="badge dead">Closed</span>' : ""}${r.id === (STATUS.player_stable || {}).id ? ' <span class="badge good">Yours</span>' : ""}` },
+      { h: "Stable", sort: "name", cls: "nowrap", f: (r) => `${L.stable(r.id, r.name)}${r.liquidated ? ' <span class="badge dead">Closed</span>' : ""}${r.id === (STATUS.player_stable || {}).id ? ' <span class="badge good">Yours</span>' : ""}` },
       { h: "Owner", f: (r) => L.person(r.owner_id, r.owner) },
       { h: "Horses", sort: "horses", cls: "num", f: (r) => fNum(r.horses) },
       { h: "Starts", sort: "starts", cls: "num grp-start", f: (r) => fNum(r.starts) },
@@ -3939,6 +3939,71 @@ async function horseTablePage(route) {
 }
 
 // ------------------------------------------------------------------ v2: Stable table tab
+// ------------------------------------------------------------------ stable rankings: league tables like the game's own
+// a country's flag from its two-letter code (drawn with the bundled flag font, since Windows has no flag emoji)
+const flagOf = (iso2) => (/^[A-Za-z]{2}$/.test(iso2 || "") ? String.fromCodePoint(...[...iso2.toUpperCase()].map((c) => 0x1f1e6 + c.charCodeAt(0) - 65)) : "");
+const SR_MONEY = (k) => (r) => fMoney(r[k]);
+const SR_N = (k) => (r) => fNum(r[k]);
+const SR_TABS = [
+  { k: "earnings", t: "Cash earnings", intro: (y) => `Prize money won by each stable's horses ${y ? "in " + y : "over all time"}, with their record.`, cols: [
+    { h: "Prize money", sort: "prize", f: SR_MONEY("prize") }, { h: "Races", sort: "starts", f: SR_N("starts") }, { h: "Wins", sort: "wins", f: SR_N("wins") },
+    { h: "Win %", sort: "winpct", f: (r) => (isNum(r.winpct) ? fNum(r.winpct, 0) + "%" : "—") }, { h: "Places", sort: "places", f: SR_N("places"), tip: "Finished 1st, 2nd or 3rd" },
+    { h: "Group wins", sort: "group", f: (r) => (r.group ? `${fNum(r.group)} <span class="muted small">${[["G1", r.g1], ["G2", r.g2], ["G3", r.g3]].filter((x) => x[1]).map(([g, n]) => `${n}×${g}`).join(" ")}</span>` : "0") },
+    { h: "Listed wins", sort: "listed", f: SR_N("listed") }] },
+  { k: "times", t: "Times", intro: (y) => `Course records: the fastest winning time at each course, track and distance. <b>Held now</b> counts records nobody has beaten since; <b>Set</b> counts every record run ${y ? "in " + y : "over all time"}, including ones since broken.`, cols: [
+    { h: "Records held", sort: "held", f: SR_N("held") }, { h: "Courses", sort: "courses", f: SR_N("courses"), tip: "Different racecourses where they hold a record" },
+    { h: "Records set", sort: "set_count", f: SR_N("set_count") }, { h: "Latest record", sort: "last_set", f: (r) => (r.last_set ? fDate(r.last_set) : "—"), date: true }] },
+  { k: "staff", t: "Staff", intro: () => "Everyone working for each stable now, by job, and what they're paid a year.", cols: [
+    { h: "Staff", sort: "staff", f: SR_N("staff") }, { h: "Jockeys", sort: "jockeys", f: SR_N("jockeys") }, { h: "Trainers", sort: "trainers", f: SR_N("trainers"), tip: "Trainers and head trainers" },
+    { h: "Managers", sort: "managers", f: SR_N("managers"), tip: "Managers and assistant managers" }, { h: "Stablehands", sort: "stablehands", f: SR_N("stablehands") },
+    { h: "Scouts", sort: "scouts", f: SR_N("scouts") }, { h: "Wages a year", sort: "wages", f: SR_MONEY("wages") }] },
+  { k: "prestige", t: "Prestige", intro: () => "Prestige now, and how each stable has moved up or down the prestige table since the year began.", cols: [
+    { h: "Prestige", sort: "prestige", f: (r) => fNum(r.prestige, 0) },
+    { h: "Since Jan 1", sort: "move", f: (r) => (!isNum(r.move) ? "—" : r.move > 0 ? `<span class="up">▲ ${fNum(r.move)}</span>` : r.move < 0 ? `<span class="down">▼ ${fNum(-r.move)}</span>` : `<span class="muted">–</span>`), tip: "Places gained or lost in the prestige table since the start of the year" },
+    { h: "Rank on Jan 1", sort: "start_rank", f: SR_N("start_rank"), asc: true }, { h: "Gained this year", sort: "this_year", f: (r) => fNum(r.this_year, 0) },
+    { h: "Fame", sort: "fame", f: (r) => fNum(r.fame, 0) }, { h: "Experience", sort: "experience", f: (r) => fNum(r.experience, 0) },
+    { h: "Legacy", sort: "legacy", f: (r) => fNum(r.legacy, 0) }, { h: "Level", sort: "level", f: SR_N("level") }] },
+  { k: "horses", t: "Horses", intro: () => "Horses each stable has now, by age at today's game date.", cols: [
+    { h: "Horses", sort: "horses", f: SR_N("horses") }, { h: "Foals", sort: "foals", f: SR_N("foals"), tip: "Under a year old" }, { h: "Yearlings", sort: "yearlings", f: SR_N("yearlings") },
+    { h: "2yo", sort: "two_yo", f: SR_N("two_yo") }, { h: "3yo+", sort: "older", f: SR_N("older") }, { h: "Mares in foal", sort: "in_foal", f: SR_N("in_foal") },
+    { h: "At stud", sort: "at_stud", f: SR_N("at_stud") }, { h: "Avg rating", sort: "avg_rating", f: (r) => fNum(r.avg_rating, 0) },
+    { h: "Top rating", sort: "top_rating", f: (r) => fNum(r.top_rating, 0) }, { h: "Horses' value", sort: "horses_value", f: SR_MONEY("horses_value") }] },
+  { k: "traders", t: "Traders", intro: (y) => `Horses bought and sold ${y ? "in " + y : "over all time"}, at auction and privately, ranked by profit (sales less purchases).`, cols: [
+    { h: "Profit", sort: "profit", f: (r) => `<span class="${(r.profit || 0) < 0 ? "down" : ""}">${fMoney(r.profit)}</span>` }, { h: "Sold", sort: "sold", f: SR_N("sold") },
+    { h: "Sales", sort: "sales", f: SR_MONEY("sales") }, { h: "Bought", sort: "bought", f: SR_N("bought") }, { h: "Spent", sort: "spent", f: SR_MONEY("spent") }] },
+  { k: "breeders", t: "Breeders", intro: () => "Every foal each stable has bred, and how they've done on the track (whoever owns them now).", cols: [
+    { h: "Their earnings", sort: "earnings", f: SR_MONEY("earnings"), tip: "Career prize money of every horse the stable bred" }, { h: "Foals bred", sort: "foals", f: SR_N("foals") },
+    { h: "Runners", sort: "runners", f: SR_N("runners") }, { h: "Winners", sort: "winners", f: SR_N("winners") },
+    { h: "Stakes winners", sort: "stakes_winners", f: SR_N("stakes_winners") }, { h: "G1 winners", sort: "g1_winners", f: SR_N("g1_winners") }] },
+  { k: "value", t: "Value", intro: () => "What each stable is worth: its market value (or what it owns less what it owes, if it has none), with horses, property (racecourses and auction houses), cash and loans from its latest monthly figures.", cols: [
+    { h: "Value", sort: "value", f: (r) => `<span class="sr-val">${fMoney(r.value)}</span>` }, { h: "Horses", sort: "horses", f: SR_MONEY("horses") },
+    { h: "Property", sort: "property", f: SR_MONEY("property") }, { h: "Cash", sort: "cash", f: (r) => `<span class="${(r.cash || 0) < 0 ? "down" : "sr-val"}">${fMoney(r.cash)}</span>` },
+    { h: "Loans", sort: "loans", f: SR_MONEY("loans") }, { h: "Net worth", sort: "net_worth", f: SR_MONEY("net_worth"), tip: "What it owns less what it owes" }] },
+];
+const SR_YEAR_TABS = ["earnings", "times", "traders"];
+async function stableRankingsPage(route) {
+  const q = route.q, tab = SR_TABS.find((t) => t.k === q.tab) || SR_TABS[SR_TABS.length - 1];
+  const d = await api("stable_rankings?" + new URLSearchParams(withSize({ ...q, tab: tab.k })));
+  const blank = new Set(d.blank || []);
+  const mine = new Set(((STATUS && STATUS.my_stables) || []).map((x) => x.id));
+  const tabs = `<div class="sr-tabs" role="tablist">${SR_TABS.map((t) => `<a role="tab" class="${t.k === tab.k ? "on" : ""}" href="${hashFor(["stable-rankings"], { tab: t.k, q: q.q, mine: q.mine })}">${t.t}</a>`).join("")}</div>`;
+  const years = SR_YEAR_TABS.includes(tab.k) ? select("year", { year: q.year !== undefined ? q.year : String(d.year || "all") }, [["all", "All time"]].concat((d.years || []).map((y) => [String(y), String(y)])), "Which year") : "";
+  const cols = [
+    { h: "#", sort: "rank", cls: "num sr-rank", f: (r) => fNum(r.rank) },
+    { h: "Stable", sort: "name", cls: "nowrap", f: (r) => `${L.stable(r.id, r.name)}${mine.has(r.id) ? ' <span class="badge good">You</span>' : ""}` },
+    { h: "Owner", sort: "owner", f: (r) => (r.owner_id ? L.person(r.owner_id, r.owner) : "—") },
+    ...tab.cols.filter((c) => !blank.has(c.sort)).map((c) => ({ h: c.tip ? `<span data-tip="${esc(c.tip)}">${c.h}</span>` : c.h, sort: c.sort, cls: c.date ? "nowrap" : "num", f: c.f })),
+    { h: "Country", sort: "country", f: (r) => (r.country ? `<span class="flag" title="${esc(r.country)}">${flagOf(r.iso2)}</span> ${esc(r.country)}` : "—") },
+  ];
+  const yr = SR_YEAR_TABS.includes(tab.k) ? d.year : null;
+  return `<div class="page-head"><div><h1>Stable rankings</h1><div class="sub">${esc(tab.t)} · ${fNum(d.total)} stables${yr ? " · " + yr : SR_YEAR_TABS.includes(tab.k) ? " · all time" : ""}</div></div></div>
+    <section class="panel">${tabs}<div class="filters">${searchBox(q, "Search stable, owner or country")}${years}${seg("mine", q, [["", "All stables"], ["1", "Your stables"]], "")}</div>
+    <div class="note-line">${tab.intro(yr)} Click a heading to sort; the rank stays by ${esc(tab.cols[0].h.toLowerCase())}.</div>
+    ${table(cols, d.rows, { sort: q.sort || "rank", dir: q.dir || (["rank", "name", "owner", "country", "start_rank"].includes(q.sort || "rank") ? "asc" : "desc"),
+      ascCols: ["rank", "name", "owner", "country", "start_rank"], rowClass: (r) => (mine.has(r.id) ? "me" : ""), empty: q.mine ? "None of your stables are open." : "No stables match.", tcls: "sr-table" })}
+    ${pager(d)}</section>`;
+}
+
 async function stableTablePage(route) {
   let countries = [];
   return listPage({
@@ -3949,7 +4014,7 @@ async function stableTablePage(route) {
       select("country", q, [["", "Any country"]].concat((data.countries || countries).map((c) => [c, c]))) +
       select("minhorses", q, [["", "Any size"], ["1", "1+ horses"], ["5", "5+ horses"], ["10", "10+ horses"], ["25", "25+ horses"], ["50", "50+ horses"]]),
     cols: [
-      { h: "Stable", sort: "name", f: (r) => `${L.stable(r.id, r.name)}${r.liquidated ? ' <span class="badge dead">Closed</span>' : ""}${r.id === (STATUS.player_stable || {}).id ? ' <span class="badge good">Yours</span>' : ""}` },
+      { h: "Stable", sort: "name", cls: "nowrap", f: (r) => `${L.stable(r.id, r.name)}${r.liquidated ? ' <span class="badge dead">Closed</span>' : ""}${r.id === (STATUS.player_stable || {}).id ? ' <span class="badge good">Yours</span>' : ""}` },
       { h: "Owner", sort: "owner", f: (r) => L.person(r.owner_id, r.owner) },
       { h: "Country", sort: "country", f: (r) => esc(r.country || "—") },
       { h: "Horses", sort: "horses", cls: "num grp-start", f: (r) => `<a href="#/horse-table?stable=${r.id}">${fNum(r.horses)}</a>` },

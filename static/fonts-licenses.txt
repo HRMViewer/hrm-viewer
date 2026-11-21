@@ -9135,3 +9135,11 @@ DAMAGES, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
 FROM, OUT OF THE USE OR INABILITY TO USE THE FONT SOFTWARE OR FROM
 OTHER DEALINGS IN THE FONT SOFTWARE.
 
+
+==============================================================================
+flags.woff2 - "Twemoji Country Flags"
+==============================================================================
+Country flags font from the country-flag-emoji-polyfill package by TalkJS (code: MIT licence, Copyright (c) 2022 TalkJS).
+The flag artwork comes from Twemoji (https://github.com/twitter/twemoji), Copyright 2019 Twitter, Inc and other contributors,
+used and redistributed under the Creative Commons Attribution 4.0 International licence (CC BY 4.0):
+https://creativecommons.org/licenses/by/4.0/legalcode

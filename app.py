@@ -299,7 +299,7 @@ def warm_up(delay=1.0):
         if not PORT or not os.path.exists(CURRENT_DB):
             return
         opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
-        pages = ["home", "meetings", "horses", "races", "races?when=upcoming", "stables", "people", "people_overview", "awards", "courses", "pedigrees",
+        pages = ["home", "meetings", "horses", "races", "races?when=upcoming", "stables", "people", "people_overview", "stable_rankings", "awards", "courses", "pedigrees",
                  "pedigrees?kind=dams", "pedigrees?kind=damsires", "horse_table", "stable_table", "tables"]
         if META.get("player_id"):
             pages.append("person/%s" % META["player_id"])
@@ -2589,15 +2589,16 @@ def po_scan(con):
         for k in [k for k in PO_AGG if k[0] != DB_GEN]:
             PO_AGG.pop(k, None)
         rc = columns(con, "race_results")
-        want = ["race_result_person_jockey_id", "race_result_trainer_id", "race_result_stable_head_trainer_id", "race_result_stable_manager_id"]
+        want = ["race_result_person_jockey_id", "race_result_trainer_id", "race_result_stable_head_trainer_id", "race_result_stable_manager_id",
+                "race_result_stable_id"]
         sel = ", ".join(c if c in rc else "null" for c in want)
         grade = {}
         if has_table(con, "races") and "races_type_of_race" in columns(con, "races"):
             gi = {"G1": 0, "G2": 1, "G3": 2, "listed": 3}
             grade = {rid: gi[t] for rid, t in con.execute(
                 "select races_race_id, races_type_of_race from races where races_type_of_race in ('G1','G2','G3','listed')")}
-        out = {"jockeys": {}, "trainers": {}, "managers": {}}
-        J, T, M = out["jockeys"], out["trainers"], out["managers"]
+        out = {"jockeys": {}, "trainers": {}, "managers": {}, "stables": {}}     # stables: for the stable rankings
+        J, T, M, S = out["jockeys"], out["trainers"], out["managers"], out["stables"]
         years = {}
 
         def add(d, pid, y, rk, cash, dt, g):
@@ -2615,7 +2616,7 @@ def po_scan(con):
                 a[3] += cash
             if dt is not None and (a[4] is None or dt > a[4]):
                 a[4] = dt
-        for j, tr, ht, mg, dt, rk, cash, rid in con.execute(
+        for j, tr, ht, mg, st, dt, rk, cash, rid in con.execute(
                 "select %s, race_result_date, race_result_rank, race_result_cash_received, race_result_race_id from race_results" % sel):
             y = years.get(dt)
             if y is None:
@@ -2629,6 +2630,8 @@ def po_scan(con):
                 add(T, ht, y, rk, cash, dt, g)
             if mg and mg > 0:
                 add(M, mg, y, rk, cash, dt, g)
+            if st and st > 0:
+                add(S, st, y, rk, cash, dt, g)
         PO_AGG[key] = out
         return out
 
@@ -3545,6 +3548,198 @@ def api_stable_awards(con, sid, q):
     return {"awards": data}
 
 
+# --------------------------------------------------------------------------- Stable rankings (like the game's league tables)
+
+SR_CACHE = {}        # (data generation, tab, year) -> every open stable's figures for that tab
+SR_PAGE = 100
+# per tab: the figure it's ranked by, and whether it can be looked at for one year
+SR_TABS = {
+    "earnings": {"main": "prize", "year": True}, "times": {"main": "held", "year": True}, "staff": {"main": "staff", "year": False},
+    "prestige": {"main": "prestige", "year": False}, "horses": {"main": "horses", "year": False},
+    "traders": {"main": "profit", "year": True}, "breeders": {"main": "earnings", "year": False}, "value": {"main": "value", "year": False},
+}
+
+
+def sr_base(con):
+    """Every stable still open: id, name, owner and country (from the stable's town)."""
+    sc = columns(con, "stables")
+    where = ["s.stable_stable_id > 0"]
+    if "stable_liquidated" in sc:
+        where.append("s.stable_liquidated is null")
+    if "stable_merged_into_id" in sc:
+        where.append("coalesce(s.stable_merged_into_id, 0) = 0")
+    where.append("s.stable_stable_id not in (select pk from hrmv_removed where tbl='stables')")
+    town = ("left join cities c on c.city_id=s.stable_city_id left join countries n on n.country_id=c.city_country_id"
+            if "stable_city_id" in sc and has_table(con, "cities") and has_table(con, "countries") else "")
+    ctry = "n.country_name as country, n.country_code_iso2 as iso2" if town else "null as country, null as iso2"
+    return rows(con, """select s.stable_stable_id as id, s.stable_name as name, s.stable_owner_id as owner_id, p.person_full_name as owner, %s
+        from stables s left join persons p on p.person_person_id=s.stable_owner_id %s where %s""" % (ctry, town, " and ".join(where)))
+
+
+def sr_figures(con, tab, year):
+    """{stable id: {column: value}} for one tab."""
+    args = []
+    if year:
+        args = [calendar.timegm((year, 1, 1, 0, 0, 0)), calendar.timegm((year + 1, 1, 1, 0, 0, 0))]
+    out = {}
+    if tab == "earnings":
+        # from the same single pass over the results as the People overview (worked out once per save)
+        for (sid, y), a in po_scan(con)["stables"].items():
+            if year and y != year:
+                continue
+            r = out.get(sid)
+            if r is None:
+                r = out[sid] = {"starts": 0, "wins": 0, "places": 0, "prize": 0, "g1": 0, "g2": 0, "g3": 0, "listed": 0}
+            for k, i in (("starts", 0), ("wins", 1), ("places", 2), ("prize", 3), ("g1", 5), ("g2", 6), ("g3", 7), ("listed", 8)):
+                r[k] += a[i]
+        for r in out.values():
+            r["winpct"] = 100.0 * r["wins"] / r["starts"] if r["starts"] else None
+            r["group"] = r["g1"] + r["g2"] + r["g3"]
+    elif tab == "times":
+        if not has_table(con, "hrmv_track_records"):
+            return out
+        when = " where date >= ? and date < ?" if year else ""
+        for r in rows(con, "select stable_id as id, count(*) as set_count, max(date) as last_set from hrmv_track_records%s group by 1" % when, args):
+            out[r["id"]] = r
+        # a record is held now if nobody has run faster since: the latest record for its course, track and distance
+        for r in rows(con, """select stable_id as id, count(*) as held, count(distinct course_id) as courses from (
+                select *, row_number() over (partition by course_id, track, distance order by date desc, rid desc) as rn from hrmv_track_records) where rn=1 group by 1"""):
+            out.setdefault(r["id"], {}).update(held=r["held"], courses=r["courses"])
+    elif tab == "staff":
+        if not has_table(con, "staff"):
+            return out
+        for r in rows(con, """select staff_stable_id as id, count(*) as staff, sum(staff_current_role='Jockey') as jockeys,
+                sum(staff_current_role in ('Trainer','Head trainer')) as trainers, sum(staff_current_role in ('Manager','Assistant manager')) as managers,
+                sum(staff_current_role='Stablehand') as stablehands, sum(staff_current_role='Scout') as scouts, sum(coalesce(staff_salary_yearly,0)) as wages
+                from staff where staff_end_date is null and staff_stable_id > 0 group by 1"""):
+            out[r["id"]] = r
+    elif tab == "prestige":
+        sc = columns(con, "stables")
+        pick = lambda c, a: ("s.%s as %s" % (c, a)) if c in sc else "null as %s" % a
+        for r in rows(con, "select s.stable_stable_id as id, %s from stables s" % ", ".join(pick(c, a) for c, a in (
+                ("stable_prestige", "prestige"), ("stable_prestige_rank_year_start", "start_rank"), ("stable_fame", "fame"),
+                ("stable_experience", "experience"), ("stable_legacy", "legacy"), ("stable_level", "level")))):
+            out[r["id"]] = r
+        if has_table(con, "prestige_log"):
+            gd = META.get("game_date") or time.time()
+            y0 = calendar.timegm((utc_year(gd) or 1970, 1, 1, 0, 0, 0))
+            for sid, pts in con.execute("select prestige_log_stable_id, sum(prestige_log_points) from prestige_log where prestige_log_date >= ? group by 1", (y0,)):
+                out.setdefault(sid, {})["this_year"] = pts
+    elif tab == "horses":
+        # the save only keeps age-group counts for the player's stable, so count them from the horses (alive, by age at the game date)
+        gd = META.get("game_date") or time.time()
+        hc = columns(con, "horses")
+        preg = "sum(h.horse_is_pregnant is not null)" if "horse_is_pregnant" in hc else "null"
+        stud = "sum(h.horse_stud_date is not null)" if "horse_stud_date" in hc else "null"
+        for r in rows(con, """select h.horse_stable_id as id, count(*) as horses,
+                sum(h.horse_birth_date > ?) as foals, sum(h.horse_birth_date <= ? and h.horse_birth_date > ?) as yearlings,
+                sum(h.horse_birth_date <= ? and h.horse_birth_date > ?) as two_yo, sum(h.horse_birth_date <= ?) as older,
+                %s as in_foal, %s as at_stud, avg(h.horse_international_rating) as avg_rating, max(h.horse_international_rating) as top_rating,
+                sum(coalesce(h.horse_value_calculated,0)) as horses_value
+                from horses h where h.horse_stable_id > 0 and h.horse_deceased_date is null
+                and h.horse_horse_id not in (select pk from hrmv_removed where tbl='horses') group by 1""" % (preg, stud),
+                (gd - YEAR, gd - YEAR, gd - 2 * YEAR, gd - 2 * YEAR, gd - 3 * YEAR, gd - 3 * YEAR)):
+            out[r["id"]] = r
+    elif tab == "traders":
+        def add(sid, kind, amount):
+            if not sid or sid <= 0:
+                return
+            f = out.setdefault(sid, {"sold": 0, "sales": 0.0, "bought": 0, "spent": 0.0})
+            if kind == "sell":
+                f["sold"] += 1; f["sales"] += amount or 0
+            else:
+                f["bought"] += 1; f["spent"] += amount or 0
+        if has_table(con, "auction_results"):
+            when = " and auction_result_date >= ? and auction_result_date < ?" if year else ""
+            for seller, buyer, price in con.execute("""select auction_result_from_stable_id, auction_result_to_stable_id, auction_result_final_price
+                    from auction_results where auction_result_accepted in (1,'1','true')%s""" % when, args):
+                add(seller, "sell", price); add(buyer, "buy", price)
+        if has_table(con, "transactions") and {"transaction_category", "transaction_from_entity_type"} <= set(columns(con, "transactions")):
+            when = " and transaction_date >= ? and transaction_date < ?" if year else ""
+            # private sales: paid by the buying stable to the selling one
+            for buyer, seller, amount in con.execute("""select cast(transaction_from_entity_id as int), cast(transaction_to_entity_id as int), transaction_amount
+                    from transactions where transaction_category='horse_trade' and transaction_from_entity_type='stable' and transaction_to_entity_type='stable'%s""" % when, args):
+                add(seller, "sell", amount); add(buyer, "buy", amount)
+        for f in out.values():
+            f["profit"] = f["sales"] - f["spent"]
+            f["traded"] = f["sold"] + f["bought"]
+    elif tab == "breeders":
+        if has_table(con, "breeding"):
+            for r in rows(con, """select b.breeding_stable_id as id, count(*) as foals, sum(coalesce(s.starts,0) > 0) as runners, sum(coalesce(s.wins,0) > 0) as winners,
+                    sum(coalesce(s.stakes_wins,0) > 0) as stakes_winners, sum(coalesce(s.g1,0) > 0) as g1_winners,
+                    sum(coalesce(h.horse_career_earnings,0)) as earnings
+                    from breeding b left join horses h on h.horse_horse_id=b.breeding_horse_id left join hrmv_horse_stats s on s.horse_id=b.breeding_horse_id
+                    where b.breeding_stable_id > 0 and b.breeding_horse_id > 0 group by 1"""):
+                out[r["id"]] = r
+    elif tab == "value":
+        if has_table(con, "stable_financial_snapshots"):
+            fc = columns(con, "stable_financial_snapshots")
+            col = lambda c: c if c in fc else "null"
+            for r in rows(con, """select snapshot_stable_id as id, %s as market_cap, %s as net_worth, %s as horses, coalesce(%s,0) + coalesce(%s,0) as property,
+                    %s as cash, %s as loans from (
+                    select *, row_number() over (partition by snapshot_stable_id order by snapshot_date desc) as rn from stable_financial_snapshots) where rn=1""" % (
+                    col("snapshot_market_cap"), col("snapshot_net_worth"), col("snapshot_horses_value"), col("snapshot_racecourses_value"),
+                    col("snapshot_auction_houses_value"), col("snapshot_cash"), col("snapshot_loans"))):
+                # the game's stable value: its market value where it has one, otherwise what it owns less what it owes
+                r["value"] = r["market_cap"] if r["market_cap"] else r["net_worth"]
+                out[r["id"]] = r
+    return out
+
+
+def sr_table(con, tab, year):
+    """Every open stable with this tab's figures, ranked by the tab's main figure (the rank stays when sorting by another column)."""
+    key = (DB_GEN, tab, year)
+    if key not in SR_CACHE:
+        for k in [k for k in SR_CACHE if k[0] != DB_GEN]:
+            SR_CACHE.pop(k, None)
+        figs = sr_figures(con, tab, year)
+        main = SR_TABS[tab]["main"]
+        data = []
+        for b in sr_base(con):
+            f = figs.get(b["id"]) or {}
+            r = dict(b)
+            r.update({k: v for k, v in f.items() if k != "id"})
+            data.append(r)
+        if tab == "prestige":    # prestige rank now, and how far it has moved since the year began
+            for i, r in enumerate(sorted(data, key=lambda r: -(r.get("prestige") or 0))):
+                r["now_rank"] = i + 1
+                r["move"] = (r["start_rank"] - r["now_rank"]) if r.get("start_rank") else None
+        data.sort(key=lambda r: (r.get(main) is None, -(r.get(main) or 0), (r.get("name") or "").lower()))
+        for i, r in enumerate(data):
+            r["rank"] = i + 1
+        SR_CACHE[key] = data
+    return SR_CACHE[key]
+
+
+def api_stable_rankings(con, q):
+    tab = q.get("tab") if q.get("tab") in SR_TABS else "value"
+    years = po_years(con)
+    year = to_int(q.get("year")) if SR_TABS[tab]["year"] else None
+    if SR_TABS[tab]["year"] and q.get("year") is None and years:
+        year = utc_year(META.get("game_date") or time.time())       # this season unless another year (or all time) is picked
+    data = sr_table(con, tab, year or None)
+    text = (q.get("q") or "").strip().lower()
+    if text:
+        data = [r for r in data if text in (r.get("name") or "").lower() or text in (r.get("owner") or "").lower() or text in (r.get("country") or "").lower()]
+    if q.get("mine"):
+        mine = {s["id"] for s in my_stables(con, META.get("player_id"), META.get("player_stable_id"))}
+        data = [r for r in data if r["id"] in mine]
+    sort = q.get("sort") or "rank"
+    if data and sort not in data[0] and sort != "rank":
+        sort = "rank"
+    desc = (q.get("dir") or ("asc" if sort in ("rank", "name", "owner", "country") else "desc")) == "desc"
+    have = [r for r in data if r.get(sort) is not None]
+    have.sort(key=lambda r: (r[sort].lower() if isinstance(r[sort], str) else r[sort]), reverse=desc)
+    data = have + [r for r in data if r.get(sort) is None]
+    size = getattr(PAGE_LOCAL, "size", None) or SR_PAGE
+    total = len(data)
+    page = max(1, min(to_int(q.get("page"), 1), max(1, -(-total // size))))
+    full = sr_table(con, tab, year or None)
+    blank = sorted({k for k in (full[0] if full else {}) if all(not r.get(k) for r in full)})
+    return {"tab": tab, "year": year, "years": years, "total": total, "page": page, "page_size": size, "blank": blank,
+            "rows": data[(page - 1) * size: page * size]}
+
+
 def api_stable_table(con, q):
     sql, count_sql, params = stable_table_query(con, q)
     page = max(1, to_int(q.get("page"), 1))
@@ -4228,6 +4423,7 @@ ROUTES = [
     (re.compile(r"^/api/tables$"), lambda con, m, q: api_tables(con, q)),
     (re.compile(r"^/api/horse_table$"), lambda con, m, q: api_horse_table(con, q)),
     (re.compile(r"^/api/stable_table$"), lambda con, m, q: api_stable_table(con, q)),
+    (re.compile(r"^/api/stable_rankings$"), lambda con, m, q: api_stable_rankings(con, q)),
     (re.compile(r"^/api/pedigrees$"), lambda con, m, q: api_pedigrees(con, q)),
     (re.compile(r"^/api/pedigree/(-?\d+)$"), lambda con, m, q: api_pedigree(con, int(m.group(1)), q)),
     (re.compile(r"^/api/coi/(-?\d+)$"), lambda con, m, q: api_coi(con, int(m.group(1)), q)),
@@ -4857,7 +5053,7 @@ class Handler(BaseHTTPRequestHandler):
 
 # --------------------------------------------------------------------------- in-app updates
 
-VERSION = "14.4"
+VERSION = "14.5"
 BACKUP_DIR = os.path.join(APP_DIR, "backups")
 UPDATE_PENDING = os.path.join(DATA_DIR, "update_pending.json")
 UPDATE_RESULT = os.path.join(DATA_DIR, "update_result.json")
