@@ -1,5 +1,15 @@
 [
   {
+    "version": "13.6",
+    "date": "2026-11-21",
+    "title": "Horse finances: what each horse cost to buy",
+    "changes": [
+      "Horse finances now counts private horse sales, not just auctions: what the stable paid to buy a horse shows as Purchase, and what it got for selling one as Sale.",
+      "If one of the stable's group stables (its parent stable, sub-stables or their sister stables) bought a horse and then passed it on to this stable, that price shows here too, as Purchase by <that stable>. Any fee paid between the group's own stables shows as Transfer fee within the group.",
+      "Horses bought privately are now listed from the day they were bought, so their costs and income are counted from then."
+    ]
+  },
+  {
     "version": "13.5",
     "date": "2026-11-21",
     "title": "Awards tabs for horses and people; month by month",

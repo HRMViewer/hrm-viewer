@@ -2177,6 +2177,58 @@ HM_TX_LABELS = {
 }
 
 
+HM_TRADE_NOTE = re.compile(r"^.* purchased (.+) from .+\.$")
+
+
+def stable_group(con, sid):
+    """A stable and the stables tied to it: its parent stable, its sub-stables, and its parent's other sub-stables."""
+    if "stable_parent_stable_id" not in columns(con, "stables"):
+        return {sid}
+    r = one(con, "select stable_parent_stable_id as p from stables where stable_stable_id=?", (sid,)) or {}
+    top = r.get("p") if r.get("p") and r["p"] > 0 else sid
+    ids = {sid, top} | {x["id"] for x in rows(con, "select stable_stable_id as id from stables where stable_parent_stable_id in (?, ?)", (sid, top))}
+    return ids
+
+
+def horse_trades(con, sid):
+    """Private horse sales involving this stable or its group: {hid, date, amount, buyer, seller, internal}.
+    The game notes them as "<buyer> purchased <horse> from <seller>." and pays from the buying stable to the selling one."""
+    tcols = columns(con, "transactions")
+    if not {"transaction_category", "transaction_note", "transaction_from_entity_type", "transaction_to_entity_type"} <= set(tcols):
+        return []
+    group = sorted(stable_group(con, sid))
+    marks = ",".join("?" * len(group))
+    tx = rows(con, """select transaction_date as date, transaction_amount as amount, transaction_note as note,
+            cast(transaction_from_entity_id as int) as buyer, cast(transaction_to_entity_id as int) as seller from transactions
+            where transaction_category='horse_trade' and transaction_from_entity_type='stable' and transaction_to_entity_type='stable'
+            and (cast(transaction_from_entity_id as int) in (%s) or cast(transaction_to_entity_id as int) = ?)""" % marks, group + [sid])
+    if not tx:
+        return []
+    wanted = {}
+    for t in tx:
+        m = HM_TRADE_NOTE.match(t["note"] or "")
+        if m:
+            wanted.setdefault(HM_NAME_PREFIX.sub("", m.group(1)).strip().lower(), []).append(t)
+    # horse names in notes can carry the game's prefixes ((F), (P), †) or not, so match on the bare name
+    ids = {}
+    for r in con.execute("select horse_horse_id, horse_name, horse_stable_id from horses where horse_name is not null"):
+        bare = HM_NAME_PREFIX.sub("", r[1]).strip().lower()
+        if bare in wanted:
+            prev = ids.get(bare)
+            # several horses with the same name: prefer one that has been with the group
+            if prev is None or (r[2] in group and prev[1] not in group):
+                ids[bare] = (r[0], r[2])
+    out = []
+    for bare, ts in wanted.items():
+        if bare not in ids:
+            continue
+        for t in ts:
+            out.append({"hid": ids[bare][0], "date": t["date"], "amount": t["amount"] or 0, "buyer": t["buyer"], "seller": t["seller"],
+                        "internal": t["buyer"] in group and t["seller"] in group})
+    out.sort(key=lambda t: t["date"] or 0)
+    return out
+
+
 def api_stable_horse_money(con, sid, q):
     """Horse finances tab: money in and out for every horse the stable has had, now or in the past.
     Each horse's figures only count what happened while it was with this stable (as far as the save can tell)."""
@@ -2215,6 +2267,18 @@ def api_stable_horse_money(con, sid, q):
             if a["frm"] == sid:
                 h["sold"] = a["date"] if h["sold"] is None else max(h["sold"], a["date"])
             seen(h, a["date"])
+    trades = horse_trades(con, sid) if has("transactions") else []
+    for t in trades:      # private sales: buying a horse brings it to the stable, selling it ends its time here
+        if t["buyer"] == sid:
+            h = horse(t["hid"])
+            if h:
+                h["bought"] = t["date"] if h["bought"] is None else min(h["bought"], t["date"])
+                seen(h, t["date"])
+        elif t["seller"] == sid:
+            h = horse(t["hid"])
+            if h:
+                h["sold"] = t["date"] if h["sold"] is None else max(h["sold"], t["date"])
+                seen(h, t["date"])
     hfh = rows(con, "select hfh_horse_id as id, hfh_year as year, hfh_feed_care as feed, hfh_staff_costs as staff from horse_financial_history where hfh_stable_id=?", (sid,)) if has("horse_financial_history") else []
     for r in hfh:
         h = horse(r["id"])
@@ -2270,6 +2334,19 @@ def api_stable_horse_money(con, sid, q):
             put(a["id"], "inc", "Sale (after auction house cut)", yr(a["date"]), (a["price"] or 0) - (a["cut"] or 0))
         if a["too"] == sid:
             put(a["id"], "exp", "Purchase", yr(a["date"]), a["price"] or 0)
+    # private sales: the price this stable paid or got, and what one of its group's stables (its parent, sub-stables or their
+    # sister stables) paid for a horse before passing it on to this stable
+    group_names = name_map(con, "stables", "stable_stable_id", "stable_name", list({t["buyer"] for t in trades}))
+    for t in trades:
+        if t["buyer"] == sid:
+            put(t["hid"], "exp", "Transfer fee within the group" if t["internal"] else "Purchase", yr(t["date"]), t["amount"])
+        elif t["seller"] == sid:
+            put(t["hid"], "inc", "Sale" if not t["internal"] else "Transfer fee within the group", yr(t["date"]), t["amount"])
+        elif not t["internal"] and t["hid"] in H:
+            h = H[t["hid"]]
+            # bought by a group stable before it came here (not after it left)
+            if h["from"] is None or t["date"] <= h["from"] + 86400 * 31:
+                put(t["hid"], "exp", "Purchase by %s" % (group_names.get(t["buyer"]) or "a group stable"), yr(t["date"]), t["amount"])
     if has("breeding"):
         for i in range(0, len(ids), 500):
             chunk = ids[i:i + 500]
@@ -4213,7 +4290,7 @@ class Handler(BaseHTTPRequestHandler):
 
 # --------------------------------------------------------------------------- in-app updates
 
-VERSION = "13.5"
+VERSION = "13.6"
 BACKUP_DIR = os.path.join(APP_DIR, "backups")
 UPDATE_PENDING = os.path.join(DATA_DIR, "update_pending.json")
 UPDATE_RESULT = os.path.join(DATA_DIR, "update_result.json")
