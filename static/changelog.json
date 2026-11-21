@@ -1,5 +1,14 @@
 [
   {
+    "version": "14.4",
+    "date": "2026-11-21",
+    "title": "Fix: People page error on Windows",
+    "changes": [
+      "Fixed the People page showing \"[Errno 22] Invalid argument\" on Windows in 14.3. Windows can't convert dates before 1970 the way 14.3 did, and saves have races going back to the 1800s. Dates are now worked out in a way that works for any year.",
+      "The same fix for the Horse finances tab, which could hit the same error for very old records."
+    ]
+  },
+  {
     "version": "14.3",
     "date": "2026-11-21",
     "title": "Faster pages, clearer tables and charts",

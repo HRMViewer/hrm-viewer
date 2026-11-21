@@ -2341,7 +2341,7 @@ def api_stable_horse_money(con, sid, q):
             y = h["years"].setdefault(str(year), {"inc": 0, "exp": 0})
             y["inc" if kind == "inc" else "exp"] += amount
 
-    yr = lambda ts: datetime.datetime.utcfromtimestamp(ts).year if isinstance(ts, (int, float)) and ts > -2e10 else None
+    yr = lambda ts: utc_year(ts) if isinstance(ts, (int, float)) and ts > -2e10 else None
     # income: prize money while racing for the stable, sales, stud fees, and named payments
     for r in rows(con, """select race_result_horse_id as id, cast(strftime('%Y', race_result_date, 'unixepoch') as int) as year, sum(race_result_cash_received) as prize
             from race_results where race_result_stable_id=? group by 1, 2""", (sid,)):
@@ -2557,6 +2557,18 @@ PO_AGG = {}          # (data generation, role, year) -> every person's figures i
 PO_PAGE = 25         # people per page when showing everyone
 
 
+EPOCH = datetime.datetime(1970, 1, 1)
+
+
+def utc_year(ts):
+    """Calendar year (UTC) of a game timestamp. Works for dates before 1970 too: Windows' time.gmtime and
+    utcfromtimestamp refuse negative timestamps ("[Errno 22] Invalid argument"), and saves have races back to the 1800s."""
+    try:
+        return (EPOCH + datetime.timedelta(seconds=ts)).year
+    except (TypeError, ValueError, OverflowError):
+        return None
+
+
 def po_years(con):
     """Years with jockeys or trainers on the results, newest first (for the year picker)."""
     scan = po_scan(con)
@@ -2591,7 +2603,7 @@ def po_scan(con):
         def add(d, pid, y, rk, cash, dt, g):
             a = d.get((pid, y))
             if a is None:
-                a = d[(pid, y)] = [0, 0, 0, 0, 0, 0, 0, 0, 0]   # starts wins places prize last G1 G2 G3 listed
+                a = d[(pid, y)] = [0, 0, 0, 0, None, 0, 0, 0, 0]   # starts wins places prize last G1 G2 G3 listed
             a[0] += 1
             if rk is not None and 1 <= rk <= 3:
                 a[2] += 1
@@ -2601,13 +2613,13 @@ def po_scan(con):
                         a[5 + g] += 1
             if cash:
                 a[3] += cash
-            if dt and dt > a[4]:
+            if dt is not None and (a[4] is None or dt > a[4]):
                 a[4] = dt
         for j, tr, ht, mg, dt, rk, cash, rid in con.execute(
                 "select %s, race_result_date, race_result_rank, race_result_cash_received, race_result_race_id from race_results" % sel):
             y = years.get(dt)
             if y is None:
-                y = years[dt] = time.gmtime(dt).tm_year if dt is not None else None
+                y = years[dt] = utc_year(dt) if dt is not None else None
             g = grade.get(rid)
             if j and j > 0:
                 add(J, j, y, rk, cash, dt, g)
@@ -2636,11 +2648,12 @@ def po_agg(con, key, year):
         else:
             for i in (0, 1, 2, 3, 5, 6, 7, 8):
                 t[i] += a[i]
-            t[4] = max(t[4], a[4])
+            if a[4] is not None and (t[4] is None or a[4] > t[4]):
+                t[4] = a[4]
     data = []
     for pid, a in per.items():
         g = a[5] + a[6] + a[7]
-        data.append({"pid": pid, "starts": a[0], "wins": a[1], "places": a[2], "prize": a[3], "last": a[4] or None,
+        data.append({"pid": pid, "starts": a[0], "wins": a[1], "places": a[2], "prize": a[3], "last": a[4],
                      "G1": a[5], "G2": a[6], "G3": a[7], "listed": a[8], "group": g, "total_gl": g + a[8]})
     data.sort(key=lambda r: (-r["wins"], -r["prize"]))
     PO_AGG[ck] = data
@@ -4844,7 +4857,7 @@ class Handler(BaseHTTPRequestHandler):
 
 # --------------------------------------------------------------------------- in-app updates
 
-VERSION = "14.3"
+VERSION = "14.4"
 BACKUP_DIR = os.path.join(APP_DIR, "backups")
 UPDATE_PENDING = os.path.join(DATA_DIR, "update_pending.json")
 UPDATE_RESULT = os.path.join(DATA_DIR, "update_result.json")
