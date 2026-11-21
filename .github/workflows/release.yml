@@ -1,14 +1,20 @@
-# Publishes a release whenever a version tag (v12.4, v12.5, ...) is pushed:
+# Publishes a release whenever a new version reaches main: when VERSION in app.py has no release yet,
 # builds HRM Viewer.exe, makes the update and full zips, and attaches them with the changelog as notes.
+# The viewers out there see it within a few hours and offer to install it.
 name: Release
 
 on:
   push:
-    tags: ["v*"]
+    branches: [main]
+    paths: ["app.py", "static/**", "desktop/**", "package/**", "tools/ci_build.py", ".github/workflows/release.yml"]
   workflow_dispatch:
 
 permissions:
   contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
 
 jobs:
   release:
@@ -16,27 +22,36 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Is this version already released?
+        id: v
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          V=$(python3 -c "import re;print(re.search(r'^VERSION = \"([^\"]+)\"', open('app.py').read(), re.M).group(1))")
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+          if gh release view "v$V" >/dev/null 2>&1; then echo "new=no" >> "$GITHUB_OUTPUT"; echo "v$V is already out"; else echo "new=yes" >> "$GITHUB_OUTPUT"; fi
+
       - uses: actions/setup-go@v5
+        if: steps.v.outputs.new == 'yes'
         with:
           go-version: "1.24.7"
           cache-dependency-path: desktop/go.sum
 
       - name: Build HRM Viewer.exe
+        if: steps.v.outputs.new == 'yes'
         working-directory: desktop
         run: GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags "-H windowsgui -s -w" -o "$RUNNER_TEMP/HRM Viewer.exe" .
 
       - name: Build the zips
+        if: steps.v.outputs.new == 'yes'
         run: python3 tools/ci_build.py "$RUNNER_TEMP/HRM Viewer.exe" dist
 
-      - name: Check the tag matches the version
-        if: startsWith(github.ref, 'refs/tags/')
-        run: test "v$(cat dist/version.txt)" = "${GITHUB_REF_NAME}"
-
       - name: Publish the release
+        if: steps.v.outputs.new == 'yes'
         env:
           GH_TOKEN: ${{ github.token }}
+          V: ${{ steps.v.outputs.version }}
         run: |
-          V=$(cat dist/version.txt)
-          TITLE="HRM Viewer $V — $(python3 -c "import json;v='$V';print(next(e['title'] for e in json.load(open('static/changelog.json')) if e['version']==v))")"
-          gh release create "v$V" dist/HRM-Viewer-update-$V.zip dist/HRM-Viewer-$V-full.zip \
-            --title "$TITLE" --notes-file dist/notes.md --latest
+          TITLE="HRM Viewer $V — $(python3 -c "import json,os;v=os.environ['V'];print(next(e['title'] for e in json.load(open('static/changelog.json')) if e['version']==v))")"
+          gh release create "v$V" "dist/HRM-Viewer-update-$V.zip" "dist/HRM-Viewer-$V-full.zip" \
+            --target "$GITHUB_SHA" --title "$TITLE" --notes-file dist/notes.md --latest
