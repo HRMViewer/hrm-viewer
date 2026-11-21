@@ -1,5 +1,16 @@
 [
   {
+    "version": "15.3",
+    "date": "2026-11-22",
+    "title": "Breeding income by horse",
+    "changes": [
+      "New: on a stable's Financials tab, the Income detail now breaks breeding fees down by horse. Open Breeding fees → Transfer with ▸ and each of your stallions gets its own row: how many covers it was paid for, its total, its average fee and its share, biggest earner first. Compare what each horse earns at stud for a whole year or a single month.",
+      "▸ on a horse lists its covers (date, who paid, which mare, amount). By horse · Each payment switches back to the plain list of every payment.",
+      "The horse is worked out from the game's note on each payment (\"Breeding fee for <mare> and <stallion>\"): the one your stable owns, or otherwise the stallion. A horse you've since sold says where it is now, and a mare is marked as such (for example a refund for a breeding failure).",
+      "The payment search box finds horses by name too: type one and only that horse's row is left."
+    ]
+  },
+  {
     "version": "15.2",
     "date": "2026-11-22",
     "title": "Favourites and shortcut keys",

@@ -2174,11 +2174,83 @@ def api_stable_finance(con, sid, q):
                 t = find.get((it["cat"] or "", it["type"] or ""))
                 if t is not None and len(t["items"]) < 200:      # newest 200 payments per type
                     t["items"].append(it)
+            # money in for covers by your stallions: one more level, by horse
+            if incoming:
+                for c in cats.values():
+                    if c["cat"] != "breeding_fees":
+                        continue
+                    for t in c["types"]:
+                        its = [it for it in items if (it["cat"] or "") == c["cat"] and (it["type"] or "") == t["type"]]
+                        by = stud_income_by_horse(con, sid, its)
+                        if by:
+                            t["horses"] = by
             for c in cats.values():
                 c["types"].sort(key=lambda t: -(t["total"] or 0))
             out["detail"] = {"year": year, "month": month or None, "categories": sorted(cats.values(), key=lambda c: -(c["total"] or 0)),
                              "total": sum(c["total"] for c in cats.values())}
     return out
+
+
+BF_FEE = re.compile(r"^Breeding fee for (.+?)\.(?:\s+Expected foal\b.*)?\s*$", re.S)
+BF_FAIL = re.compile(r"^Breeding failure between (.+?)\.?\s*$", re.S)
+
+
+def stud_income_by_horse(con, sid, items):
+    """Breeding money paid to a stable, split by its horse. The game notes a cover as "Breeding fee for <mare> and
+    <stallion>. Expected foal: ..." (paid by the mare's owner) and a refund as "Breeding failure between <a> and <b>.",
+    so the horse is the one of the two the stable owns (its stallion), or else the stallion. Returns
+    [{hid, name, gender, stable_id, stable, n, total, items}] biggest first, or [] when the notes don't name horses."""
+    names = bare_horse_names(con)
+    bare = lambda n: HM_NAME_PREFIX.sub("", n).strip().lower()
+    parsed, want = [], set()
+    for it in items:
+        note = (it.get("note") or "").strip()
+        m, fee = BF_FEE.match(note), True
+        if not m:
+            m, fee = BF_FAIL.match(note), False
+        if not m:
+            parsed.append((it, None, fee))
+            continue
+        parts = m.group(1).split(" and ")
+        cands = []
+        for i in range(1, len(parts)):          # a name can itself contain "and": try every split
+            for nm in (" and ".join(parts[:i]), " and ".join(parts[i:])):
+                for hid, st in names.get(bare(nm), []):
+                    cands.append((hid, st))
+                    want.add(hid)
+        parsed.append((it, cands, fee))
+    if not want:
+        return []
+    gender = {}
+    ids = sorted(want)
+    for i in range(0, len(ids), 900):
+        chunk = ids[i:i + 900]
+        for hid, g in con.execute("select horse_horse_id, horse_gender from horses where horse_horse_id in (%s)" % ",".join("?" * len(chunk)), chunk):
+            gender[hid] = (g or "").lower()
+    by = {}
+    for it, cands, fee in parsed:
+        hid = None
+        if cands:
+            mine = lambda h: str(h[1]) == str(sid)      # (fee or refund, the stable's own horse first)
+            stal = lambda h: gender.get(h[0]) == "stallion"
+            order = sorted(cands, key=lambda h: (not mine(h), not stal(h), h[0]))
+            hid = order[0][0]
+        e = by.setdefault(hid, {"hid": hid, "n": 0, "total": 0, "items": []})
+        e["n"] += 1
+        e["total"] += it.get("amount") or 0
+        if len(e["items"]) < 300:
+            e["items"].append(it)
+    info = {}
+    hids = [h for h in by if h is not None]
+    for i in range(0, len(hids), 900):
+        chunk = hids[i:i + 900]
+        for hid, nm, g, st in con.execute("select horse_horse_id, horse_name, horse_gender, horse_stable_id from horses where horse_horse_id in (%s)" % ",".join("?" * len(chunk)), chunk):
+            info[hid] = (nm, g, st)
+    sn = name_map(con, "stables", "stable_stable_id", "stable_name", [to_int(v[2], None) for v in info.values()])
+    for h, e in by.items():
+        nm, g, st = info.get(h, (None, None, None))
+        e.update(name=nm, gender=g, stable_id=to_int(st, None), stable=sn.get(to_int(st, None)))
+    return sorted(by.values(), key=lambda e: (e["hid"] is None, -(e["total"] or 0)))
 
 
 HM_NAME_PREFIX = re.compile(r"^(?:†\s*|\([A-Z]{1,3}\)\s*)+")
@@ -5186,7 +5258,7 @@ class Handler(BaseHTTPRequestHandler):
 
 # --------------------------------------------------------------------------- in-app updates
 
-VERSION = "15.2"
+VERSION = "15.3"
 BACKUP_DIR = os.path.join(APP_DIR, "backups")
 UPDATE_PENDING = os.path.join(DATA_DIR, "update_pending.json")
 UPDATE_RESULT = os.path.join(DATA_DIR, "update_result.json")

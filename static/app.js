@@ -2921,6 +2921,8 @@ async function stableFinancePage(route) {
     const payee = (x) => (x.to_type === "person" && x.to_name ? L.person(x.to_id, x.to_name) : x.to_type === "stable" && x.to_name ? L.stable(x.to_id, x.to_name)
       : x.to_type === "racecourse" && x.to_name ? L.course(x.to_id, x.to_name) : esc(finLabel(x.to_type || "—")));
     const bar = (pct, cls) => `<span class="sbar ${cls}"><i style="width:${Math.max(0, Math.min(100, pct)).toFixed(1)}%"></i></span>`;
+    const payRows = (list, extra) => list.map((x) => `<tr data-fsearch="${esc(`${x.note || ""} ${x.to_name || ""} ${extra}`.toLowerCase())}"><td class="nowrap">${fDate(x.date)}</td><td>${payee(x)}</td><td>${esc(x.note || "")}</td><td class="num">${fMoney(x.amount)}</td></tr>`).join("");
+    const sid = id;
     const top = det.categories[0];
     // long lists start tidy: only the biggest category is opened out
     const fold = det.categories.reduce((a, c) => a + c.types.length, 0) > 12;
@@ -2934,13 +2936,14 @@ async function stableFinancePage(route) {
         <td class="fd-share">${bar(cp, "cat")}<span class="sval">${fNum(cp, cp < 10 ? 1 : 0)}%</span></td></tr>`;
       c.types.forEach((t, ti) => {
         const key = `${ci}-${ti}`, tp = c.total ? (100 * t.total) / c.total : 0;
-        const search = [t.type, finLabel(c.cat), ...t.items.map((x) => `${x.note || ""} ${x.to_name || ""}`)].join(" ").toLowerCase();
-        rowsHtml += `<tr class="fin-type" data-fcat-of="${ci}" data-fsearch="${esc(search)}" ${shut ? "hidden" : ""}><td><button class="fin-tg" data-fin="${key}" title="Show each payment">▸</button> ${esc(t.type || "Other")}</td>
+        const hs = t.horses || null;
+        const search = [t.type, finLabel(c.cat), ...t.items.map((x) => `${x.note || ""} ${x.to_name || ""}`), ...(hs || []).map((h) => h.name || "")].join(" ").toLowerCase();
+        rowsHtml += `<tr class="fin-type" data-fcat-of="${ci}" data-fsearch="${esc(search)}" ${shut ? "hidden" : ""}><td><button class="fin-tg" data-fin="${key}" title="${hs ? "Show it by horse" : "Show each payment"}">▸</button> ${esc(t.type || "Other")}${hs ? ` <span class="muted small">· by horse (${fNum(hs.filter((h) => h.hid).length)})</span>` : ""}</td>
           <td class="num">${fNum(t.n)}</td><td class="num">${finAmt(t.total)}</td><td class="num">${t.n ? finAmt(t.total / t.n) : "—"}</td>
           <td class="fd-share">${bar(tp, "type")}<span class="sval muted">${fNum(tp, 0)}% of ${esc(finLabel(c.cat).toLowerCase())}</span></td></tr>
-          <tr class="fin-items" data-fin-row="${key}" hidden><td colspan="5"><table class="data fd-pay nosort"><thead><tr><th>Date</th><th>${W.payee}</th><th>Note</th><th class="num">Amount</th></tr></thead><tbody>
-          ${t.items.map((x) => `<tr data-fsearch="${esc(`${x.note || ""} ${x.to_name || ""} ${t.type} ${finLabel(c.cat)}`.toLowerCase())}"><td class="nowrap">${fDate(x.date)}</td><td>${payee(x)}</td><td>${esc(x.note || "")}</td><td class="num">${fMoney(x.amount)}</td></tr>`).join("") || '<tr><td colspan="4" class="muted">No payments.</td></tr>'}
-          </tbody></table>${t.n > t.items.length ? `<div class="muted small">Newest ${fNum(t.items.length)} of ${fNum(t.n)} payments.</div>` : ""}</td></tr>`;
+          <tr class="fin-items" data-fin-row="${key}" hidden><td colspan="5">${hs ? fdHorses(hs, t, key, payRows, W, sid) : ""}<div ${hs ? `data-fh-flat="${key}" hidden` : ""}><table class="data fd-pay nosort"><thead><tr><th>Date</th><th>${W.payee}</th><th>Note</th><th class="num">Amount</th></tr></thead><tbody>
+          ${payRows(t.items, `${t.type} ${finLabel(c.cat)}`) || '<tr><td colspan="4" class="muted">No payments.</td></tr>'}
+          </tbody></table>${t.n > t.items.length ? `<div class="muted small">Newest ${fNum(t.items.length)} of ${fNum(t.n)} payments.</div>` : ""}</div></td></tr>`;
       });
     });
     const nPay = det.categories.reduce((a, c) => a + c.n, 0);
@@ -2960,6 +2963,42 @@ async function stableFinancePage(route) {
     fromLog ? "From the game's payment log, so it can differ a little from the monthly totals above · ▸ shows each payment" : "From the game's monthly figures, by category")}</div>`;
   return html;
 }
+// breeding money received, one more level down: each horse (the stable's stallions), its covers, total and average fee
+function fdHorses(hs, t, key, payRows, W, sid) {
+  const tot = hs.reduce((a, h) => a + (h.total || 0), 0), max = Math.max(...hs.map((h) => h.total || 0), 1);
+  const covers = hs.some((h) => h.items.some((x) => /^Breeding fee/.test(x.note || "")));
+  const rows = hs.map((h, hi) => {
+    const k = `${key}-${hi}`, p = tot ? (100 * (h.total || 0)) / tot : 0;
+    const who = h.hid ? L.horse(h.hid, h.name || "Horse " + h.hid) : '<span class="muted">Horse not found</span>';
+    const notes = [h.gender && h.gender !== "Stallion" ? esc(h.gender) : "", h.hid && h.stable_id && String(h.stable_id) !== String(sid) ? (h.stable ? `now at ${L.stable(h.stable_id, h.stable)}` : "now elsewhere") : ""].filter(Boolean).join(" · ");
+    const search = [h.name || "", ...h.items.map((x) => `${x.note || ""} ${x.to_name || ""}`)].join(" ").toLowerCase();
+    return `<tr class="fh-row" data-fsearch="${esc(search)}"><td><button class="fh-tg" data-fh-tg="${k}" title="Show this horse's payments">▸</button> ${who}${notes ? ` <span class="muted small">${notes}</span>` : ""}</td>
+      <td class="num">${fNum(h.n)}</td><td class="num"><b>${finAmt(h.total)}</b></td><td class="num">${h.n ? finAmt(h.total / h.n) : "—"}</td>
+      <td class="fd-share"><span class="sbar type"><i style="width:${((100 * (h.total || 0)) / max).toFixed(1)}%"></i></span><span class="sval muted">${fNum(p, p < 10 ? 1 : 0)}%</span></td></tr>
+      <tr class="fh-pay" data-fh-row="${k}" hidden><td colspan="5"><table class="data fd-pay nosort"><thead><tr><th>Date</th><th>${W.payee}</th><th>Note</th><th class="num">Amount</th></tr></thead>
+      <tbody>${payRows(h.items, `${h.name || ""} ${t.type}`)}</tbody></table>${h.n > h.items.length ? `<div class="muted small">Newest ${fNum(h.items.length)} of ${fNum(h.n)} payments.</div>` : ""}</td></tr>`;
+  }).join("");
+  return `<div class="fh-tools"><div class="seg" role="group" aria-label="Show"><button class="on" data-fh-view="horse" data-k="${key}">By horse</button><button data-fh-view="pay" data-k="${key}">Each payment</button></div>
+      <span class="muted small">${fNum(hs.filter((h) => h.hid).length)} horse${hs.filter((h) => h.hid).length === 1 ? "" : "s"} · biggest first</span></div>
+    <div data-fh-horses="${key}"><table class="data fd-horses nosort"><thead><tr><th>Horse</th><th class="num">${covers ? "Covers" : "Payments"}</th><th class="num">Total</th><th class="num">${covers ? "Average fee" : "Average"}</th><th class="fd-share">Share</th></tr></thead>
+    <tbody>${rows}</tbody><tfoot><tr><td>All horses</td><td class="num">${fNum(hs.reduce((a, h) => a + h.n, 0))}</td><td class="num">${finAmt(tot)}</td><td class="num">${finAmt(tot / Math.max(1, hs.reduce((a, h) => a + h.n, 0)))}</td><td></td></tr></tfoot></table></div>`;
+}
+document.addEventListener("click", (e) => {
+  const tg = e.target.closest("[data-fh-tg]");
+  if (tg) {
+    const row = document.querySelector(`[data-fh-row="${tg.dataset.fhTg}"]`);
+    if (row) { row.hidden = !row.hidden; tg.textContent = row.hidden ? "▸" : "▾"; tg.title = row.hidden ? "Show this horse's payments" : "Hide the payments"; }
+    return;
+  }
+  const v = e.target.closest("[data-fh-view]");
+  if (v) {
+    const k = v.dataset.k, horse = v.dataset.fhView === "horse";
+    v.parentNode.querySelectorAll("button").forEach((b) => b.classList.toggle("on", b === v));
+    const hb = document.querySelector(`[data-fh-horses="${k}"]`), fb = document.querySelector(`[data-fh-flat="${k}"]`);
+    if (hb) hb.hidden = !horse;
+    if (fb) fb.hidden = horse;
+  }
+});
 // expense detail: open/close a type's payments, collapse a category, open/close everything, and filter
 function fdToggle(b, open) {
   const row = document.querySelector(`[data-fin-row="${b.dataset.fin}"]`);

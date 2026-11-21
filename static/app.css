@@ -666,8 +666,8 @@ tr.fin-total td { border-top: 2px solid var(--line); background: #f7f8fa; }
 .fin-detail tr.fin-cat td { background: #f3f5f9; border-top: 1px solid var(--line); }
 .fin-detail tr.fin-type td:first-child { padding-left: 22px; }
 .fin-detail tfoot td { border-top: 2px solid var(--line); }
-.fin-tg { border: 1px solid var(--line); background: var(--panel); border-radius: 4px; width: 20px; height: 18px; line-height: 14px; padding: 0; font-size: 10px; cursor: pointer; color: var(--muted); vertical-align: 1px; }
-.fin-tg:hover { color: var(--blue); border-color: #9db8ec; }
+.fin-tg, .fh-tg { border: 1px solid var(--line); background: var(--panel); border-radius: 4px; width: 20px; height: 18px; line-height: 14px; padding: 0; font-size: 10px; cursor: pointer; color: var(--muted); vertical-align: 1px; }
+.fin-tg:hover, .fh-tg:hover { color: var(--blue); border-color: #9db8ec; }
 .fin-detail tr.fin-items > td { background: #fbfcfd; padding: 6px 10px 10px 30px; }
 .fin-detail tr.fin-items table.data { font-size: var(--fs-sm); }
 /* 10.3: Year by year table */
@@ -1103,3 +1103,9 @@ body.sb-mini .sidebar .sb-fav a { padding-right: 0; }
 .kb-fav-acts .btn.sm { padding: 3px 8px; font-size: var(--fs-xs); }
 .kb-rename { height: 28px; padding: 0 8px; border: 1px solid var(--blue); border-radius: 6px; font: inherit; width: 100%; max-width: 320px; background: var(--panel); color: inherit; }
 .page-head .kb-tools { margin: 0; }
+/* 15.3: breeding income by horse */
+.fh-tools { display: flex; align-items: center; gap: 10px; margin: 2px 0 8px; }
+.fh-tools .seg button { height: 28px; padding: 0 12px; font-size: var(--fs-sm); }
+table.fd-horses { margin: 0 0 4px; }
+table.fd-horses tr.fh-pay > td { padding: 4px 8px 8px 30px; background: var(--bg); }
+table.fd-horses tfoot td { font-weight: 700; border-top: 2px solid var(--line); }
