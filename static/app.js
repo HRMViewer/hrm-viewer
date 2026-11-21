@@ -3105,17 +3105,21 @@ async function peoplePage(route) {
 // Part 1: one section each for jockeys, trainers and managers, all drawn by roleSection().
 // Part 2: the latest awards and news as small compact panels (compactPanel()), collapsed by default.
 const PO_SECTIONS = {
-  jockeys: { title: "Jockeys", noun: "jockeys", races: "Rides", all: "#/jockeys?view=jockeys", rank: "career wins as a jockey" },
-  trainers: { title: "Trainers", noun: "trainers", races: "Runners", all: "#/jockeys?view=trainers", rank: "career wins as a trainer or head trainer" },
-  managers: { title: "Managers", noun: "managers", races: "Runners", all: "#/jockeys?view=managers", rank: "career prize money as a manager" },
+  jockeys: { title: "Jockeys", noun: "jockeys", races: "Rides" },
+  trainers: { title: "Trainers", noun: "trainers", races: "Runners" },
+  managers: { title: "Managers", noun: "managers", races: "Runners" },
 };
 
 // one people section; the three sections only differ in their wording (PO_SECTIONS)
-function roleSection(meta, sec) {
+function roleSection(meta, sec, ctx) {
   const people = sec.people || [];
   const z = (v) => (v ? fNum(v) : '<span class="muted">0</span>');
+  const first = sec.everyone ? (sec.page - 1) * 25 : 0;
+  const rows = people.map((r, i) => Object.assign({ _n: first + i + 1 }, r));
   const table_ = people.length ? table([
-    { h: "Name", cls: "nowrap", f: (r) => `${L.person(r.id, r.name)}${r.is_player ? ' <span class="badge good">You</span>' : ""}<div class="muted small">${esc(r.job || "")} · ${fNum(age(r.birth))}yo</div>` },
+    { h: "#", cls: "num muted", f: (r) => r._n },
+    { h: "Name", cls: "nowrap", f: (r) => `${L.person(r.id, r.name)}${r.died ? ' <span class="badge dead">Dead</span>' : ""}${r.is_player ? ' <span class="badge good">You</span>' : ""}
+      <div class="muted small">${r.died ? "Died " + yr(r.died) : r.job ? esc(r.job) : "Not working now"}${r.birth ? ` · ${fNum(age(r.birth, r.died))}yo` : ""}</div>` },
     { h: "Stable", f: (r) => (r.stable_id ? L.stable(r.stable_id, r.stable) : '<span class="muted">—</span>') },
     { h: meta.races, cls: "num", f: (r) => fNum(r.starts) },
     { h: "Wins", cls: "num", f: (r) => `${fNum(r.wins)} <span class="muted small">${r.starts ? pct(r.wins, r.starts) : ""}</span>` },
@@ -3125,9 +3129,17 @@ function roleSection(meta, sec) {
     { h: "Group + Listed", cls: "num", f: (r) => (r.total_gl ? `<b>${fNum(r.total_gl)}</b>` : z(0)) },
     { h: "Latest race", f: (r) => (r.last_race ? `${L.race(r.last_race.race_id, r.last_race.race)}
         <div class="muted small">${fDate(r.last_race.date)}${r.last_race.rank ? " · " + ord(r.last_race.rank) : ""}</div>` : '<span class="muted">No races yet</span>') },
-  ], people) : `<div class="empty">No ${meta.noun} working at a stable right now.</div>`;
-  return panel(meta.title, table_,
-    `Top ${people.length || ""} working now, by ${meta.rank} · <a href="${meta.all}">All ${meta.noun}</a>`, "po-sec");
+  ], rows) : `<div class="empty">No ${meta.noun} ${ctx.who === "now" ? "working now " : ""}had races ${ctx.year ? "in " + ctx.year : "on record"}.</div>`;
+  const when = ctx.year ? `in ${ctx.year}` : "of all time";
+  const scope = ctx.who === "now" ? "working now" : "everyone";
+  const more = sec.everyone
+    ? `All ${fNum(sec.total)} ${meta.noun} (${scope}), by wins ${when} · <a href="#" data-po-all="">Top 8 only</a>`
+    : `Top ${fNum(people.length)} ${scope === "everyone" ? "" : "working now "}by wins ${when}${sec.total > people.length ? ` · <a href="#" data-po-all="${sec.key}">Show all ${fNum(sec.total)}</a>` : ""}`;
+  const pg = sec.everyone && sec.pages > 1 ? `<div class="pager"><span>${fNum(first + 1)}–${fNum(first + people.length)} of ${fNum(sec.total)}</span><span class="grow"></span>
+    <button class="btn" data-page="1" ${sec.page <= 1 ? "disabled" : ""}>First</button><button class="btn" data-page="${sec.page - 1}" ${sec.page <= 1 ? "disabled" : ""}>Previous</button>
+    <span>Page ${fNum(sec.page)} of ${fNum(sec.pages)}</span>
+    <button class="btn" data-page="${sec.page + 1}" ${sec.page >= sec.pages ? "disabled" : ""}>Next</button><button class="btn" data-page="${sec.pages}" ${sec.page >= sec.pages ? "disabled" : ""}>Last</button></div>` : "";
+  return panel(meta.title, table_ + pg, more, `po-sec${sec.everyone ? " po-all" : ""}`);
 }
 
 // compact panel: the first few items, collapsed by default. Expanding shows the rest of what was loaded;
@@ -3140,6 +3152,17 @@ function compactPanel({ key, title, items, row, empty, shown = 4 }) {
   const full = COMPACT_FULL[key] ? `<a class="small" href="${COMPACT_FULL[key]}">Open</a>` : "";
   return `<section class="panel cp collapsed" data-cp-panel="${key}"><div class="panel-head"><h2>${title}</h2><span class="note">${full}</span></div>${body}${more}</section>`;
 }
+// Show all / Top 8 only on a People overview section
+document.addEventListener("click", (e) => {
+  const a = e.target.closest("[data-po-all]");
+  if (!a) return;
+  e.preventDefault();
+  const q = Object.assign({}, parseHash().q, { all: a.dataset.poAll });
+  delete q.page;
+  if (!q.all) delete q.all;
+  location.hash = "#/people-overview" + (Object.keys(q).length ? "?" + new URLSearchParams(q) : "");
+  if (a.dataset.poAll) setTimeout(() => { const s = document.querySelector(".po-all"); if (s) s.scrollIntoView({ block: "start" }); }, 600);
+});
 document.addEventListener("click", (e) => {
   const b = e.target.closest("[data-cp]");
   if (!b) return;
@@ -3148,12 +3171,16 @@ document.addEventListener("click", (e) => {
   b.textContent = open ? "Show fewer ▴" : `Show ${fNum(p.querySelectorAll(".cp-more").length)} more ▾`;
 });
 
-async function peopleOverviewPage() {
-  const d = await api("people_overview");
+async function peopleOverviewPage(route) {
+  const q = (route && route.q) || {};
+  const d = await api("people_overview?" + new URLSearchParams(Object.fromEntries(Object.entries({ year: q.year, who: q.who, all: q.all, page: q.page }).filter(([, v]) => v))));
+  const ctx = { year: d.year, who: d.who };
   let html = `<div class="page-head"><div><div class="crumb">People</div><h1>People overview</h1>
-    <div class="sub">The leading jockeys, trainers and managers working now, their races and their Group and Listed wins.</div></div>
-    <div><a class="btn" href="#/people">All people</a></div></div>`;
-  const secs = (d.sections || []).map((sec) => roleSection(PO_SECTIONS[sec.key], sec)).join("");
+    <div class="sub">Jockeys, trainers and managers ${d.year ? "in " + d.year : "of all time"}: their races and their Group and Listed wins.</div></div>
+    <div><a class="btn" href="#/people">All people</a></div></div>
+    <div class="filters po-filters">${select("year", q, [["", "All time"]].concat((d.years || []).map((y) => [String(y), String(y)])), "Show one year's races")}
+      ${seg("who", q, [["", "Working now"], ["all", "Everyone (incl. retired)"]], "")}</div>`;
+  const secs = (d.sections || []).map((sec) => roleSection(PO_SECTIONS[sec.key], sec, ctx)).join("");
   const awards = compactPanel({ key: "awards", title: "Latest awards", items: d.awards, empty: "No awards to people yet.",
     row: (a) => `<div class="cp-d">${a.date ? fDate(a.date) : a.year || ""}</div><div><b>${esc(a.label || "")}</b>${a.rank > 1 ? ` <span class="muted small">${ord(a.rank)}</span>` : ""}
       <div class="small">${a.pid ? L.person(a.pid, a.person) : esc(a.person || "")}</div></div>` });

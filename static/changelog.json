@@ -1,5 +1,15 @@
 [
   {
+    "version": "14.2",
+    "date": "2026-11-21",
+    "title": "People overview by year, and everyone",
+    "changes": [
+      "People overview: pick a year at the top to see jockeys, trainers and managers for that season (races, wins, prize money, Group and Listed wins in that year), or All time.",
+      "Choose Working now or Everyone (incl. retired) to include people who have retired, died or are out of work.",
+      "Each table now has a rank column and a Show all link that lists every jockey, trainer or manager, 25 per page; Top 8 only goes back."
+    ]
+  },
+  {
     "version": "14.1",
     "date": "2026-11-21",
     "title": "Tidier People overview",
@@ -37,7 +47,7 @@
     "changes": [
       "New Tree chart tab on people's pages: the family drawn as a proper tree with connecting lines. Ancestors above (up to 8 generations), the person in the middle with brothers and sisters beside them and partners next to them, children and grandchildren below. Zoom in and out, Fit, drag to move around, and click any name to put them in the centre.",
       "Former partners stand on the person's left with a dashed line; the current partner on the right with a solid one.",
-      "Dynasty tab: people who married into the family and later divorced are now listed as Divorced (with their own filter and a Divorced tag), not as married in. Married to shows \u201cdivorced <year>\u201d, and the family tree greys out former partners.",
+      "Dynasty tab: people who married into the family and later divorced are now listed as Divorced (with their own filter and a Divorced tag), not as married in. Married to shows “divorced <year>”, and the family tree greys out former partners.",
       "Quick Guide updated."
     ]
   },
@@ -46,7 +56,7 @@
     "date": "2026-11-21",
     "title": "Family tree and Dynasty tabs for people",
     "changes": [
-      "People's pages have a new Family tree tab: ancestors up to 8 generations back (four as a chart, all eight in a fold-out list that says who each one is, e.g. \u201cFather's mother's father\u201d), and every relative the save links to them, named precisely (half-sister, great-uncle, first cousin once removed...). Switch between Close family, + Aunts, uncles & cousins, and Everyone, or show only those alive.",
+      "People's pages have a new Family tree tab: ancestors up to 8 generations back (four as a chart, all eight in a fold-out list that says who each one is, e.g. “Father's mother's father”), and every relative the save links to them, named precisely (half-sister, great-uncle, first cousin once removed...). Switch between Close family, + Aunts, uncles & cousins, and Everyone, or show only those alive.",
       "New <surname> dynasty tab: the family that shares the person's last name, from its earliest known member down. Tree by generation with who each married, every member and those who married in, stables owned, total jockey and trainer wins and awards, and a list of births, marriages, divorces and deaths.",
       "The game links parents and children born since your career began, so family trees and dynasties grow as generations pass.",
       "Quick Guide updated."
@@ -68,8 +78,8 @@
     "title": "Awards tabs for horses and people; month by month",
     "changes": [
       "Horse pages and people's pages now have an Awards tab, like stables. A horse's lists every season award and Group/Listed race win, with the jockey and stable. A person's lists their own awards plus every Group/Listed race win they rode, trained, managed or looked after, with a filter for each role. Filter by kind, wins only, year, or search.",
-      "Stable Financials: new Month by month panel with each month's income, expenses and net for the year you pick; \u25b8 opens that month's categories.",
-      "Stable Financials: the payment detail has an Expenses \u00b7 Income switch, so you can see every payment the stable received, grouped the same way, with who paid (people, stables and racecourses by name).",
+      "Stable Financials: new Month by month panel with each month's income, expenses and net for the year you pick; ▸ opens that month's categories.",
+      "Stable Financials: the payment detail has an Expenses · Income switch, so you can see every payment the stable received, grouped the same way, with who paid (people, stables and racecourses by name).",
       "Stable Overview: the Latest month panel is gone (the figures are on Financials, month by month).",
       "The CSV button on tables that show one year at a time exports the year you're looking at.",
       "Quick Guide updated for all of this."
@@ -80,7 +90,7 @@
     "date": "2026-11-21",
     "title": "Stable awards: Worst Horse of the Year",
     "changes": [
-      "On a stable's Awards tab, Worst Horse of the Year is now shown as \u201cWorst of the year\u201d instead of a win: it isn't highlighted, isn't counted in the \u201cwon\u201d totals and doesn't appear under Wins only.",
+      "On a stable's Awards tab, Worst Horse of the Year is now shown as “Worst of the year” instead of a win: it isn't highlighted, isn't counted in the “won” totals and doesn't appear under Wins only.",
       "The Quick Guide now covers the stable Awards tab added in 13.3."
     ]
   },
@@ -99,7 +109,7 @@
     "date": "2026-11-21",
     "title": "Refresh button; dark mode table headings",
     "changes": [
-      "New \u21bb Refresh button next to back and forward: it loads the page you're on again with the latest data and keeps your place. F5 does the same.",
+      "New ↻ Refresh button next to back and forward: it loads the page you're on again with the latest data and keeps your place. F5 does the same.",
       "Dark mode: the first heading of wide tables (such as Award on the Awards pages) no longer shows up highlighted in a brown colour. All table headings now use the same colour."
     ]
   },
@@ -121,8 +131,8 @@
       "Each database now keeps track of its player. If you load a save whose player is different (for example your heir has taken over) the viewer asks first: is it the same world? Same world keeps using this database for the new player; New player creates a separate database for them.",
       "A save from a different world gets the same question, with loading it as a new database recommended.",
       "Automatic updates ask too: when the watched save changes player or world, the question pops up instead of the save being loaded or quietly skipped.",
-      "Settings \u2192 Databases shows each database's player and any players it followed before, and its buttons are smaller.",
-      "Settings \u2192 Viewer \u2192 Updates has a new Check for updates automatically switch. Untick it and the viewer never looks for new versions by itself; Check now still works."
+      "Settings → Databases shows each database's player and any players it followed before, and its buttons are smaller.",
+      "Settings → Viewer → Updates has a new Check for updates automatically switch. Untick it and the viewer never looks for new versions by itself; Check now still works."
     ]
   },
   {
@@ -130,16 +140,16 @@
     "date": "2026-11-21",
     "title": "Clearer message when the port is taken",
     "changes": [
-      "If another program grabs the viewer's address just as it starts, HRM Viewer.exe now says so straight away (close that program or restart your PC) instead of a general \u201cstopped while starting\u201d.",
-      "The viewer tells apart \u201cHRM Viewer is already running\u201d from \u201canother program has the port\u201d, and a port clash never undoes an update you've just installed."
+      "If another program grabs the viewer's address just as it starts, HRM Viewer.exe now says so straight away (close that program or restart your PC) instead of a general “stopped while starting”.",
+      "The viewer tells apart “HRM Viewer is already running” from “another program has the port”, and a port clash never undoes an update you've just installed."
     ]
   },
   {
     "version": "12.8",
     "date": "2026-11-21",
-    "title": "Fix: stuck on \u201cAlmost there\u2026\u201d",
+    "title": "Fix: stuck on “Almost there…”",
     "changes": [
-      "If another program on the computer was already using the viewer's usual address (port 8765), HRM Viewer.exe waited forever on \u201cAlmost there\u2026\u201d. It now notices and uses the next free port instead, so the window opens.",
+      "If another program on the computer was already using the viewer's usual address (port 8765), HRM Viewer.exe waited forever on “Almost there…”. It now notices and uses the next free port instead, so the window opens.",
       "On Windows the viewer now takes its port to itself, so it can't end up sharing one with another program.",
       "If you were stuck, update by downloading HRM-Viewer-12.8-full.zip from the download page and copying your old data folder into it (or close the other program and open HRM Viewer again)."
     ]
@@ -157,9 +167,9 @@
     "date": "2026-11-21",
     "title": "Stables you manage, and Jockey stats",
     "changes": [
-      "Your stables now includes the stables you manage, listed first and marked Manager (or Owner & manager). The side menu, the \u25c0 \u25b6 bar on stable pages and Settings \u2192 Main stable all follow.",
+      "Your stables now includes the stables you manage, listed first and marked Manager (or Owner & manager). The side menu, the ◀ ▶ bar on stable pages and Settings → Main stable all follow.",
       "Stable pages show the stable's manager next to its owner.",
-      "New People \u2192 Jockey stats page: every person's jockey, trainer and stable numbers side by side. Rides, wins, strike rate and prize money as a jockey and as a trainer (head trainer races included), the stable they work at now with its wins and prize money, how many stables they've managed and what they've earned as a manager.",
+      "New People → Jockey stats page: every person's jockey, trainer and stable numbers side by side. Rides, wins, strike rate and prize money as a jockey and as a trainer (head trainer races included), the stable they work at now with its wins and prize money, how many stables they've managed and what they've earned as a manager.",
       "Switch between Jockeys, Trainers, Stable managers and Everyone, search by name, filter by the job they do now, and sort by any heading. Your own row is highlighted."
     ]
   },
@@ -181,7 +191,7 @@
       "The full download now has everything it needs, including its own Python: unzip it and double-click HRM Viewer.exe. Nothing else to install.",
       "HRM Viewer.exe is the only way to open the viewer now, in its own window. Start.bat and Load database.bat are gone (old copies are tidied away); drag a database.db onto HRM Viewer.exe to load it.",
       "When a new version is out, the viewer asks when it opens: Install now, Remind me later or Skip this version, with what's new in it.",
-      "Settings \u2192 Viewer \u2192 Updates always uses the HRM Viewer repository on GitHub. All versions lists every published version, so you can go back to an earlier one if you don't like a new one, or update again."
+      "Settings → Viewer → Updates always uses the HRM Viewer repository on GitHub. All versions lists every published version, so you can go back to an earlier one if you don't like a new one, or update again."
     ]
   },
   {
@@ -191,7 +201,7 @@
     "changes": [
       "The viewer now gets its updates from github.com/jomdesa-glitch/hrm-viewer by itself: when a new version is published there, the bar at the top offers to install it. Nothing to set up.",
       "Anyone can download the full viewer from the Releases page of that repository.",
-      "Settings \u2192 Viewer \u2192 Updates from GitHub shows the repository and has Check now."
+      "Settings → Viewer → Updates from GitHub shows the repository and has Check now."
     ]
   },
   {
@@ -201,7 +211,7 @@
     "changes": [
       "The viewer can now get new versions from GitHub. When a newer version is published, a bar at the top says so, with Install now, What's new and Later.",
       "Install now downloads the update from GitHub and installs it the same way as Install an update: your data isn't touched, the viewer restarts on the new version, and Versions & changes can put the old one back.",
-      "Settings \u2192 Viewer has a new Updates from GitHub row: whether you're up to date, Check now, and a link to the download page where anyone can get the full viewer.",
+      "Settings → Viewer has a new Updates from GitHub row: whether you're up to date, Check now, and a link to the download page where anyone can get the full viewer.",
       "The viewer checks when it opens and every 6 hours while it's open. Install an update (choosing a zip by hand) still works as before."
     ]
   },
@@ -220,7 +230,7 @@
     "date": "2026-11-21",
     "title": "Hover-card banner only when you choose one",
     "changes": [
-      "A horse's hover card only shows a picture when you've picked one with \u25ad Banner in its gallery. If no banner is chosen, the hover card has no picture, even if the horse has photos (it no longer falls back to the profile photo)."
+      "A horse's hover card only shows a picture when you've picked one with ▭ Banner in its gallery. If no banner is chosen, the hover card has no picture, even if the horse has photos (it no longer falls back to the profile photo)."
     ]
   },
   {
@@ -229,7 +239,7 @@
     "title": "Tidier Settings, and a cleaner Quick Guide PDF",
     "changes": [
       "Settings: Your stables is now a small panel at the top right, with Viewer and Database stacked underneath it, next to Display. Automatic updates stays full width below.",
-      "Quick Guide PDF: every section now stays whole on one page \u2014 no boxes split between pages."
+      "Quick Guide PDF: every section now stays whole on one page — no boxes split between pages."
     ]
   },
   {
@@ -237,9 +247,9 @@
     "date": "2026-11-21",
     "title": "Gallery: banners, and a sliding row of photos",
     "changes": [
-      "Each photo in a horse's gallery now has two choices: \u2605 Profile (next to the horse's name, and small in the horse lists) and \u25ad Banner (across the top of the horse's hover card). Without a banner, the hover card uses the profile photo as before.",
-      "The gallery shows your photos in one row that slides sideways \u2014 use \u2039 \u203a or scroll \u2014 instead of wrapping onto new rows, with the number of photos above it. There's no limit on how many you add.",
-      "Delete is now a small \u2715 on each photo (click twice)."
+      "Each photo in a horse's gallery now has two choices: ★ Profile (next to the horse's name, and small in the horse lists) and ▭ Banner (across the top of the horse's hover card). Without a banner, the hover card uses the profile photo as before.",
+      "The gallery shows your photos in one row that slides sideways — use ‹ › or scroll — instead of wrapping onto new rows, with the number of photos above it. There's no limit on how many you add.",
+      "Delete is now a small ✕ on each photo (click twice)."
     ]
   },
   {
@@ -247,8 +257,8 @@
     "date": "2026-11-21",
     "title": "Updates and the guide live in Settings",
     "changes": [
-      "\u201cInstall an update\u201d is no longer at the bottom of every page \u2014 it's in Settings (and Settings \u2192 Versions & changes).",
-      "Settings has a new Quick Guide row: \u201cOpen the guide\u201d shows the PDF inside the viewer, and \u201cDownload PDF\u201d saves a copy. The guide is updated with every version."
+      "“Install an update” is no longer at the bottom of every page — it's in Settings (and Settings → Versions & changes).",
+      "Settings has a new Quick Guide row: “Open the guide” shows the PDF inside the viewer, and “Download PDF” saves a copy. The guide is updated with every version."
     ]
   },
   {
@@ -264,8 +274,8 @@
     "date": "2026-11-21",
     "title": "Horse photo gallery, and steadier gear tooltips",
     "changes": [
-      "Horse pages have a photo gallery: click \u201cAdd photos\u201d (or \u201cGallery\u201d) to upload pictures \u2014 click to choose or drag them in (JPG, PNG, GIF or WebP, up to 25 MB each).",
-      "Choose a main photo with \u201c\u2605 Use as main photo\u201d. It shows across the top of the horse's page (click it to open the gallery), and small next to the horse's name in All horses, the Horse table and on its hover card.",
+      "Horse pages have a photo gallery: click “Add photos” (or “Gallery”) to upload pictures — click to choose or drag them in (JPG, PNG, GIF or WebP, up to 25 MB each).",
+      "Choose a main photo with “★ Use as main photo”. It shows across the top of the horse's page (click it to open the gallery), and small next to the horse's name in All horses, the Horse table and on its hover card.",
       "Click a photo in the gallery to see it full size; delete any you don't want (click Delete twice). Photos are kept with each database, on your computer.",
       "Gear letters: the mouse pointer no longer turns into a question mark, and the full gear names stay put while you move across the letters instead of jumping and restarting."
     ]
@@ -275,7 +285,7 @@
     "date": "2026-11-21",
     "title": "Quick Guide as a PDF, kept up to date",
     "changes": [
-      "The Quick Guide is now a PDF (\u201cHRM Viewer - Quick Guide.pdf\u201d next to HRM Viewer.exe), with the version and date on the front and page numbers.",
+      "The Quick Guide is now a PDF (“HRM Viewer - Quick Guide.pdf” next to HRM Viewer.exe), with the version and date on the front and page numbers.",
       "It now comes with every update, not just the full download, and is refreshed for each new version. Installing an update puts the newest guide in your HRM Viewer folder (replacing the older HTML guide)."
     ]
   },
@@ -284,9 +294,9 @@
     "date": "2026-11-21",
     "title": "Choose your own colours",
     "changes": [
-      "Settings \u2192 Colours (under Appearance): pick your own colours for the accent (buttons, links, selected tabs), top bar, headings, page background, cards, lines and winning rows.",
+      "Settings → Colours (under Appearance): pick your own colours for the accent (buttons, links, selected tabs), top bar, headings, page background, cards, lines and winning rows.",
       "One-click presets: Racing green, Royal purple, Crimson, Ocean, Warm and a light top bar (and Black for dark mode).",
-      "Light and dark mode each keep their own colours \u2014 switch mode to change the other set. Changes show straight away; \u2715 puts one colour back, or reset them all.",
+      "Light and dark mode each keep their own colours — switch mode to change the other set. Changes show straight away; ✕ puts one colour back, or reset them all.",
       "A light top bar automatically gets dark text so it stays readable."
     ]
   },
@@ -295,8 +305,8 @@
     "date": "2026-11-21",
     "title": "Back and forward buttons",
     "changes": [
-      "New \u2039 and \u203a buttons at the top left (next to \u2630) take you back and forward through the pages you've visited, like a web browser. They're greyed out when there's nowhere to go.",
-      "Alt + \u2190 / Alt + \u2192 and your mouse's back / forward buttons do the same."
+      "New ‹ and › buttons at the top left (next to ☰) take you back and forward through the pages you've visited, like a web browser. They're greyed out when there's nowhere to go.",
+      "Alt + ← / Alt + → and your mouse's back / forward buttons do the same."
     ]
   },
   {
@@ -304,7 +314,7 @@
     "date": "2026-11-21",
     "title": "No more green boxes in Last starts",
     "changes": [
-      "Last starts (in a runner's form): removed the green boxes that appeared around some Track, Distance, Jockey and Cond. cells. They were an unexplained \u201csame as this race\u201d marker; the table is now clean. Winning runs keep their light green row."
+      "Last starts (in a runner's form): removed the green boxes that appeared around some Track, Distance, Jockey and Cond. cells. They were an unexplained “same as this race” marker; the table is now clean. Winning runs keep their light green row."
     ]
   },
   {
@@ -312,12 +322,12 @@
     "date": "2026-11-21",
     "title": "Every table and chart: tidier and more useful",
     "changes": [
-      "Charts: every chart now has a tool row \u2014 Linear / Log switch (for any chart with amounts; positions stay as they are), the time range, \u2922 to open it large, PNG to save a picture, and CSV to download the numbers behind it.",
-      "Charts: gridlines fall on round numbers ($75M, $100M, $125M\u2026 instead of $112.52M), a log-scale chart says so on the picture, and narrow ranges on a log scale still get useful gridlines.",
+      "Charts: every chart now has a tool row — Linear / Log switch (for any chart with amounts; positions stay as they are), the time range, ⤢ to open it large, PNG to save a picture, and CSV to download the numbers behind it.",
+      "Charts: gridlines fall on round numbers ($75M, $100M, $125M… instead of $112.52M), a log-scale chart says so on the picture, and narrow ranges on a log scale still get useful gridlines.",
       "Charts: the legend shows each line's latest value; double-click a name to show only that line (double-click again for all). Single-line charts show Latest, High and Low (with dates) and the change over the range in view.",
-      "Tables with 25 or more rows get a Filter rows box next to their CSV button (shows \u201c22 of 152\u201d; Esc clears it) \u2014 fold-out rows stay with their row.",
+      "Tables with 25 or more rows get a Filter rows box next to their CSV button (shows “22 of 152”; Esc clears it) — fold-out rows stay with their row.",
       "Long tables (over 30 rows) scroll inside themselves with the column headings, and any totals row, kept in view.",
-      "Every column heading that can sort now shows \u21c5 when you point at it."
+      "Every column heading that can sort now shows ⇅ when you point at it."
     ]
   },
   {
@@ -338,8 +348,8 @@
     "date": "2026-11-21",
     "title": "Nicer, more useful Financials tables",
     "changes": [
-      "Income by category and Expenses by category: biggest categories first, short amounts (exact on hover), each row shaded so you can spot that category's big years, a little trend line, the change on the year before as a \u25b2\u25bc badge, and a bar for each category's share of the latest year.",
-      "New \u201c% of year\u201d switch shows every category as a share of that year's total.",
+      "Income by category and Expenses by category: biggest categories first, short amounts (exact on hover), each row shaded so you can spot that category's big years, a little trend line, the change on the year before as a ▲▼ badge, and a bar for each category's share of the latest year.",
+      "New “% of year” switch shows every category as a share of that year's total.",
       "A year still in progress is compared with the same months of the year before, in these tables as well.",
       "Sorting by a column uses the exact amounts, and the CSV download has exact amounts too.",
       "Expense detail: a summary strip (paid out, number of payments, biggest category), a filter box (type, note or who was paid), Open all / Close all, categories you can fold away, an Average column and share bars. Long lists start with only the biggest category opened out."
@@ -350,9 +360,9 @@
     "date": "2026-11-21",
     "title": "Nicer Year by year table",
     "changes": [
-      "Stable Financials \u2192 Year by year is easier to read: big year labels, short amounts ($58.35M), with the exact figure when you hover.",
-      "Changes on the year before are small green/red \u25b2\u25bc badges under each amount (for expenses, going up is red). Hover a badge for the exact comparison.",
-      "A year still in progress (e.g. \u201c10 mo\u201d) is now compared with the same months of the year before, instead of the whole previous year, so the change is fair.",
+      "Stable Financials → Year by year is easier to read: big year labels, short amounts ($58.35M), with the exact figure when you hover.",
+      "Changes on the year before are small green/red ▲▼ badges under each amount (for expenses, going up is red). Hover a badge for the exact comparison.",
+      "A year still in progress (e.g. “10 mo”) is now compared with the same months of the year before, instead of the whole previous year, so the change is fair.",
       "Net shows the profit margin underneath, and the latest year is highlighted."
     ]
   },
@@ -361,11 +371,11 @@
     "date": "2026-11-21",
     "title": "Stable Financials tab",
     "changes": [
-      "Stable pages now have two tabs: Overview and Financials. The \u25c0 \u25b6 stable switcher keeps you on the tab you're on.",
+      "Stable pages now have two tabs: Overview and Financials. The ◀ ▶ stable switcher keeps you on the tab you're on.",
       "Financials shows income and expenses year by year (with the change on the year before and the net result), plus each year by category using the game's own income and expense categories.",
       "Under that, Expense detail breaks one year's payments down by category, then by type, and you can open any type to see each individual payment (date, who was paid, note, amount). This comes from the game's payment log, which only keeps recent years in detail.",
       "The Net worth & cash and Income vs expenses charts moved from Overview to Financials, with the same figures. The Latest month summary stays on Overview.",
-      "The stable charts now use a logarithmic scale (marked \u201cLog scale\u201d), so one huge month no longer flattens everything else. $0 and negative amounts (like a negative net worth) still show; hovering still gives the exact amounts.",
+      "The stable charts now use a logarithmic scale (marked “Log scale”), so one huge month no longer flattens everything else. $0 and negative amounts (like a negative net worth) still show; hovering still gives the exact amounts.",
       "A new lookup on the payment log is built once, in a second or two, the first time 10.2 starts."
     ]
   },
@@ -374,8 +384,8 @@
     "date": "2026-11-21",
     "title": "Tidier CSV export buttons",
     "changes": [
-      "List pages (Horses, Races, Meetings, the horse and stable tables and so on) now have just one export button: Export CSV at the top, which downloads every matching row. The second small \u201cCSV (this page)\u201d box is gone.",
-      "Every other table has one neat \u201c\u2913 CSV\u201d button, placed on the table's own heading line (next to the panel title or sub-heading) instead of in a separate box above the table.",
+      "List pages (Horses, Races, Meetings, the horse and stable tables and so on) now have just one export button: Export CSV at the top, which downloads every matching row. The second small “CSV (this page)” box is gone.",
+      "Every other table has one neat “⤓ CSV” button, placed on the table's own heading line (next to the panel title or sub-heading) instead of in a separate box above the table.",
       "Export buttons share one look, with a download icon, in light and dark mode."
     ]
   },
@@ -399,7 +409,7 @@
     "date": "2026-11-21",
     "title": "Settings uses the same Install an update pop-up",
     "changes": [
-      "Settings is back to a single \u201cInstall an update\u201d button (the extra section from 9.8 is gone).",
+      "Settings is back to a single “Install an update” button (the extra section from 9.8 is gone).",
       "That button, the link at the bottom of every page and the button on Versions & changes now all open the very same pop-up, so you can choose the file, check it and install from any of them."
     ]
   },
@@ -408,7 +418,7 @@
     "date": "2026-11-21",
     "title": "Install an update is the same in Settings and the pop-up",
     "changes": [
-      "Settings now has its own \u201cInstall an update\u201d section with exactly the same steps and wording as the Install an update window opened from the bottom of the page: your version, what an update does and doesn't touch, choose the file, check what it is, then install.",
+      "Settings now has its own “Install an update” section with exactly the same steps and wording as the Install an update window opened from the bottom of the page: your version, what an update does and doesn't touch, choose the file, check what it is, then install.",
       "The window from the bottom of the page and from Versions & changes works the same as before; both now share one set of steps, so they can't drift apart again."
     ]
   },
@@ -417,10 +427,10 @@
     "date": "2026-11-21",
     "title": "Side menu slides over the page on smaller windows",
     "changes": [
-      "When the window is narrower (about 1150 pixels or less), the \u2630 button now slides the side menu in over the top of the page instead of squashing the page into a thin column.",
-      "The page underneath stays full width and is dimmed while the menu is open. Click anywhere outside the menu, press Esc, press \u00ab or pick a page to close it.",
+      "When the window is narrower (about 1150 pixels or less), the ☰ button now slides the side menu in over the top of the page instead of squashing the page into a thin column.",
+      "The page underneath stays full width and is dimmed while the menu is open. Click anywhere outside the menu, press Esc, press « or pick a page to close it.",
       "The menu always opens in full (with headings and names) on small windows, even if you've set it to the narrow icon-only style.",
-      "On wider windows nothing changes: \u2630 still switches between full, icons only and hidden, and your choice is remembered."
+      "On wider windows nothing changes: ☰ still switches between full, icons only and hidden, and your choice is remembered."
     ]
   },
   {
@@ -428,9 +438,9 @@
     "date": "2026-11-21",
     "title": "HRM Viewer is now a desktop app",
     "changes": [
-      "New HRM Viewer.exe: double-click it and the viewer opens in its own window with its own icon on the taskbar \u2014 no browser, no black command window. Closing the window closes the viewer.",
+      "New HRM Viewer.exe: double-click it and the viewer opens in its own window with its own icon on the taskbar — no browser, no black command window. Closing the window closes the viewer.",
       "It shows a start-up screen while your data opens, keeps to one window (opening it again brings the open window to the front) and keeps its settings separately from the browser.",
-      "The first time, it offers to add HRM Viewer to your desktop and Start menu (also in Settings \u2192 Desktop app \u2192 Add shortcuts).",
+      "The first time, it offers to add HRM Viewer to your desktop and Start menu (also in Settings → Desktop app → Add shortcuts).",
       "Drag a database.db onto HRM Viewer.exe to load it.",
       "Installing this update puts HRM Viewer.exe in the viewer's folder. Later versions of the app arrive the same way and are swapped in the next time you open it.",
       "Start.bat and the browser still work exactly as before."
@@ -441,7 +451,7 @@
     "date": "2026-11-21",
     "title": "Home side menu shows everything",
     "changes": [
-      "When Home is selected, the side menu starts with You (your profile first) and then lists every area \u2014 Racing, Horses, Stables, People, Awards and Settings \u2014 with all their pages, so everything is one click from Home.",
+      "When Home is selected, the side menu starts with You (your profile first) and then lists every area — Racing, Horses, Stables, People, Awards and Settings — with all their pages, so everything is one click from Home.",
       "Home: Rating removed from 'Top earners still alive'."
     ]
   },
@@ -450,9 +460,9 @@
     "date": "2026-11-21",
     "title": "Font dropdowns and save-wide leaders on Home",
     "changes": [
-      "Settings \u2192 Display now starts with two dropdowns: Font (Standard at the top, then every font grouped by kind, each shown in its own typeface, with a search box) and Font colour (Standard, Black, Charcoal, Slate, Navy, Royal blue, Teal, Forest green, Olive, Brown, Burgundy, Plum, Crimson \u2014 each shown in its colour, with a lighter version used in dark mode).",
+      "Settings → Display now starts with two dropdowns: Font (Standard at the top, then every font grouped by kind, each shown in its own typeface, with a search box) and Font colour (Standard, Black, Charcoal, Slate, Navy, Royal blue, Teal, Forest green, Olive, Brown, Burgundy, Plum, Crimson — each shown in its colour, with a lighter version used in dark mode).",
       "Home: the 'Coming up' race cards are gone.",
-      "Home: new 'Leaders across the whole save' tables \u2014 highest rated horses, most wins (horses), most jockey wins, most trainer wins, top earners of all time, most Group 1 wins, most successful stables and leading sires by progeny earnings."
+      "Home: new 'Leaders across the whole save' tables — highest rated horses, most wins (horses), most jockey wins, most trainer wins, top earners of all time, most Group 1 wins, most successful stables and leading sires by progeny earnings."
     ]
   },
   {
@@ -461,8 +471,8 @@
     "title": "Track records on horse pages",
     "changes": [
       "Horse pages have a new Track records panel (below the race record).",
-      "Held now: every course record the horse still holds \u2014 racecourse and track, distance, time, how much it improved the old record, the race, the jockey and how long it has stood.",
-      "Held in the past: records it set that have since been broken \u2014 who broke it (or 'itself' if the horse lowered its own record), when and with what time, how long the horse held it, and what the record is now.",
+      "Held now: every course record the horse still holds — racecourse and track, distance, time, how much it improved the old record, the race, the jockey and how long it has stood.",
+      "Held in the past: records it set that have since been broken — who broke it (or 'itself' if the horse lowered its own record), when and with what time, how long the horse held it, and what the record is now.",
       "Sectional records held: sections of a course and distance where this horse has run the fastest time ever recorded."
     ]
   },
@@ -471,9 +481,9 @@
     "date": "2026-11-21",
     "title": "Reorganised menus",
     "changes": [
-      "Top menu now has one entry per area: Home \u00b7 Racing \u00b7 Horses \u00b7 Stables \u00b7 People \u00b7 Awards, with Settings on the right. Racecourses moved into Racing; Horse table and Pedigrees into Horses; Stable table into Stables.",
-      "Side menu follows the area you're in. 'You' is always at the top (your profile, your stables with the dropdown, your horses, your stable's races); below it are the pages for the current area, grouped by what you want to do \u2014 e.g. Racing: Results / Coming up / Places; Horses: Horses / Breeding; Awards: Awards / By award; People: jockeys, trainers, head trainers, managers.",
-      "Every list page has the same row of tabs for its area (Racing: Meetings \u00b7 Races \u00b7 Racecourses; Horses: All horses \u00b7 Horse table \u00b7 Pedigrees; Stables: All stables \u00b7 Stable table; Settings: General \u00b7 Databases \u00b7 All tables \u00b7 Versions & changes).",
+      "Top menu now has one entry per area: Home · Racing · Horses · Stables · People · Awards, with Settings on the right. Racecourses moved into Racing; Horse table and Pedigrees into Horses; Stable table into Stables.",
+      "Side menu follows the area you're in. 'You' is always at the top (your profile, your stables with the dropdown, your horses, your stable's races); below it are the pages for the current area, grouped by what you want to do — e.g. Racing: Results / Coming up / Places; Horses: Horses / Breeding; Awards: Awards / By award; People: jockeys, trainers, head trainers, managers.",
+      "Every list page has the same row of tabs for its area (Racing: Meetings · Races · Racecourses; Horses: All horses · Horse table · Pedigrees; Stables: All stables · Stable table; Settings: General · Databases · All tables · Versions & changes).",
       "The page you're on is highlighted in the side menu, even with filters or a later page selected. All charts, tables and pages are unchanged."
     ]
   },
@@ -482,8 +492,8 @@
     "date": "2026-11-21",
     "title": "Dark mode and fonts",
     "changes": [
-      "Dark mode: Settings \u2192 Appearance \u2192 Light, Dark, or Match Windows (follows your Windows light/dark setting and switches with it). Every page, table, chart, pop-up and the family tree is styled for it.",
-      "Fonts: Settings \u2192 Font shows a preview card for every font \u2014 93 free fonts that come with the viewer (Inter, Roboto, Open Sans, Lato, Montserrat, Poppins, Nunito, IBM Plex, Fira, Merriweather, Playfair Display, JetBrains Mono, Orbitron, Press Start 2P and many more) plus 33 fonts that come with Windows or Office. Search them or filter by kind (clean, narrow, serif, monospaced, display & fun), and click one to use it everywhere.",
+      "Dark mode: Settings → Appearance → Light, Dark, or Match Windows (follows your Windows light/dark setting and switches with it). Every page, table, chart, pop-up and the family tree is styled for it.",
+      "Fonts: Settings → Font shows a preview card for every font — 93 free fonts that come with the viewer (Inter, Roboto, Open Sans, Lato, Montserrat, Poppins, Nunito, IBM Plex, Fira, Merriweather, Playfair Display, JetBrains Mono, Orbitron, Press Start 2P and many more) plus 33 fonts that come with Windows or Office. Search them or filter by kind (clean, narrow, serif, monospaced, display & fun), and click one to use it everywhere.",
       "The bundled fonts work offline. They're all free fonts from Google Fonts; their licences are in fonts-licenses.txt.",
       "Reset settings also puts the theme and font back to standard."
     ]
@@ -494,7 +504,7 @@
     "title": "Up to 5,000 rows per page",
     "changes": [
       "Every long table (Horses, Races, Meetings, Stables, People, Racecourses, Horse table, Stable table, Pedigrees, a stable's Every race, and All tables) now has a 'Rows per page' choice under it: 25, 50, 100, 250, 500, 1,000, 2,500 or 5,000.",
-      "Your choice is remembered for all tables; you can also set it in Settings \u2192 Rows per page."
+      "Your choice is remembered for all tables; you can also set it in Settings → Rows per page."
     ]
   },
   {
@@ -525,7 +535,7 @@
     "changes": [
       "All tables is no longer in the top menu. Settings now has tabs for General, Databases, All tables and Versions & changes.",
       "Fixed the small scroll arrows that could appear at the right of the top menu.",
-      "Side menu: the \u2630 button at the left of the top menu switches between the full menu, just icons, and hidden; \u00ab at the top of the side menu shrinks or expands it. Your choice is remembered (also in Settings \u2192 Side menu).",
+      "Side menu: the ☰ button at the left of the top menu switches between the full menu, just icons, and hidden; « at the top of the side menu shrinks or expands it. Your choice is remembered (also in Settings → Side menu).",
       "Fixed tables showing several CSV buttons (e.g. Track records on racecourse pages): every table now has exactly one."
     ]
   },
@@ -535,9 +545,9 @@
     "title": "CSV everywhere and choose the watched file",
     "changes": [
       "Horse table: the Speed, Stamina, Acceleration and Strength columns are removed (they're still on each horse's page).",
-      "Every table in the app now has a '\u2913 CSV' button that downloads it as a spreadsheet file, including tables on horse, race, meeting, stable, person, racecourse and pedigree pages. Hidden rows (e.g. older awards) are included.",
+      "Every table in the app now has a '⤓ CSV' button that downloads it as a spreadsheet file, including tables on horse, race, meeting, stable, person, racecourse and pedigree pages. Hidden rows (e.g. older awards) are included.",
       "List pages (Horses, Races, Meetings, Stables, People, Racecourses) and every table under All tables now have an Export CSV button that downloads every matching row, not just the page you're on, with your filters and sort.",
-      "Settings \u2192 Automatic updates: you can now type or paste a different file to watch ('Watch this file'). It has to be the same save as the open database; if it's newer than the stored data it's loaded straight away."
+      "Settings → Automatic updates: you can now type or paste a different file to watch ('Watch this file'). It has to be the same save as the open database; if it's newer than the stored data it's loaded straight away."
     ]
   },
   {
@@ -545,10 +555,10 @@
     "date": "2026-11-20",
     "title": "Automatic updates from your save",
     "changes": [
-      "New in Settings \u2192 Automatic updates: turn it on and the viewer watches the database.db the open database was loaded from. Every time the game saves, it waits until the file is finished and loads it the normal way (newest records win, history is kept).",
+      "New in Settings → Automatic updates: turn it on and the viewer watches the database.db the open database was loaded from. Every time the game saves, it waits until the file is finished and loads it the normal way (newest records win, history is kept).",
       "It only loads the same career automatically, never an older file or a different save; those are left for you to choose with Load database.",
       "Choose how long to wait after the file changes (15 seconds to 5 minutes) and the shortest gap between updates (1 minute to 1 hour). 'Check now' looks straight away.",
-      "A '\u25cf Auto' marker at the top shows it's on (amber while a change is waiting, spinning while it loads). When new data arrives the game date updates and a banner offers to show the new data.",
+      "A '● Auto' marker at the top shows it's on (amber while a change is waiting, spinning while it loads). When new data arrives the game date updates and a banner offers to show the new data.",
       "Works per database: each database watches the file it was loaded from."
     ]
   },
@@ -557,8 +567,8 @@
     "date": "2026-11-20",
     "title": "More chart time ranges",
     "changes": [
-      "Settings \u2192 Charts open showing now offers All, the last 10, 5, 3, 2 or 1 years, or the last 9, 6, 3 or 1 months.",
-      "Every chart has the same choices as short buttons (ALL, 10Y, 5Y\u2026 1M). Only ranges shorter than the chart's history are shown, and hovering a button says what it shows."
+      "Settings → Charts open showing now offers All, the last 10, 5, 3, 2 or 1 years, or the last 9, 6, 3 or 1 months.",
+      "Every chart has the same choices as short buttons (ALL, 10Y, 5Y… 1M). Only ranges shorter than the chart's history are shown, and hovering a button says what it shows."
     ]
   },
   {
@@ -576,7 +586,7 @@
     "date": "2026-11-20",
     "title": "Top speed in sectionals",
     "changes": [
-      "Sectionals (race pages and meeting results): new Top speed column for every runner \u2014 the fastest average speed it held over any one section, and which section that was. The fastest in the race is shown in purple, and you can sort by it.",
+      "Sectionals (race pages and meeting results): new Top speed column for every runner — the fastest average speed it held over any one section, and which section that was. The fastest in the race is shown in purple, and you can sort by it.",
       "Fastest sections now includes a Top speed box with the horse that ran fastest in the race."
     ]
   },
@@ -586,8 +596,8 @@
     "title": "Pop-ups and better charts",
     "changes": [
       "Horse page race record: new Trainer, Stable and Gear columns.",
-      "Gear is shown as short letters (B, E, T\u2026); hover to see the full names (Blinkers, Earplugs, Tongue tie). This is used in the race record and the form guides too.",
-      "Hover cards: hover over any horse, person, stable, race or racecourse link for a quick summary (record, earnings, rating, form, sire and dam; rides and wins; horses and prize money; top three in a race\u2026). They can be turned off at the bottom of the page.",
+      "Gear is shown as short letters (B, E, T…); hover to see the full names (Blinkers, Earplugs, Tongue tie). This is used in the race record and the form guides too.",
+      "Hover cards: hover over any horse, person, stable, race or racecourse link for a quick summary (record, earnings, rating, form, sire and dam; rides and wins; horses and prize money; top three in a race…). They can be turned off at the bottom of the page.",
       "Tooltips across the app are now quicker and easier to read (grades, finishing positions, gear, ability bars and more).",
       "Charts: hover anywhere for the exact date and every line's value; click a name in the legend to hide or show that line; pick a time range (All, 3 years, 1 year, 6 months) on longer charts.",
       "Finishing positions chart: the hover shows the race, course, distance and field, and clicking a dot opens that race."
@@ -600,7 +610,7 @@
     "changes": [
       "The viewer now finds every stable you own (including stables owned by your stables) and every stable you hold shares in, directly or through one of your stables.",
       "Left menu: 'Your stables' has a dropdown to pick which of them to open; 'Your horses' follows your choice.",
-      "On the page of any of your stables (and its Every race page) there's a bar to scroll through them: \u25c0 and \u25b6 go to the previous and next, the dropdown jumps straight to one, and 'See all' lists them with your role, shares, horses, starts, wins, prize money and net worth.",
+      "On the page of any of your stables (and its Every race page) there's a bar to scroll through them: ◀ and ▶ go to the previous and next, the dropdown jumps straight to one, and 'See all' lists them with your role, shares, horses, starts, wins, prize money and net worth.",
       "The viewer remembers the last stable you picked, separately for each database."
     ]
   },
@@ -625,8 +635,8 @@
     "changes": [
       "Horse page Form guide: new By distance group showing starts and wins-seconds-thirds at each distance the horse has run (to the nearest 100 m), with win % and place %. The next start's distance is highlighted.",
       "Pedigree page, Most influential ancestors: new Show tick box on each horse. Ticked horses are highlighted in their own colour everywhere they appear in the family tree, with a count per generation of how many highlighted horses are in it. A Clear highlights button removes them all.",
-      "Family tree (8, 12, 16 generations): every generation has a \u25be/\u25b8 button to hide or expand it, plus Expand all and Hide all.",
-      "Family tree (4 generations): show or hide each generation (parents, grandparents, great-grandparents, 3\u00d7 great-grandparents), plus Expand all and Hide all. The chart shrinks when the outer generations are hidden."
+      "Family tree (8, 12, 16 generations): every generation has a ▾/▸ button to hide or expand it, plus Expand all and Hide all.",
+      "Family tree (4 generations): show or hide each generation (parents, grandparents, great-grandparents, 3× great-grandparents), plus Expand all and Hide all. The chart shrinks when the outer generations are hidden."
     ]
   },
   {
@@ -634,8 +644,8 @@
     "date": "2026-11-20",
     "title": "Sectionals on meeting results",
     "changes": [
-      "Meeting results pages (Races tab \u2192 Meetings \u2192 a meeting) now show sectionals under every race result, for all runners. Click the Sectionals heading to fold a race's sectionals away.",
-      "New Fastest sections boxes on race pages and meeting results. For each section (1st, 2nd and 3rd quarter, 75\u201390%, final 10%) and the last 50%, they show the fastest time, the horse, its average speed and where it finished."
+      "Meeting results pages (Races tab → Meetings → a meeting) now show sectionals under every race result, for all runners. Click the Sectionals heading to fold a race's sectionals away.",
+      "New Fastest sections boxes on race pages and meeting results. For each section (1st, 2nd and 3rd quarter, 75–90%, final 10%) and the last 50%, they show the fastest time, the horse, its average speed and where it finished."
     ]
   },
   {
@@ -644,7 +654,7 @@
     "title": "Track condition and sectionals",
     "changes": [
       "Race and meeting pages: Betting handle replaced by Track condition (e.g. Good 4, Soft 6, Heavy 9 on turf; Fast / Good / Muddy / Sloppy on dirt; Synthetic). The save has no going rating, so it is worked out from the race-day weather and rain amount, shown under it.",
-      "Race pages: new Sectionals table for every runner. It shows the time for each section of the race (1st, 2nd and 3rd quarters, 75\u201390% and the final 10%), with position, distance behind the leader and average speed at each point, plus finish time, last-half time and speed at the finish. The fastest section in the race is shown in purple.",
+      "Race pages: new Sectionals table for every runner. It shows the time for each section of the race (1st, 2nd and 3rd quarters, 75–90% and the final 10%), with position, distance behind the leader and average speed at each point, plus finish time, last-half time and speed at the finish. The fastest section in the race is shown in purple.",
       "Racecourse pages: new Sectional records table. For each distance and track it shows the fastest time ever run for each section, the horse that ran it and the race date, plus how many runs have been timed.",
       "The save only keeps sectional data for races from about August 2018 onwards, so older races have no sectionals. Sectionals are kept when you load newer saves."
     ]
@@ -655,7 +665,7 @@
     "title": "Family tree list view and sortable tables",
     "changes": [
       "Family tree opens at 4 generations again, with the usual chart.",
-      "8, 12 and 16 generations now show a list with one row per generation: how many ancestors are recorded out of how many possible, then every ancestor with its position (D = dam, S = sire, so DS = dam's sire), \u2020 if deceased, name and year foaled.",
+      "8, 12 and 16 generations now show a list with one row per generation: how many ancestors are recorded out of how many possible, then every ancestor with its position (D = dam, S = sire, so DS = dam's sire), † if deceased, name and year foaled.",
       "Gender colours (orange for dams, teal for sires) can be turned off. Click any name to move the tree to that horse.",
       "Generations 1 to 9 show straight away; for larger ones click Show (they can hold thousands of horses).",
       "Copy all copies the whole list as text. Copy for spreadsheet copies one row per ancestor (generation, position, sex, name, born, died, record, earnings, horse ID) ready to paste into Excel or Google Sheets.",
@@ -667,7 +677,7 @@
     "date": "2026-11-20",
     "title": "One text size for the whole app",
     "changes": [
-      "The A\u2212 / A+ control (now called Text size) changes all text in the app, not just tables: menus, headings, panels, tiles, charts and form panels all scale together.",
+      "The A− / A+ control (now called Text size) changes all text in the app, not just tables: menus, headings, panels, tiles, charts and form panels all scale together.",
       "Every page now uses the same type scale (body text, small notes and labels, headings), so fonts match across tabs.",
       "Text can now go smaller, down to 8px (it was 10px). The control itself stays a readable size.",
       "Horse page Form guide: jockey and trainer details are removed, and the text is a step smaller. Race-page form panels still show jockey and trainer stats."
@@ -695,7 +705,7 @@
     "title": "Form guide on race pages",
     "changes": [
       "Each runner's line now shows barrier, age, colour and sex, jockey (J:), trainer (T:), stable, last-5 form, career record and win/place %, plus last start for upcoming races or time, margin and SP for results.",
-      "Click the arrow on a runner for a form panel: details (sire, dam, dam's sire, trainer, prize money, settling position, gear, days since last start), a win/place ring, short form (track, distance, track and distance, 1st\u20134th up, season, weather, surface, direction, jockey on the horse) with today's conditions highlighted, jockey and trainer stats, and last starts (place, track, distance, class, barrier, jockey, condition, time, average speed, margin, SP, days, prize, first three home).",
+      "Click the arrow on a runner for a form panel: details (sire, dam, dam's sire, trainer, prize money, settling position, gear, days since last start), a win/place ring, short form (track, distance, track and distance, 1st–4th up, season, weather, surface, direction, jockey on the horse) with today's conditions highlighted, jockey and trainer stats, and last starts (place, track, distance, class, barrier, jockey, condition, time, average speed, margin, SP, days, prize, first three home).",
       "\"Open all form\" opens every runner at once. The same runner lines and panels are on meeting pages.",
       "All form figures are as they stood before that race.",
       "Pages can be wider so the extra columns fit."
@@ -711,7 +721,7 @@
       "Every stable has an \"Every race\" page: all of its runs ever, filterable by result, race type and year, sortable, with Export CSV.",
       "Family trees at 8, 12 and 16 generations now use the same chart as 4 generations, drawn smaller, with the most repeated ancestors coloured and Sire's side / Dam's side buttons.",
       "Home: the Next up strip is gone; your recent and upcoming rides are at the top.",
-      "Race type badges (G1, G2, G3, Listed\u2026) are smaller everywhere."
+      "Race type badges (G1, G2, G3, Listed…) are smaller everywhere."
     ]
   },
   {
@@ -723,7 +733,7 @@
       "Home: a \"Next up\" strip of the next races and race cards for your next rides (or the next Group races), with the field and ratings.",
       "Odds and ratings shown in number boxes on race pages.",
       "Family trees: choose 4, 8, 12 or 16 generations. Your choice is remembered.",
-      "8\u201316 generations: a fold-out family tree, the most influential ancestors (how often each appears and their share of the pedigree), generation-by-generation completeness, and the straight sire and dam lines.",
+      "8–16 generations: a fold-out family tree, the most influential ancestors (how often each appears and their share of the pedigree), generation-by-generation completeness, and the straight sire and dam lines.",
       "Inbreeding coefficient (COI) for the chosen number of generations."
     ]
   },
@@ -733,7 +743,7 @@
     "title": "Versions page",
     "changes": [
       "New Versions page listing every version and what changed in it (link at the bottom of every page).",
-      "\"Go back to version \u2026\" moved here from the bottom of the page, and you can now go back to any of the saved earlier versions, not just the last one."
+      "\"Go back to version …\" moved here from the bottom of the page, and you can now go back to any of the saved earlier versions, not just the last one."
     ]
   },
   {
@@ -774,7 +784,7 @@
     "date": "2026-11-20",
     "title": "Table text size",
     "changes": [
-      "Table text size control (A\u2212 / A+ / Reset) in the tab bar; applies to every table and is remembered.",
+      "Table text size control (A− / A+ / Reset) in the tab bar; applies to every table and is remembered.",
       "Tables are slightly smaller by default."
     ]
   },

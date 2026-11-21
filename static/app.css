@@ -995,3 +995,4 @@ table.fin-detail.is-in .sbar.type i { background: #9fcbb6; }
 .rr-seg button { padding: 2px 10px; font-size: var(--fs-xs); }
 .rr-wins { columns: 1; max-height: 320px; overflow: auto; }
 .rr-empty .empty { padding: 8px 0; }
+.po-filters { margin: 0 0 14px; align-items: center; }

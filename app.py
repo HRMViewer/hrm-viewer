@@ -299,7 +299,7 @@ def warm_up(delay=1.0):
         if not PORT or not os.path.exists(CURRENT_DB):
             return
         opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
-        pages = ["home", "meetings", "horses", "races", "races?when=upcoming", "stables", "people", "awards", "courses", "pedigrees",
+        pages = ["home", "meetings", "horses", "races", "races?when=upcoming", "stables", "people", "people_overview", "awards", "courses", "pedigrees",
                  "pedigrees?kind=dams", "pedigrees?kind=damsires", "horse_table", "stable_table", "tables"]
         if META.get("player_id"):
             pages.append("person/%s" % META["player_id"])
@@ -2539,57 +2539,107 @@ PO_NEWS_TYPES = ("HIRE_STAFF", "FIRE_STAFF", "STAFF_RESIGNATION", "STAFF_ROLE_CH
 GRADED = ("G1", "G2", "G3")
 
 
-def po_section(con, key):
-    cfg = PO_ROLES[key]
-    rcols = [c for c in cfg["cols"] if c in columns(con, "race_results")]
-    jobs = ",".join("'%s'" % j for j in cfg["jobs"])
-    people = rows(con, """select p.person_person_id as id, p.person_full_name as name, p.person_birth_date as birth, p.person_is_player as is_player,
-            p.person_reputation as reputation, p.person_fame_calculated as fame,
-            (select f.staff_current_role from staff f where f.staff_person_id=p.person_person_id and f.staff_end_date is null
-                and f.staff_current_role in (%s) order by f.staff_start_date limit 1) as job,
-            (select f.staff_stable_id from staff f where f.staff_person_id=p.person_person_id and f.staff_end_date is null
-                and f.staff_current_role in (%s) order by f.staff_start_date limit 1) as stable_id
-        from persons p
-        where p.person_deceased_date is null and p.person_person_id in (select staff_person_id from staff where staff_end_date is null and staff_current_role in (%s))
-        order by %s desc limit %d""" % (jobs, jobs, jobs, cfg["rank"], PO_TOP))
-    sn = name_map(con, "stables", "stable_stable_id", "stable_name", [r["stable_id"] for r in people])
-    ids = [r["id"] for r in people]
-    stats = {i: {"starts": 0, "wins": 0, "places": 0, "prize": 0, "G1": 0, "G2": 0, "G3": 0, "listed": 0, "last": None} for i in ids}
-    if ids and rcols:
-        marks = ",".join("?" * len(ids))
-        who = " or ".join("r.%s in (%s)" % (c, marks) for c in rcols)
-        pick = "coalesce(%s)" % ", ".join("case when r.%s in (%s) then r.%s end" % (c, marks, c) for c in rcols) if len(rcols) > 1 else "r." + rcols[0]
-        params = (ids * len(rcols) if len(rcols) > 1 else []) + ids * len(rcols)     # the person column in SELECT, then WHERE
-        for r in rows(con, """select %s as pid, count(*) as starts, sum(r.race_result_rank=1) as wins, sum(r.race_result_rank between 1 and 3) as places,
-                sum(r.race_result_cash_received) as prize, max(r.race_result_date) as last,
-                sum(r.race_result_rank=1 and x.races_type_of_race='G1') as g1, sum(r.race_result_rank=1 and x.races_type_of_race='G2') as g2,
-                sum(r.race_result_rank=1 and x.races_type_of_race='G3') as g3, sum(r.race_result_rank=1 and x.races_type_of_race='listed') as listed
-                from race_results r left join races x on x.races_race_id=r.race_result_race_id and r.race_result_race_id>0
-                where %s group by 1""" % (pick, who), params):
-            if r["pid"] in stats:
-                stats[r["pid"]].update(starts=r["starts"], wins=r["wins"] or 0, places=r["places"] or 0, prize=r["prize"] or 0, last=r["last"],
-                                       G1=r["g1"] or 0, G2=r["g2"] or 0, G3=r["g3"] or 0, listed=r["listed"] or 0)
-        # each person's most recent race
-        for i in ids:
-            if not stats[i]["last"]:
-                continue
-            lr = one(con, """select r.race_result_date as date, r.race_result_rank as rank, r.race_result_race_id as race_id, x.races_race_name as race,
-                    x.races_type_of_race as type, r.race_result_horse_id as horse_id, h.horse_name as horse
-                    from race_results r left join races x on x.races_race_id=r.race_result_race_id and r.race_result_race_id>0
-                    left join horses h on h.horse_horse_id=r.race_result_horse_id
-                    where %s order by r.race_result_date desc limit 1""" % " or ".join("r.%s=?" % c for c in rcols), [i] * len(rcols))
-            stats[i]["last_race"] = lr
-    for r in people:
-        r["stable"] = sn.get(r["stable_id"])
-        r["is_player"] = r["is_player"] in ("true", 1, "1", True)
-        r.update(stats[r["id"]])
+PO_AGG = {}          # (data generation, role, year) -> every person's figures in that role, best first
+PO_PAGE = 25         # people per page when showing everyone
+
+
+def po_years(con):
+    """Years with race results, newest first (for the year picker)."""
+    key = (DB_GEN, "years")
+    if key not in PO_AGG:
+        PO_AGG[key] = [r[0] for r in con.execute("""select distinct cast(strftime('%Y', race_result_date, 'unixepoch') as int) as y
+            from race_results where race_result_date is not null and (coalesce(race_result_person_jockey_id,0) > 0 or coalesce(race_result_trainer_id,0) > 0)
+            order by y desc""") if r[0]]
+    return PO_AGG[key]
+
+
+def po_agg(con, key, year):
+    """Everyone's record in one role (all time or one calendar year): races, wins, places, prize money, last race date,
+    and Group (G1/G2/G3) and Listed wins. Worked out once per loaded save and kept."""
+    ck = (DB_GEN, key, year)
+    if ck in PO_AGG:
+        return PO_AGG[ck]
+    for k in [k for k in PO_AGG if k[0] != DB_GEN]:
+        PO_AGG.pop(k, None)
+    rc = columns(con, "race_results")
+    cols = [c for c in PO_ROLES[key]["cols"] if c in rc]
+    when = ""
+    args = []
+    if year:
+        when = " and race_result_date >= ? and race_result_date < ?"
+        args = [calendar.timegm((year, 1, 1, 0, 0, 0)), calendar.timegm((year + 1, 1, 1, 0, 0, 0))]
+    pick = "race_result_race_id, race_result_rank, race_result_cash_received, race_result_date"
+    # one row per (person, result); a head trainer who is also the trainer is counted once
+    parts, params = [], []
+    for i, c in enumerate(cols):
+        extra = "".join(" and (%s is null or %s <> %s)" % (cols[j], c, cols[j]) for j in range(i))
+        parts.append("select %s as pid, %s from race_results where %s > 0%s%s" % (c, pick, c, extra, when))
+        params += args
+    graded = lambda t: "(select races_race_id from races where races_type_of_race='%s')" % t
+    data = rows(con, """select pid, count(*) as starts, sum(race_result_rank=1) as wins, sum(race_result_rank between 1 and 3) as places,
+            sum(race_result_cash_received) as prize, max(race_result_date) as last,
+            sum(race_result_rank=1 and race_result_race_id in %s) as G1, sum(race_result_rank=1 and race_result_race_id in %s) as G2,
+            sum(race_result_rank=1 and race_result_race_id in %s) as G3, sum(race_result_rank=1 and race_result_race_id in %s) as listed
+            from (%s) group by pid""" % (graded("G1"), graded("G2"), graded("G3"), graded("listed"), " union all ".join(parts)), params) if cols else []
+    for r in data:
+        for k in ("wins", "places", "prize", "G1", "G2", "G3", "listed"):
+            r[k] = r[k] or 0
         r["group"] = r["G1"] + r["G2"] + r["G3"]
         r["total_gl"] = r["group"] + r["listed"]
-    return {"key": key, "people": people}
+    data.sort(key=lambda r: (-r["wins"], -r["prize"]))
+    PO_AGG[ck] = data
+    return data
 
 
-def api_people_overview(con):
-    out = {"sections": [po_section(con, k) for k in PO_ROLES] if has_table(con, "staff") and has_table(con, "race_results") else []}
+def po_section(con, key, year=None, who="now", everyone=False, page=1):
+    cfg = PO_ROLES[key]
+    data = po_agg(con, key, year)
+    jobs = ",".join("'%s'" % j for j in cfg["jobs"])
+    if who == "now":      # alive and working in this role now
+        now = {r[0] for r in con.execute("""select f.staff_person_id from staff f join persons p on p.person_person_id=f.staff_person_id
+                where f.staff_end_date is null and f.staff_current_role in (%s) and p.person_deceased_date is null""" % jobs)}
+        data = [r for r in data if r["pid"] in now]
+    total = len(data)
+    pages = max(1, -(-total // PO_PAGE))
+    page = max(1, min(page, pages))
+    shown = data[(page - 1) * PO_PAGE: page * PO_PAGE] if everyone else data[:PO_TOP]
+    ids = [r["pid"] for r in shown]
+    info = {}
+    if ids:
+        marks = ",".join("?" * len(ids))
+        for r in rows(con, """select p.person_person_id as id, p.person_full_name as name, p.person_birth_date as birth, p.person_deceased_date as died,
+                p.person_is_player as is_player,
+                (select f.staff_current_role from staff f where f.staff_person_id=p.person_person_id and f.staff_end_date is null
+                    order by f.staff_current_role in (%s) desc, f.staff_start_date limit 1) as job,
+                (select f.staff_stable_id from staff f where f.staff_person_id=p.person_person_id and f.staff_end_date is null
+                    order by f.staff_current_role in (%s) desc, f.staff_start_date limit 1) as stable_id
+                from persons p where p.person_person_id in (%s)""" % (jobs, jobs, marks), ids):
+            info[r["id"]] = r
+    sn = name_map(con, "stables", "stable_stable_id", "stable_name", [r["stable_id"] for r in info.values()])
+    rc = [c for c in cfg["cols"] if c in columns(con, "race_results")]
+    people = []
+    for r in shown:
+        i = info.get(r["pid"]) or {"id": r["pid"], "name": "Person %s" % r["pid"]}
+        row = dict(r, id=r["pid"], name=i.get("name"), birth=i.get("birth"), died=i.get("died"), job=i.get("job"),
+                   stable_id=i.get("stable_id"), stable=sn.get(i.get("stable_id")), is_player=i.get("is_player") in ("true", 1, "1", True))
+        # their latest race in this period
+        if r["last"] is not None and rc:
+            row["last_race"] = one(con, """select r.race_result_date as date, r.race_result_rank as rank, r.race_result_race_id as race_id, x.races_race_name as race
+                    from race_results r left join races x on x.races_race_id=r.race_result_race_id and r.race_result_race_id>0
+                    where (%s) and r.race_result_date=? order by r.race_result_rank limit 1""" % " or ".join("r.%s=?" % c for c in rc),
+                                   [r["pid"]] * len(rc) + [r["last"]])
+        people.append(row)
+    return {"key": key, "people": people, "total": total, "page": page, "pages": pages, "everyone": everyone}
+
+
+def api_people_overview(con, q=None):
+    q = q or {}
+    year = to_int(q.get("year")) or None
+    who = "all" if q.get("who") == "all" else "now"
+    ok = has_table(con, "staff") and has_table(con, "race_results")
+    out = {"year": year, "who": who, "years": po_years(con) if ok else [],
+           "sections": [po_section(con, k, year, who, q.get("all") == k, to_int(q.get("page"), 1) if q.get("all") == k else 1)
+                        for k in PO_ROLES] if ok else []}
     # latest awards won by people
     out["awards"] = []
     if has_table(con, "awards"):
@@ -4103,7 +4153,7 @@ ROUTES = [
     (re.compile(r"^/api/awards_of/(horse|person)/(-?\d+)$"), lambda con, m, q: api_awards_of(con, m.group(1), int(m.group(2)))),
     (re.compile(r"^/api/family/(-?\d+)$"), lambda con, m, q: api_family(con, int(m.group(1)))),
     (re.compile(r"^/api/dynasty/(-?\d+)$"), lambda con, m, q: api_dynasty(con, int(m.group(1)))),
-    (re.compile(r"^/api/people_overview$"), lambda con, m, q: api_people_overview(con)),
+    (re.compile(r"^/api/people_overview$"), lambda con, m, q: api_people_overview(con, q)),
     (re.compile(r"^/api/people$"), lambda con, m, q: api_people(con, q)),
     (re.compile(r"^/api/careers$"), lambda con, m, q: api_careers(con, q)),
     (re.compile(r"^/api/person/(-?\d+)$"), lambda con, m, q: api_person(con, int(m.group(1)))),
@@ -4747,7 +4797,7 @@ class Handler(BaseHTTPRequestHandler):
 
 # --------------------------------------------------------------------------- in-app updates
 
-VERSION = "14.1"
+VERSION = "14.2"
 BACKUP_DIR = os.path.join(APP_DIR, "backups")
 UPDATE_PENDING = os.path.join(DATA_DIR, "update_pending.json")
 UPDATE_RESULT = os.path.join(DATA_DIR, "update_result.json")
