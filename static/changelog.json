@@ -1,5 +1,21 @@
 [
   {
+    "version": "15.1",
+    "date": "2026-11-22",
+    "title": "HRM Viewer for Mac",
+    "changes": [
+      "New: HRM Viewer for Mac. Download HRM-Viewer-15.1-mac.zip from the releases page (about 30 MB). One download works on every Mac with macOS 11 Big Sur or later, Apple Silicon (M1 and later) and Intel alike.",
+      "Installing: double-click the zip to unzip it, then drag HRM Viewer into your Applications folder and open it.",
+      "The first time you open it, the Mac says it \"could not verify\" HRM Viewer, because the app isn't signed with a paid Apple developer account (it's signed for free instead). Click Done, open System Settings → Privacy & Security, scroll down and click Open Anyway next to HRM Viewer, then confirm. This is only needed once; after that it opens like any other app.",
+      "Size: the app is bigger once unzipped than the download, because it carries its own Python for both kinds of Mac (Apple Silicon and Intel), so there's nothing else to install and one download fits every Mac. The first time it opens, it copies the viewer and the Python your Mac uses into your Library/Application Support/HRM Viewer folder; that copy is what runs.",
+      "Your data: databases and settings are kept in Library/Application Support/HRM Viewer in your home folder, not inside the app, so they stay when you replace the app with a newer download, and updates installed from inside the viewer stay too (opening the app doesn't put its own older version back).",
+      "It opens in its own window with the usual Mac menus: Edit (copy, paste, select all, undo), Window (minimise, zoom, close) and Quit (Cmd+Q). Quitting, closing the window, or Quit from the Dock all stop the viewer properly.",
+      "Updates work like on Windows: the viewer offers new versions by itself, and Settings → Install an update takes an update file. Going back to an earlier version is offered back to 14.6, the first version made for Mac and Linux.",
+      "Files you download in the viewer (CSV, chart pictures, the Quick Guide) are saved to your Downloads folder, with a Show in Finder button; links to websites open in your browser.",
+      "Tested before release on Apple Silicon and Intel Macs running macOS 15: opening, the copy to Application Support, downloads, an update from inside the viewer, reopening, quitting, and the Mac's check of a downloaded copy (it asks for Open Anyway, it doesn't call the app damaged). Loading a save and the Open Anyway click itself haven't been tried on a real Mac yet, so please say if anything doesn't work."
+    ]
+  },
+  {
     "version": "15.0",
     "date": "2026-11-22",
     "title": "Linux: opens in its own window on more systems",
