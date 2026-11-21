@@ -1,0 +1,8 @@
+# your saves, photos, settings and backups never go in the repository
+data/
+backups/
+*.db
+__pycache__/
+# built programs ship in the release zips, not here
+*.exe
+updates/

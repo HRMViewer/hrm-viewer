@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HRM Viewer – Quick Guide</title>
+<style>
+  :root { --navy: #0a1a3b; --blue: #1d63d6; --ink: #18202f; --muted: #5b6677; --line: #e3e7ee; --soft: #f4f6fa; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 15px/1.6 "Segoe UI", system-ui, -apple-system, Roboto, Arial, sans-serif; color: var(--ink); background: #eef1f5; }
+  header { background: var(--navy); color: #fff; padding: 34px 24px 30px; }
+  header .in, main { max-width: 860px; margin: 0 auto; }
+  header h1 { margin: 0 0 6px; font-size: 30px; letter-spacing: -.01em; }
+  header p { margin: 0; color: #c8d3ea; }
+  header p.ver { margin-top: 8px; font-size: 13px; color: #9fb2d9; }
+  main { padding: 24px 24px 60px; }
+  nav.toc { background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 16px 20px; margin-bottom: 22px; }
+  nav.toc b { display: block; margin-bottom: 6px; font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+  nav.toc ol { margin: 0; padding-left: 20px; columns: 2; column-gap: 30px; }
+  nav.toc a { color: var(--blue); text-decoration: none; }
+  nav.toc a:hover { text-decoration: underline; }
+  section { background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 18px 24px 8px; margin-bottom: 18px; }
+  h2 { margin: 0 0 10px; font-size: 21px; color: var(--navy); }
+  h2 .n { display: inline-block; width: 30px; height: 30px; line-height: 30px; text-align: center; border-radius: 50%; background: var(--blue); color: #fff; font-size: 15px; margin-right: 8px; vertical-align: 2px; }
+  h3 { margin: 16px 0 4px; font-size: 16px; }
+  p, ul, ol { margin: 6px 0 12px; }
+  li { margin: 3px 0; }
+  .k { display: inline-block; padding: 0 7px; border: 1px solid #cfd5df; border-bottom-width: 2px; border-radius: 5px; background: var(--soft); font-size: 13px; font-weight: 600; white-space: nowrap; }
+  .ui { font-weight: 600; color: var(--navy); }
+  .tip { background: #eef4ff; border-left: 4px solid var(--blue); padding: 9px 14px; border-radius: 6px; margin: 10px 0 14px; }
+  .warn { background: #fff7e6; border-left: 4px solid #d99a1b; padding: 9px 14px; border-radius: 6px; margin: 10px 0 14px; }
+  table { width: 100%; border-collapse: collapse; margin: 6px 0 14px; font-size: 14px; }
+  th, td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { background: var(--soft); color: var(--muted); font-weight: 600; }
+  footer { text-align: center; color: var(--muted); font-size: 13px; margin-top: 26px; }
+  @media (max-width: 640px) { nav.toc ol { columns: 1; } }
+  @page { size: A4; margin: 14mm 13mm 16mm; }
+  @media print {
+    * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    body { background: #fff; font-size: 11.5px; line-height: 1.5; }
+    header { padding: 18px 20px 16px; border-radius: 8px; }
+    header h1 { font-size: 24px; }
+    main { padding: 12px 0 0; max-width: none; }
+    nav.toc, section { box-shadow: none; padding: 12px 16px 4px; margin-bottom: 10px; }
+    section, nav.toc { break-inside: avoid; page-break-inside: avoid; }
+    h2 { break-after: avoid; font-size: 17px; }
+    h3 { break-after: avoid; }
+    table { font-size: 11px; }
+    .k { font-size: 10px; }
+    tr, .tip, .warn, li { break-inside: avoid; }
+    thead { display: table-header-group; }
+    a { color: var(--blue); text-decoration: none; }
+    footer { display: none; }
+  }
+</style>
+</head>
+<body>
+<header><div class="in">
+  <h1>HRM Viewer – Quick Guide</h1>
+  <p>How to use the key features. For everything in your Horse Racing Manager save: horses, races, stables, people and racecourses, all linked together.</p>
+  <p class="ver">Version {{VERSION}} · {{DATE}}</p>
+</div></header>
+<main>
+
+<nav class="toc"><b>Contents</b><ol>
+  <li><a href="#start">Getting started</a></li>
+  <li><a href="#around">Getting around</a></li>
+  <li><a href="#load">Loading your saves</a></li>
+  <li><a href="#horses">Horses</a></li>
+  <li><a href="#racing">Racing &amp; racecourses</a></li>
+  <li><a href="#stables">Stables</a></li>
+  <li><a href="#people">People &amp; awards</a></li>
+  <li><a href="#tables">Tables &amp; charts</a></li>
+  <li><a href="#settings">Settings</a></li>
+  <li><a href="#update">Updating the viewer</a></li>
+  <li><a href="#tips">Good to know</a></li>
+</ol></nav>
+
+<section id="start">
+  <h2><span class="n">1</span>Getting started</h2>
+  <ol>
+    <li>Unzip the <b>HRM Viewer</b> folder somewhere permanent, for example <i>Documents\HRM Viewer</i>.</li>
+    <li>Double-click <b>HRM Viewer.exe</b>. It opens in its own window. The first time, it offers to add shortcuts to your desktop and Start menu.
+      <ul>
+        <li>It needs Python. If it isn't installed, the download page opens: install it (tick <i>“Add python.exe to PATH”</i>) and start the viewer again.</li>
+        <li>If Windows says <i>“Windows protected your PC”</i>, click <span class="ui">More info</span> → <span class="ui">Run anyway</span>.</li>
+      </ul>
+    </li>
+    <li>Click <span class="ui">Load new database</span> (top right), paste the path to your game's <b>database.db</b> (or choose the file) and press Load.</li>
+  </ol>
+  <div class="tip">Tip: you can also drag <b>database.db</b> onto <b>HRM Viewer.exe</b> to open the viewer and load it in one go.</div>
+</section>
+
+<section id="around">
+  <h2><span class="n">2</span>Getting around</h2>
+  <table>
+    <tr><th style="width:30%">What</th><th>How it works</th></tr>
+    <tr><td>Top menu</td><td><span class="ui">Home · Racing · Horses · Stables · People · Awards</span>, with <span class="ui">Settings</span> on the right. Each one changes the side menu to match.</td></tr>
+    <tr><td>Side menu</td><td>The pages in that area. <span class="ui">You</span> at the top is always there: your profile, your stables (pick one from the drop-down), your horses and your stable's races.</td></tr>
+    <tr><td><span class="k">☰</span></td><td>Switches the side menu between full, icons only and hidden. On small windows it slides in over the page instead.</td></tr>
+    <tr><td><span class="k">‹</span> <span class="k">›</span></td><td>Back and forward through the pages you've visited (also <span class="k">Alt</span> + <span class="k">←</span> / <span class="k">→</span>).</td></tr>
+    <tr><td>Search</td><td>The search box at the top finds horses, people, stables and races by name.</td></tr>
+    <tr><td>Links everywhere</td><td>Any blue name opens that horse, person, stable, race or racecourse. Point at one for a moment to see a quick summary card.</td></tr>
+    <tr><td>Home</td><td>Your profile, recent and upcoming rides, and save-wide leader tables (top rated, most wins, top earners and more).</td></tr>
+  </table>
+</section>
+
+<section id="load">
+  <h2><span class="n">3</span>Loading your saves</h2>
+  <h3>Load a newer save</h3>
+  <p>Save in the game, then click <span class="ui">Load new database</span> and press Load (the path is remembered). Each load <b>builds on</b> what's stored:</p>
+  <ul>
+    <li>Records in the new file replace older versions; history the game has since deleted (old results, finances, news…) is kept.</li>
+    <li>If a file is older than what's stored, or from a different career, the viewer asks first.</li>
+  </ul>
+  <h3>Automatic updates</h3>
+  <p><span class="ui">Settings → Automatic updates</span>: switch it on and leave the viewer open. Every time you save in the game, the viewer loads the new file by itself. <span class="ui">● Auto</span> at the top shows it's on. You can change which file it watches there too.</p>
+  <h3>Several databases</h3>
+  <p><span class="ui">Settings → Databases</span> lets you keep different saves apart, switch between them, rename or delete them, and bring in data from another HRM Viewer folder. Click the database name at the top right to get there quickly.</p>
+</section>
+
+<section id="horses">
+  <h2><span class="n">4</span>Horses</h2>
+  <ul>
+    <li><b>Horse page</b> — the form guide (record by track, condition and distance), race record with trainer, stable and gear (point at the gear letters for full names), finishing-position and value charts, abilities, health, offspring, awards and track records held.</li>
+    <li><b>Photos</b> — on a horse's page click <span class="ui">Add photos</span> (or <span class="ui">Gallery</span>) to upload pictures (JPG, PNG, GIF or WebP; click to choose or drag them in). Under each photo, <span class="ui">★ Profile</span> makes it the horse's profile picture (next to its name, and small in All horses and the Horse table) and <span class="ui">▭ Banner</span> puts it across the top of the horse's hover card (no banner chosen = no picture on the hover card). Under <span class="ui">Banner view</span> you choose how it looks: drag the preview to pick which part shows, zoom, fill the banner or show the whole picture, short/medium/tall, and sharp pixels for pixel art. Add as many photos as you like; the row slides sideways (‹ › or scroll) when there are more than fit. Photos are kept with that database, on your computer.</li>
+        <li><b>Family tree</b> — four generations on the page; bigger trees (8, 12, 16 generations) as a list with copy buttons. Tick a name under <span class="ui">Most influential ancestors</span> to highlight it everywhere in the tree.</li>
+    <li><b>All horses</b> — search, filter (alive/deceased, sex) and sort every horse.</li>
+    <li><b>Horse table</b> — every horse with its key stats in one sortable table.</li>
+    <li><b>Top sires / Top dams / Broodmare sires</b> — ranked by how their foals have done; filter by foal age, sex and minimum runners.</li>
+  </ul>
+</section>
+
+<section id="racing">
+  <h2><span class="n">5</span>Racing &amp; racecourses</h2>
+  <ul>
+    <li><b>Meetings</b> and <b>Upcoming meetings</b> — every race day. On a meeting, click <span class="k">▸</span> next to a runner to open its form: stats for these conditions, jockey and trainer records, and its last starts.</li>
+    <li><b>Race results</b> — the full result, prize money and <b>sectionals</b> for every runner (with the fastest of each section and top speeds).</li>
+    <li><b>All races / Group 1 results / Upcoming Group 1s</b> — find any race; filter by type and date.</li>
+    <li><b>Racecourses</b> — each course shows its <b>track records</b> (click a distance to see every earlier holder), <b>sectional records</b>, tracks, tickets, recent and upcoming meetings, and feature races.</li>
+  </ul>
+</section>
+
+<section id="stables">
+  <h2><span class="n">6</span>Stables</h2>
+  <p>Pick one of your stables from the drop-down in the side menu, or use the <span class="k">◀</span> <span class="k">▶</span> bar on a stable page to step through every stable you own or share in. Each stable page has three tabs:</p>
+  <table>
+    <tr><th style="width:24%">Tab</th><th>What's on it</th></tr>
+    <tr><td>Overview</td><td>Cash, net worth, horses, staff, all-time race record, the latest month's income and expenses, shareholders and recent results.</td></tr>
+    <tr><td>Financials</td><td>Income and expenses year by year (▲▼ change on the year before), both broken down by category, and <b>Expense detail</b>: every payment, grouped by category and type, with a filter box. Net worth, cash and income charts are here too.</td></tr>
+    <tr><td>Horse finances</td><td>Every horse the stable has had, now and in the past, with what it earned and cost while it was there. Click <span class="k">▸</span> on a horse for its breakdown and year-by-year figures.</td></tr>
+  </table>
+  <p><span class="ui">Every race</span> (top right of a stable) lists every run the stable has had, with filters and Export CSV.</p>
+</section>
+
+<section id="people">
+  <h2><span class="n">7</span>People &amp; awards</h2>
+  <ul>
+    <li><b>People</b> — jockeys, trainers, managers and staff. A person's page shows their rides, skills, personality, jobs and family.</li>
+    <li><b>Awards</b> — season award winners year by year (Horse of the Year, age and distance divisions, breeding, people, stables, Hall of Fame), or <span class="ui">Most awards</span> for the all-time list.</li>
+  </ul>
+</section>
+
+<section id="tables">
+  <h2><span class="n">8</span>Tables &amp; charts</h2>
+  <h3>Tables</h3>
+  <ul>
+    <li><b>Sort</b>: click any column heading (click again to reverse).</li>
+    <li><b>Filter rows</b>: bigger tables have a filter box next to their CSV button. <span class="k">Esc</span> clears it.</li>
+    <li><b>CSV</b>: downloads the table for Excel. On list pages, <span class="ui">Export CSV</span> at the top downloads every matching row, not just the page.</li>
+    <li><b>Rows per page</b>: change it under a list (up to 5,000), or set a default in Settings.</li>
+  </ul>
+  <h3>Charts</h3>
+  <ul>
+    <li>Point at a chart for exact values on that date.</li>
+    <li><span class="ui">Linear / Log</span> switches the scale; Log stops one huge value squashing the rest.</li>
+    <li>Time range buttons (All, 10Y … 1M), <span class="k">⤢</span> to open the chart large, <span class="ui">PNG</span> for a picture, <span class="ui">CSV</span> for the numbers.</li>
+    <li>Click a name in the legend to hide that line; <b>double-click</b> it to show only that line.</li>
+  </ul>
+</section>
+
+<section id="settings">
+  <h2><span class="n">9</span>Settings</h2>
+  <table>
+    <tr><th style="width:30%">Setting</th><th>What it does</th></tr>
+    <tr><td>Font &amp; font colour</td><td>93 free fonts that work offline, plus your computer's own fonts.</td></tr>
+    <tr><td>Appearance</td><td>Light, dark, or match Windows.</td></tr>
+    <tr><td>Colours</td><td>Your own colours for the accent, top bar, headings, page background, cards, lines and winning rows — or one click on a preset (Racing green, Royal purple, Crimson…). Light and dark mode each keep their own set; switch mode above to change the other one.</td></tr>
+    <tr><td>Text size</td><td>Makes all text in the app smaller or bigger together.</td></tr>
+    <tr><td>Rows per page</td><td>How many rows lists show by default.</td></tr>
+    <tr><td>Charts open showing</td><td>The time range charts start on.</td></tr>
+    <tr><td>Side menu · Hover cards</td><td>How the side menu shows, and whether summary cards pop up on links.</td></tr>
+    <tr><td>Main stable</td><td>Which of your stables “Your stable” opens.</td></tr>
+    <tr><td>Quick Guide</td><td>Opens this guide inside the viewer, or downloads it as a PDF.</td></tr>
+    <tr><td>Automatic updates · Databases</td><td>See <a href="#load">Loading your saves</a>.</td></tr>
+  </table>
+</section>
+
+<section id="update">
+  <h2><span class="n">10</span>Updating the viewer</h2>
+  <h3>From GitHub (easiest)</h3>
+  <p>New versions are published on GitHub. When one is out, a bar at the top of the viewer says <span class="ui">HRM Viewer &lt;version&gt; is available</span>. Click <span class="ui">Install now</span> and the viewer downloads it, installs it and restarts by itself. <span class="ui">What's new</span> shows the changes first; <span class="ui">Later</span> hides the bar until the next version.</p>
+  <p><span class="ui">Settings → Viewer → Updates from GitHub</span> shows whether you're up to date, has <span class="ui">Check now</span>, and links to the download page, where anyone can download the full viewer: <b>github.com/jomdesa-glitch/hrm-viewer/releases</b>.</p>
+  <h3>From a file</h3>
+  <ol>
+    <li>Updates also come as <b>HRM-Viewer-update-&lt;version&gt;.zip</b>. Don't unzip it.</li>
+    <li>Go to <span class="ui">Settings</span> and click <span class="ui">Install an update</span>, choose the file and click Install.</li>
+    <li>The viewer restarts on the new version by itself.</li>
+  </ol>
+  <p>Updates never touch your stored data or settings. The previous version is kept, and <span class="ui">Versions &amp; changes</span> can put it back. A full download (<b>HRM-Viewer-&lt;version&gt;-full.zip</b>) is a complete fresh copy; to keep your data, copy your old <b>data</b> folder into it.</p>
+</section>
+
+<section id="tips">
+  <h2><span class="n">11</span>Good to know</h2>
+  <ul>
+    <li><b>Your data stays on your computer</b> in the <b>data</b> folder. Nothing is uploaded anywhere.</li>
+    <li><b>Sectional times</b> are only kept by the game for Group races and for roughly the last few months of other races, so some racecourses have track records but no sectional records.</li>
+    <li><b>Live data</b>: the game only writes to database.db when you save, so the viewer shows your last save.</li>
+    <li><b>All tables</b> (Settings → All tables) shows every table in the save exactly as stored; type under a column and press Enter to filter (e.g. <code>&gt;100</code>, <code>!null</code>).</li>
+    <li>If the window opens in your browser instead, Windows is missing the Microsoft Edge WebView2 Runtime; the viewer tells you where to get it. <b>Start.bat</b> also opens the viewer in your browser.</li>
+  </ul>
+</section>
+
+<footer>HRM Viewer {{VERSION}} · Quick Guide</footer>
+</main>
+</body>
+</html>

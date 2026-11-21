@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HRM Database Viewer</title>
+<link rel="stylesheet" href="/app.css">
+<link rel="stylesheet" href="/fonts.css">
+<script>
+  // apply the saved theme and font before the page draws, so there's no flash
+  try {
+    var t = localStorage.getItem("hrm.theme") || "light";
+    if (t === "dark" || (t === "auto" && window.matchMedia && matchMedia("(prefers-color-scheme: dark)").matches)) document.documentElement.classList.add("dark");
+    var f = localStorage.getItem("hrm.font");
+    if (f) document.documentElement.style.setProperty("--font", f);
+  } catch (e) {}
+  // your own colours (Settings > Colours), kept separately for light and dark mode; the app calls this again when they change
+  window.hrmColours = function () {
+    try {
+      var el = document.documentElement, all = JSON.parse(localStorage.getItem("hrm.colours") || "{}");
+      var c = all[el.classList.contains("dark") ? "dark" : "light"] || {};
+      var map = { accent: ["--blue", "--brass", "--green-2", "--link"], header: ["--header"], heading: ["--heading"], bg: ["--bg"], panel: ["--panel"], line: ["--line"], win: ["--win"] };
+      for (var k in map) for (var i = 0; i < map[k].length; i++) { if (c[k]) el.style.setProperty(map[k][i], c[k]); else el.style.removeProperty(map[k][i]); }
+      var rgb = function (h) { h = h.replace("#", ""); return [0, 2, 4].map(function (j) { return parseInt(h.substr(j, 2), 16); }); };
+      var mix = function (h, t) { var a = rgb(h); return "rgb(" + a.map(function (v) { return Math.round(v + (255 - v) * t); }).join(",") + ")"; };
+      if (c.header) {
+        var a = rgb(c.header), lum = (0.2126 * a[0] + 0.7152 * a[1] + 0.0722 * a[2]) / 255, light = lum > 0.6;
+        el.style.setProperty("--header-2", light ? "rgba(0,0,0,.06)" : mix(c.header, 0.1));
+        el.style.setProperty("--header-3", light ? "rgba(0,0,0,.1)" : mix(c.header, 0.2));
+        el.classList.toggle("hdr-light", light);
+      } else { el.style.removeProperty("--header-2"); el.style.removeProperty("--header-3"); el.classList.remove("hdr-light"); }
+    } catch (e) {}
+  };
+  window.hrmColours();
+</script>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='4' fill='%23e2231a'/%3E%3Cpath d='M4.3 13.2 3.7 9.3a4.3 4.3 0 0 1 8.6 0l-.6 3.9' stroke='white' stroke-width='2.4' fill='none' stroke-linecap='round'/%3E%3Ccircle cx='4.15' cy='10.6' r='.55' fill='%23e2231a'/%3E%3Ccircle cx='11.85' cy='10.6' r='.55' fill='%23e2231a'/%3E%3Ccircle cx='5.1' cy='6.6' r='.55' fill='%23e2231a'/%3E%3Ccircle cx='10.9' cy='6.6' r='.55' fill='%23e2231a'/%3E%3C/svg%3E">
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="brand" href="#/" title="HRM Viewer home">
+      <span class="logo"><svg viewBox="0 0 16 16" width="22" height="22"><path d="M4.3 13.2 3.7 9.3a4.3 4.3 0 0 1 8.6 0l-.6 3.9" stroke="white" stroke-width="2.4" fill="none" stroke-linecap="round"/><circle cx="4.15" cy="10.6" r=".55" fill="#e2231a"/><circle cx="11.85" cy="10.6" r=".55" fill="#e2231a"/><circle cx="5.1" cy="6.6" r=".55" fill="#e2231a"/><circle cx="10.9" cy="6.6" r=".55" fill="#e2231a"/></svg></span>
+      <span class="brand-text">HRM <b>Viewer</b></span>
+    </a>
+    <div class="search">
+      <svg class="search-ico" viewBox="0 0 16 16" width="15" height="15"><circle cx="7" cy="7" r="5" stroke="currentColor" stroke-width="1.8" fill="none"/><path d="M11 11l3.5 3.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+      <input id="search" type="search" placeholder="Search horses, people, stables, races…" autocomplete="off">
+      <div class="search-results" id="search-results"></div>
+    </div>
+    <a class="auto-ind" id="auto-ind" hidden></a>
+    <a class="gamedate" id="gamedate" href="#/databases" title="Switch to another database"></a>
+    <button class="btn" id="load-btn" title="Replace the stored data with a newer database.db">Load new database</button>
+  </div>
+</header>
+<div class="tabbar">
+  <nav class="main" id="nav"></nav>
+</div>
+<div class="layout">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="content">
+    <div id="gh-banner"></div><div id="db-banner"></div>
+    <main id="app"><div class="loading">Loading…</div></main>
+    <footer class="foot" id="foot"></footer>
+  </div>
+</div>
+<script src="/app.js"></script>
+</body>
+</html>
