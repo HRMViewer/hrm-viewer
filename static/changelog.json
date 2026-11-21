@@ -1,5 +1,15 @@
 [
   {
+    "version": "13.1",
+    "date": "2026-11-21",
+    "title": "Never stuck on a busy port",
+    "changes": [
+      "The viewer now finds its own free port. If the usual one (8765) is taken, it tries the next 500, and if every one of those is taken it asks Windows for any free port, so it always opens.",
+      "It skips straight past ports Windows keeps for itself (Hyper-V, WSL, Docker), and waits a moment for a port that's only just been let go of.",
+      "HRM Viewer.exe follows whichever port the viewer opened, and uses the same one next time so your display settings stay put. A restart after an update keeps the same port too."
+    ]
+  },
+  {
     "version": "13.0",
     "date": "2026-11-21",
     "title": "Each database follows its player",

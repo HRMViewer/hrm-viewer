@@ -95,6 +95,18 @@ func swapInNewExe() bool {
 // Which port to use: one where HRM Viewer is already running, otherwise the first one nothing else is using.
 // (Another program sitting on 8765 used to leave the window stuck on "Almost there…".)
 func choosePort() {
+	// the port the viewer used last time comes first, so its address (and the settings kept for it) stays the same
+	if last := lastPortUsed(); last > 0 {
+		setPort(last)
+		if serverUp() {
+			logf("HRM Viewer is already running on port %d", last)
+			return
+		}
+		if l, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", last)); err == nil {
+			l.Close()
+			return
+		}
+	}
 	for p := firstPort; p <= lastPort; p++ {
 		setPort(p)
 		if serverUp() {
@@ -111,6 +123,23 @@ func choosePort() {
 		logf("port %d is used by another program", p)
 	}
 	setPort(firstPort)
+}
+
+func portFile() string { return filepath.Join(appDir, "data", "port.json") }
+
+// The port the viewer itself reports it opened (it finds a free one if the one asked for is taken).
+func lastPortUsed() int {
+	b, err := os.ReadFile(portFile())
+	if err != nil {
+		return 0
+	}
+	var v struct {
+		Port int `json:"port"`
+	}
+	if json.Unmarshal(b, &v) != nil || v.Port <= 0 || v.Port > 65535 {
+		return 0
+	}
+	return v.Port
 }
 
 func setPort(p int) {
@@ -164,7 +193,10 @@ func startServer(importPath string) (*exec.Cmd, error) {
 	}
 	cmd := exec.Command(py, args...)
 	cmd.Dir = appDir
-	cmd.Env = append(os.Environ(), "HRMV_DESKTOP=1", "PYTHONUNBUFFERED=1", "PYTHONIOENCODING=utf-8")
+	// the viewer may move to another free port if this one is taken, and says where in data\port.json
+	os.Remove(portFile())
+	cmd.Env = append(os.Environ(), "HRMV_DESKTOP=1", "PYTHONUNBUFFERED=1", "PYTHONIOENCODING=utf-8",
+		"HRMV_PORT_AUTO=1", "HRMV_PORT_FILE="+portFile())
 	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: noWindow}
 	if logFile != nil {
 		cmd.Stdout, cmd.Stderr = logFile, logFile
@@ -313,6 +345,10 @@ func main() {
 				ready <- fmt.Errorf("stopped")
 				return
 			default:
+			}
+			if p := lastPortUsed(); p > 0 && p != port {
+				logf("the viewer opened on port %d", p)
+				setPort(p)
 			}
 			if serverUp() {
 				ready <- nil

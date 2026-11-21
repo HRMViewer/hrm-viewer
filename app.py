@@ -4117,7 +4117,7 @@ class Handler(BaseHTTPRequestHandler):
 
 # --------------------------------------------------------------------------- in-app updates
 
-VERSION = "13.0"
+VERSION = "13.1"
 BACKUP_DIR = os.path.join(APP_DIR, "backups")
 UPDATE_PENDING = os.path.join(DATA_DIR, "update_pending.json")
 UPDATE_RESULT = os.path.join(DATA_DIR, "update_result.json")
@@ -4381,6 +4381,10 @@ def supervise(argv):
                     continue
                 run_args.append(a)
             run_args.append("--no-browser")
+        if not first and os.environ.get("HRMV_PORT_FILE"):
+            got = to_int((read_json(os.environ["HRMV_PORT_FILE"], {}) or {}).get("port"))
+            if got:
+                run_args = [a for i, a in enumerate(run_args) if a != "--port" and (i == 0 or run_args[i - 1] != "--port")] + ["--port", str(got)]
         cmd = [sys.executable, os.path.join(APP_DIR, "app.py"), "--child"] + run_args
         try:
             rc = subprocess.call(cmd, env=env)
@@ -4495,6 +4499,47 @@ def viewer_answering(port):
         return False
 
 
+def port_taken(port):
+    """Is something listening on this port right now (as opposed to it just being released a moment ago)?"""
+    try:
+        with socket.create_connection(("127.0.0.1", port), timeout=0.5):
+            return True
+    except OSError:
+        return False
+
+
+def bind_viewer(port, auto):
+    """Open the viewer's server. Returns (server, None), or (None, "viewer"/"other") when the port can't be had.
+
+    The port asked for is used whenever possible, so the address (and the settings the window keeps for it) stays the
+    same. With auto (opened by HRM Viewer.exe) another free port is found instead of giving up: the next 500 above it,
+    and failing those, any port the system has free."""
+    deadline = time.time() + 8
+    while True:
+        try:
+            return ViewerServer(("127.0.0.1", port), Handler), None
+        except OSError as e:
+            # Windows keeps some port ranges for itself (Hyper-V, WSL, Docker): "access denied", and no point waiting
+            if getattr(e, "winerror", None) == 10013 or e.errno == 13:
+                break
+        if viewer_answering(port):
+            return None, "viewer"
+        if port_taken(port) or time.time() > deadline:
+            break
+        time.sleep(0.5)       # nothing is listening: the port is still being released (e.g. a restart after an update)
+    if not auto:
+        return None, "other"
+    for p in list(range(port + 1, min(port + 501, 65536))):
+        try:
+            return ViewerServer(("127.0.0.1", p), Handler), None
+        except OSError:
+            continue
+    try:
+        return ViewerServer(("127.0.0.1", 0), Handler), None     # any free port at all
+    except OSError:
+        return None, "other"
+
+
 class ViewerServer(ThreadingHTTPServer):
     """On Windows, SO_REUSEADDR lets a second program bind a port another one is already using (and the other one keeps
     getting the visitors), so the viewer asks for its port to itself there: if anything else has it, starting says so."""
@@ -4577,17 +4622,25 @@ def main():
         if job_snapshot()["state"] == "done":
             print("Loaded.")
 
-    try:
-        server = ViewerServer(("127.0.0.1", args.port), Handler)
-    except OSError:
-        if viewer_answering(args.port):
+    auto_port = os.environ.get("HRMV_PORT_AUTO") == "1"    # opened by HRM Viewer.exe: any free port will do
+    port_file = os.environ.get("HRMV_PORT_FILE")
+    server, why = bind_viewer(args.port, auto_port)
+    if server is None:
+        if why == "viewer":
             print("Port %d is busy - the viewer is already running. Opening it in your browser." % args.port)
+            if port_file:
+                write_json(port_file, {"port": args.port, "pid": os.getpid(), "at": time.time()})
             if not args.no_browser:
                 webbrowser.open("http://127.0.0.1:%d/" % args.port)
             return
         print("Port %d is already in use by another program (not the viewer), so the viewer can't start there. "
               "Close that program or restart your PC, then open the viewer again." % args.port)
         sys.exit(PORT_BUSY_CODE)
+    if server.server_address[1] != args.port:
+        print("Port %d is used by another program, so the viewer is using port %d instead." % (args.port, server.server_address[1]))
+        args.port = server.server_address[1]
+    if port_file:     # tells HRM Viewer.exe (and a restart after an update) where the viewer is
+        write_json(port_file, {"port": args.port, "pid": os.getpid(), "at": time.time()})
     server.daemon_threads = True
     global PORT
     PORT = args.port
