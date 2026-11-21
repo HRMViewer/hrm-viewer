@@ -2019,6 +2019,8 @@ def api_stables(con, q):
         params.append("%" + q["q"] + "%")
     if (q.get("status") or "active") == "active":
         where.append("s.stable_liquidated is null and s.stable_stable_id not in (select pk from hrmv_removed where tbl='stables')")
+    elif q.get("status") == "closed":
+        where.append("(s.stable_liquidated is not null or s.stable_stable_id in (select pk from hrmv_removed where tbl='stables'))")
     sort, d = sort_args(q, STABLE_SORTS, "prestige")
     page, off = page_args(q)
     w = (" where " + " and ".join(where)) if where else ""
@@ -2460,6 +2462,8 @@ def api_people(con, q):
         params.append("%" + q["q"] + "%")
     if (q.get("status") or "alive") == "alive":
         where.append("p.person_deceased_date is null and p.person_person_id not in (select pk from hrmv_removed where tbl='persons')")
+    elif q.get("status") == "dead":
+        where.append("(p.person_deceased_date is not null or p.person_person_id in (select pk from hrmv_removed where tbl='persons'))")
     role = q.get("role")
     if role:
         join = " join staff f on f.staff_person_id=p.person_person_id and f.staff_end_date is null and f.staff_current_role=?"
@@ -2507,6 +2511,8 @@ def api_careers(con, q):
         params.append("%" + q["q"] + "%")
     if (q.get("status") or "alive") == "alive":
         where.append("p.person_deceased_date is null and p.person_person_id not in (select pk from hrmv_removed where tbl='persons')")
+    elif q.get("status") == "dead":
+        where.append("(p.person_deceased_date is not null or p.person_person_id in (select pk from hrmv_removed where tbl='persons'))")
     if q.get("job"):     # what they do now
         where.append("p.person_person_id in (select staff_person_id from staff where staff_end_date is null and staff_current_role=?)")
         params.append(q["job"])
@@ -3513,6 +3519,8 @@ def stable_table_query(con, q):
         where.append("s.stable_name like ?"); params.append("%" + q["q"] + "%")
     if (q.get("status") or "active") == "active":
         where.append("s.stable_liquidated is null and s.stable_stable_id not in (select pk from hrmv_removed where tbl='stables')")
+    elif q.get("status") == "closed":
+        where.append("(s.stable_liquidated is not null or s.stable_stable_id in (select pk from hrmv_removed where tbl='stables'))")
     if q.get("country"):
         where.append("n.country_name=?"); params.append(q["country"])
     if to_int(q.get("minhorses")):
@@ -3801,6 +3809,8 @@ def pedigree_query(con, q):
         outer_where.append("p.horse_name like ?"); params.append("%" + q["q"] + "%")
     if (q.get("status") or "all") == "alive":
         outer_where.append("p.horse_deceased_date is null and p.horse_horse_id not in (select pk from hrmv_removed where tbl='horses')")
+    elif q.get("status") == "dead":
+        outer_where.append("(p.horse_deceased_date is not null or p.horse_horse_id in (select pk from hrmv_removed where tbl='horses'))")
     if to_int(q.get("minrunners")):
         outer_where.append("g.runners>=?"); params.append(to_int(q["minrunners"]))
     base = "from (%s) g join horses p on p.horse_horse_id=g.id left join stables st on st.stable_stable_id=p.horse_stable_id" % inner
@@ -5175,7 +5185,7 @@ class Handler(BaseHTTPRequestHandler):
 
 # --------------------------------------------------------------------------- in-app updates
 
-VERSION = "14.8"
+VERSION = "14.9"
 BACKUP_DIR = os.path.join(APP_DIR, "backups")
 UPDATE_PENDING = os.path.join(DATA_DIR, "update_pending.json")
 UPDATE_RESULT = os.path.join(DATA_DIR, "update_result.json")

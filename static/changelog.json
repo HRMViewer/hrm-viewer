@@ -1,5 +1,19 @@
 [
   {
+    "version": "14.9",
+    "date": "2026-11-22",
+    "title": "The same filters on every table",
+    "changes": [
+      "Every table's filters now look and work the same, in the same order: what the table lists (Sires · Dams, Jockeys · Trainers, Expenses · Income…), the search box, the status, dropdowns, then from–to ranges (Age, Foals foaled).",
+      "Status is always Alive · Deceased · All for horses and people, and Active · Closed · All for stables. People, Jockeys & trainers, Pedigrees, Family and Dynasty can now show just the deceased, and Stables and the Stable table just the closed ones.",
+      "Dropdowns with no filter always say Any … (Any sex, Any type, Any country, Any class…), and year menus say All years.",
+      "Search boxes always say what they search: Search horses, Search races, Search stables, Search people, Search payments, Search this table…",
+      "New Clear filters button at the end of a filter bar whenever a filter is set: puts them all back to how they start (keeping what the table lists).",
+      "All filter controls are the same height and style, including the year and month menus on Financials; the selected option shows clearly in dark mode.",
+      "Lists say 1 stable, 1 person and so on, instead of 1 stables."
+    ]
+  },
+  {
     "version": "14.8",
     "date": "2026-11-22",
     "title": "Expense and income detail: any year, any month",

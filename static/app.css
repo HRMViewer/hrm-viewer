@@ -1021,3 +1021,31 @@ html.dark table.sr-table .sr-val { color: #4cc38a; }
 .toast .btn { flex: none; }
 .toast.out { opacity: 0; transform: translateY(8px); }
 html.dark .toast { background: #26324a; }
+
+/* ---------- filter bars: one look everywhere (lists, tabs, finance detail, horse money)
+   what the table lists · search · status · dropdowns · ranges · Clear filters, all the same height */
+:root { --ctl-h: 34px; --ctl-line: #cfd5df; }
+html.dark { --ctl-line: #343d50; }
+.filters, .fd-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 12px; }
+.filters input[type=search], .fd-tools input[type=search], .filters select, .fd-tools select,
+.filters input[type=number], .filters .seg, .fd-tools .seg, .filters .btn, .fd-tools .btn { height: var(--ctl-h); box-sizing: border-box; }
+.filters input[type=search], .fd-tools input[type=search] { width: 240px; min-width: 0; padding: 0 10px; border: 1px solid var(--ctl-line); border-radius: 6px;
+  background: var(--panel); color: var(--ink); font: inherit; }
+.filters select, .fd-tools select { padding: 0 8px; border: 1px solid var(--ctl-line); border-radius: 6px; background: var(--panel); color: var(--ink);
+  font: inherit; max-width: 280px; cursor: pointer; }
+.filters .seg, .fd-tools .seg { border-color: var(--ctl-line); }
+.filters .seg button, .fd-tools .seg button { height: 100%; padding: 0 12px; color: inherit; font: inherit; font-weight: 600; }
+.filters .seg button.on, .fd-tools .seg button.on { color: #fff; }
+.filters input:focus, .filters select:focus, .fd-tools input:focus, .fd-tools select:focus { outline: none; border-color: #9db8ec; box-shadow: 0 0 0 3px rgba(29, 99, 214, .12); }
+/* the switch for what the table lists sits first, a little apart from the filters */
+.filters .seg-view, .fd-tools .seg-view { margin-right: 6px; }
+/* from–to ranges: one framed group with its label */
+.frange { display: inline-flex; align-items: center; gap: 6px; height: var(--ctl-h); box-sizing: border-box; padding: 0 4px 0 10px;
+  border: 1px solid var(--ctl-line); border-radius: 6px; background: var(--panel); }
+.frange-l, .frange-to { color: var(--muted); font-size: var(--fs-sm); white-space: nowrap; }
+.filters .frange input[type=number] { width: 64px; height: 26px; padding: 0 6px; border: 1px solid var(--ctl-line); border-radius: 4px; background: var(--panel); color: var(--ink); }
+.filters .frange select { height: 26px; border-radius: 4px; }
+.fb-clear { color: var(--blue); }
+.fb-clear::before { content: "\2715  "; font-size: .8em; }
+/* dark mode: the chosen button in a switch in bright blue (navy hardly shows on the dark background) */
+html.dark .seg button.on { background: var(--blue); color: #fff; }
