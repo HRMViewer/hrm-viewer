@@ -33,13 +33,6 @@ jobs:
     # built on the oldest supported Ubuntu so it runs on as many Linux versions as possible
     runs-on: ubuntu-22.04
     steps:
-      - name: Say the Mac build has started (test builds only)
-        if: github.ref == 'refs/heads/desktop-test'
-        run: |
-          mkdir -p "$RUNNER_TEMP/started" && cd "$RUNNER_TEMP/started" && echo "running on $(sw_vers -productVersion) $(uname -m) since $(date -u)" > status.txt
-          git init -q && git checkout -q -b ci-results-mac && git add -A && git -c user.name=ci -c user.email=ci@localhost commit -qm "mac started"
-          git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" ci-results-mac
-
       - uses: actions/checkout@v4
 
       - uses: actions/setup-go@v5
@@ -109,6 +102,13 @@ jobs:
     timeout-minutes: 40
     runs-on: macos-14
     steps:
+      - name: Say the Mac build has started (test builds only)
+        if: github.ref == 'refs/heads/desktop-test'
+        run: |
+          mkdir -p "$RUNNER_TEMP/started" && cd "$RUNNER_TEMP/started" && echo "running on $(sw_vers -productVersion) $(uname -m) since $(date -u)" > status.txt
+          git init -q && git checkout -q -b ci-results-mac && git add -A && git -c user.name=ci -c user.email=ci@localhost commit -qm "mac started"
+          git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" ci-results-mac
+
       - uses: actions/checkout@v4
 
       - uses: actions/setup-go@v5
