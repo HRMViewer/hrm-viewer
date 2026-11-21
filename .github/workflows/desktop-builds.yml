@@ -81,6 +81,7 @@ jobs:
           cp "$RUNNER_TEMP/log.txt" "$RUNNER_TEMP/res/" 2>/dev/null || true
           cp dist/*.png "$RUNNER_TEMP/res/" 2>/dev/null || true
           cp "$HOME/Library/Application Support/HRM Viewer/data/desktop.log" "$RUNNER_TEMP/res/desktop.log" 2>/dev/null || true
+          cp "$RUNNER_TEMP/xprotect.txt" "$RUNNER_TEMP/res/" 2>/dev/null || true
           ls -la dist > "$RUNNER_TEMP/res/dist.txt" 2>&1 || true
           echo "${{ job.status }}" > "$RUNNER_TEMP/res/status.txt"
           cd "$RUNNER_TEMP/res" && git init -q && git checkout -q -b ci-results-linux && git add -A
@@ -160,6 +161,14 @@ jobs:
           spctl --assess --type execute -vvv "$RUNNER_TEMP/dl/HRM Viewer.app" 2>&1 | tee "$RUNNER_TEMP/gk.txt" || true
           if grep -qi "damaged\|invalid signature\|code has no resources" "$RUNNER_TEMP/gk.txt"; then echo "macOS would call it damaged"; exit 1; fi
           syspolicy_check distribution "$RUNNER_TEMP/dl/HRM Viewer.app" 2>&1 | head -40 || true
+          # what XProtect itself said while checking (which file, and whether it was a finding or a scan problem)
+          log show --last 3m --style compact --predicate 'process CONTAINS[c] "xprotect" OR subsystem CONTAINS[c] "xprotect" OR process == "syspolicyd"' 2>/dev/null \
+            | grep -i -E "xprotect|scan|malware|HRM Viewer|python|error|fail" | grep -v -i "trace\b" | tail -60 > "$RUNNER_TEMP/xprotect.txt" || true
+          wc -l "$RUNNER_TEMP/xprotect.txt"; tail -60 "$RUNNER_TEMP/xprotect.txt"
+          # the same check on the app without its Pythons, to see whether they are what XProtect trips on
+          cp -R "$RUNNER_TEMP/dl/HRM Viewer.app" "$RUNNER_TEMP/nopy.app" && rm -rf "$RUNNER_TEMP/nopy.app/Contents/Resources/python-"*
+          codesign --force --deep --sign - "$RUNNER_TEMP/nopy.app" && xattr -w -r com.apple.quarantine "0083;$(printf %x $(date +%s));Safari;" "$RUNNER_TEMP/nopy.app"
+          echo "--- without the Pythons:"; syspolicy_check distribution "$RUNNER_TEMP/nopy.app" 2>&1 | grep -E "Error$|Ticket|Xprotect|passed|failed" || true
 
       - name: Try it
         timeout-minutes: 8
@@ -176,6 +185,7 @@ jobs:
           cp "$RUNNER_TEMP/log.txt" "$RUNNER_TEMP/res/" 2>/dev/null || true
           cp dist/*.png "$RUNNER_TEMP/res/" 2>/dev/null || true
           cp "$HOME/Library/Application Support/HRM Viewer/data/desktop.log" "$RUNNER_TEMP/res/desktop.log" 2>/dev/null || true
+          cp "$RUNNER_TEMP/xprotect.txt" "$RUNNER_TEMP/res/" 2>/dev/null || true
           ls -la dist > "$RUNNER_TEMP/res/dist.txt" 2>&1 || true
           echo "${{ job.status }}" > "$RUNNER_TEMP/res/status.txt"
           cd "$RUNNER_TEMP/res" && git init -q && git checkout -q -b ci-results-mac && git add -A
