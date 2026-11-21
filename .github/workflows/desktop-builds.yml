@@ -9,6 +9,9 @@ on:
   push:
     branches: [desktop-test]
 
+permissions:
+  contents: write
+
 env:
   GO_VERSION: "1.24.7"
   PBS_TAG: "20251202"      # python-build-standalone release with the portable Python that ships inside
@@ -28,25 +31,46 @@ jobs:
 
       - name: WebKitGTK (for the window) and test tools
         run: |
+          exec > >(tee -a "$RUNNER_TEMP/log.txt") 2>&1
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev xvfb imagemagick
 
       - name: Build the launcher and the window app
         working-directory: desktop
         run: |
+          exec > >(tee -a "$RUNNER_TEMP/log.txt") 2>&1
           CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o "$RUNNER_TEMP/HRM Viewer" .
           PKG_CONFIG="$PWD/pkg-config-webkit41.sh" CGO_ENABLED=1 go build -tags webview -trimpath -ldflags "-s -w" -o "$RUNNER_TEMP/hrm-viewer-window" .
 
       - name: Get the portable Python
         run: |
+          exec > >(tee -a "$RUNNER_TEMP/log.txt") 2>&1
           curl -fsSL -o "$RUNNER_TEMP/py.tgz" "https://github.com/astral-sh/python-build-standalone/releases/download/${PBS_TAG}/cpython-${PBS_PY}%2B${PBS_TAG}-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz"
           mkdir -p "$RUNNER_TEMP/py" && tar xzf "$RUNNER_TEMP/py.tgz" -C "$RUNNER_TEMP/py"
 
       - name: Make the download
-        run: python3 tools/ci_unix.py linux dist "$RUNNER_TEMP/HRM Viewer" "$RUNNER_TEMP/hrm-viewer-window" "$RUNNER_TEMP/py/python"
+        run: |
+          exec > >(tee -a "$RUNNER_TEMP/log.txt") 2>&1
+          python3 tools/ci_unix.py linux dist "$RUNNER_TEMP/HRM Viewer" "$RUNNER_TEMP/hrm-viewer-window" "$RUNNER_TEMP/py/python"
 
       - name: Try it
-        run: bash tools/smoke_linux.sh "$PWD/dist"
+        run: |
+          exec > >(tee -a "$RUNNER_TEMP/log.txt") 2>&1
+          bash tools/smoke_linux.sh "$PWD/dist"
+
+
+      - name: Share the results (test builds only)
+        if: always() && github.ref == 'refs/heads/desktop-test'
+        run: |
+          mkdir -p "$RUNNER_TEMP/res"
+          cp "$RUNNER_TEMP/log.txt" "$RUNNER_TEMP/res/" 2>/dev/null || true
+          cp dist/*.png "$RUNNER_TEMP/res/" 2>/dev/null || true
+          cp "$HOME/Library/Application Support/HRM Viewer/data/desktop.log" "$RUNNER_TEMP/res/desktop.log" 2>/dev/null || true
+          ls -la dist > "$RUNNER_TEMP/res/dist.txt" 2>&1 || true
+          echo "${{ job.status }}" > "$RUNNER_TEMP/res/status.txt"
+          cd "$RUNNER_TEMP/res" && git init -q && git checkout -q -b ci-results-linux && git add -A
+          git -c user.name=ci -c user.email=ci@localhost commit -qm "linux results"
+          git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" ci-results-linux
 
       - uses: actions/upload-artifact@v4
         with:
@@ -72,6 +96,7 @@ jobs:
           MACOSX_DEPLOYMENT_TARGET: "11.0"
           CGO_ENABLED: "1"
         run: |
+          exec > >(tee -a "$RUNNER_TEMP/log.txt") 2>&1
           GOARCH=arm64 go build -tags webview -trimpath -ldflags "-s -w" -o "$RUNNER_TEMP/hv-arm64" .
           GOARCH=amd64 CC="clang -arch x86_64" CXX="clang++ -arch x86_64" go build -tags webview -trimpath -ldflags "-s -w" -o "$RUNNER_TEMP/hv-amd64" .
           lipo -create -output "$RUNNER_TEMP/HRM Viewer" "$RUNNER_TEMP/hv-arm64" "$RUNNER_TEMP/hv-amd64"
@@ -79,16 +104,20 @@ jobs:
 
       - name: Get the portable Pythons
         run: |
+          exec > >(tee -a "$RUNNER_TEMP/log.txt") 2>&1
           for arch in aarch64 x86_64; do
             curl -fsSL -o "$RUNNER_TEMP/py-$arch.tgz" "https://github.com/astral-sh/python-build-standalone/releases/download/${PBS_TAG}/cpython-${PBS_PY}%2B${PBS_TAG}-${arch}-apple-darwin-install_only_stripped.tar.gz"
             mkdir -p "$RUNNER_TEMP/py-$arch" && tar xzf "$RUNNER_TEMP/py-$arch.tgz" -C "$RUNNER_TEMP/py-$arch"
           done
 
       - name: Make the app
-        run: python3 tools/ci_unix.py mac dist "$RUNNER_TEMP/HRM Viewer" "$RUNNER_TEMP/py-aarch64/python" "$RUNNER_TEMP/py-x86_64/python"
+        run: |
+          exec > >(tee -a "$RUNNER_TEMP/log.txt") 2>&1
+          python3 tools/ci_unix.py mac dist "$RUNNER_TEMP/HRM Viewer" "$RUNNER_TEMP/py-aarch64/python" "$RUNNER_TEMP/py-x86_64/python"
 
       - name: Sign it (ad hoc, free) and zip it
         run: |
+          exec > >(tee -a "$RUNNER_TEMP/log.txt") 2>&1
           codesign --force --deep --sign - "dist/HRM Viewer.app"
           codesign --verify --deep --verbose=2 "dist/HRM Viewer.app"
           V=$(cat dist/version.txt)
@@ -96,7 +125,23 @@ jobs:
           ls -la dist
 
       - name: Try it
-        run: bash tools/smoke_mac.sh "$PWD/dist/HRM Viewer.app" "$PWD/dist"
+        run: |
+          exec > >(tee -a "$RUNNER_TEMP/log.txt") 2>&1
+          bash tools/smoke_mac.sh "$PWD/dist/HRM Viewer.app" "$PWD/dist"
+
+
+      - name: Share the results (test builds only)
+        if: always() && github.ref == 'refs/heads/desktop-test'
+        run: |
+          mkdir -p "$RUNNER_TEMP/res"
+          cp "$RUNNER_TEMP/log.txt" "$RUNNER_TEMP/res/" 2>/dev/null || true
+          cp dist/*.png "$RUNNER_TEMP/res/" 2>/dev/null || true
+          cp "$HOME/Library/Application Support/HRM Viewer/data/desktop.log" "$RUNNER_TEMP/res/desktop.log" 2>/dev/null || true
+          ls -la dist > "$RUNNER_TEMP/res/dist.txt" 2>&1 || true
+          echo "${{ job.status }}" > "$RUNNER_TEMP/res/status.txt"
+          cd "$RUNNER_TEMP/res" && git init -q && git checkout -q -b ci-results-mac && git add -A
+          git -c user.name=ci -c user.email=ci@localhost commit -qm "mac results"
+          git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" ci-results-mac
 
       - uses: actions/upload-artifact@v4
         with:
