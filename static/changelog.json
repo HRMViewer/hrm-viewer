@@ -1,5 +1,18 @@
 [
   {
+    "version": "15.4",
+    "date": "2026-11-22",
+    "title": "A clearer yearly income chart",
+    "changes": [
+      "Fixed: the Income vs expenses by year chart on a stable's Financials tab now reads as a yearly chart. Its axis shows one year under each dot, with no months or dates such as \"2 Jul 2017\" along the bottom.",
+      "Pointing at the chart shows the year (\"2019\") instead of a date, and no longer repeats the year under Income.",
+      "A year with fewer than 12 months on record (the year in progress, or the first year of a stable) has a hollow dot, a faint dotted line to it and \"10 mo\" under the year, so a few months don't look like a sudden fall or rise. Pointing at it says \"10 of 12 months so far\".",
+      "The figures under the chart now say which year they're for, for example \"2020 (2 of 12 months)\", and use short amounts so they fit on one line. Net has dots too.",
+      "The chart's CSV download has a Year column instead of a date.",
+      "Fixed: leaving the Settings page before it had finished loading could log an error."
+    ]
+  },
+  {
     "version": "15.3",
     "date": "2026-11-22",
     "title": "Breeding income by horse",

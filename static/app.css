@@ -1109,3 +1109,6 @@ body.sb-mini .sidebar .sb-fav a { padding-right: 0; }
 table.fd-horses { margin: 0 0 4px; }
 table.fd-horses tr.fh-pay > td { padding: 4px 8px 8px 30px; background: var(--bg); }
 table.fd-horses tfoot td { font-weight: 700; border-top: 2px solid var(--line); }
+/* 15.4: yearly charts */
+html.dark .chart circle[fill="#fff"] { fill: #161c27; }
+.ch-legend .lg-lead { font-weight: 700; margin-right: 4px; }

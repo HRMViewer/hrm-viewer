@@ -873,6 +873,7 @@ function niceTicks(lo, hi, want = 5) {
 // Charts: hover for exact values, click legend entries to hide/show a line, pick a time range.
 const CHARTS = {};
 let CHART_SEQ = 0;
+const YEAR_S = 365.25 * 86400;
 function lineChart(series, opts = {}) {
   const id = "ch" + ++CHART_SEQ;
   CHARTS[id] = { series, opts: Object.assign({ yFmt: (v) => fNum(v), height: 220, invert: false, yInt: false, yMin: null, yMax: null, width: 680 }, opts), hidden: new Set(), range: chartDefaultRange() };
@@ -921,9 +922,11 @@ function chartInner(id) {
   // legend: click to hide/show a line, double-click to show only that line; each entry shows the latest value in view
   const fmtOf = (s) => s.fmt || o.tipFmt || o.yFmt;
   const latestOf = (i) => { const sv = series.find((x) => x.i === i); return sv && sv.pts.length ? sv.pts[sv.pts.length - 1] : null; };
-  const legend = C.series.length > 1 ? `<div class="legend ch-legend">${C.series.map((s, i) => { const lp = latestOf(i);
+  const lastYr = o.years && all.length ? yearOf(Math.max(...all.map((p) => p[0]))) : null;
+  const lead = lastYr ? `<span class="lg-lead">${lastYr}${(o.partialYears || {})[lastYr] ? ` <span class="muted">(${o.partialYears[lastYr]} of 12 months)</span>` : ""}</span>` : "";
+  const legend = C.series.length > 1 ? `<div class="legend ch-legend">${lead}${C.series.map((s, i) => { const lp = latestOf(i);
     return `<span class="lg ${C.hidden.has(i) ? "off" : ""}" data-lg="${i}" title="Click to ${C.hidden.has(i) ? "show" : "hide"} this line · double-click to show only this line">
-      <i style="background:${seriesCol(s, i)}"></i>${esc(s.name)}${lp && !C.hidden.has(i) ? ` <b class="lg-v">${fmtOf(s)(lp[1])}</b>` : ""}</span>`; }).join("")}</div>`
+      <i style="background:${seriesCol(s, i)}"></i>${esc(s.name)}${lp && !C.hidden.has(i) ? ` <b class="lg-v">${(o.years ? s.fmt || o.yFmt : fmtOf(s))(lp[1])}</b>` : ""}</span>`; }).join("")}</div>`
     : (() => { const sv = series[0]; if (!sv || sv.pts.length < 2) return "";
       const vals = sv.pts.map((p) => p[1]), hi = sv.pts.reduce((a, p) => (p[1] > a[1] ? p : a)), lo = sv.pts.reduce((a, p) => (p[1] < a[1] ? p : a)), f = fmtOf(sv);
       const first = vals[0], last = vals[vals.length - 1], ch = first ? ((last - first) / Math.abs(first)) * 100 : null;
@@ -933,7 +936,8 @@ function chartInner(id) {
   if (all.length < 1) return rangeBtns + `<div class="empty ch-empty" style="aspect-ratio:${W}/${H}">Nothing to show — all lines are hidden. Click a name below to show it.</div>` + legend;
   let x0 = Math.min(...all.map((p) => p[0])), x1 = Math.max(...all.map((p) => p[0]));
   let y0 = Math.min(...all.map((p) => p[1])), y1 = Math.max(...all.map((p) => p[1]));
-  if (x0 === x1) { x0 -= 86400 * 15; x1 += 86400 * 15; }
+  if (o.years) { x0 -= YEAR_S / 2; x1 += YEAR_S / 2; }
+  else if (x0 === x1) { x0 -= 86400 * 15; x1 += 86400 * 15; }
   if (y0 === y1) { y0 -= 1; y1 += 1; }
   if (o.yMin === null && o.yMax === null) {
     const pad = (y1 - y0) * 0.08; y0 -= pad; y1 += pad;
@@ -972,7 +976,19 @@ function chartInner(id) {
   for (const v of yt) g += `<line x1="${l}" x2="${W - r}" y1="${Y(v)}" y2="${Y(v)}" stroke="${LOG && v === 0 ? "#b9bfca" : "#ece9e2"}"/><text x="${l - 6}" y="${Y(v) + 4}" text-anchor="end">${o.yFmt(v)}</text>`;
   const ya = yearOf(x0), yb = yearOf(x1), span = (x1 - x0) / 86400;
   const ticks = [];
-  if (yb - ya >= 1) {
+  const PM = (o.years && o.partialYears) || {};   // { year: months } for years with fewer than 12 months on record
+  if (o.years) {
+    // one column per year: the year's name under its dot, a faint line between years, no months or dates
+    const ys = [...new Set(all.map((p) => yearOf(p[0])))].sort((a, b) => a - b);
+    const every = Math.max(1, Math.ceil(ys.length / 14));
+    ys.forEach((y, i) => {
+      if (i) { const xb = X(yearStart(y)); g += `<line x1="${xb}" x2="${xb}" y1="${t}" y2="${H - b}" stroke="#f1efe9"/>`; }
+      if (i % every && i !== ys.length - 1) return;
+      const xm = X(yearStart(y) + YEAR_S / 2);
+      g += `<text x="${xm}" y="${H - b + 15}" text-anchor="middle" font-weight="700">${y}</text>`;
+      if (PM[y]) g += `<text x="${xm}" y="${H - b + 27}" text-anchor="middle" fill-opacity="0.6">${PM[y]} mo</text>`;
+    });
+  } else if (yb - ya >= 1) {
     const every = Math.max(1, Math.ceil((yb - ya + 1) / 10));
     for (let y = ya + 1; y <= yb; y++) if ((y - ya - 1) % every === 0) ticks.push([yearStart(y), String(y), true]);
     if (span < 1100) for (let y = ya; y <= yb; y++) for (const m of [3, 6, 9]) { const ts = Date.UTC(y, m, 1) / 1000; if (ts > x0 && ts < x1) ticks.push([ts, MONTHS[m], false]); }
@@ -984,11 +1000,28 @@ function chartInner(id) {
     g += `<line x1="${x}" x2="${x}" y1="${t}" y2="${H - b}" stroke="${major ? "#cfd5df" : "#f1efe9"}" ${major ? "" : 'stroke-dasharray="2 3"'}/>`;
     g += `<text x="${x}" y="${H - b + 13}" text-anchor="middle" ${major ? 'font-weight="700"' : 'fill-opacity="0.6"'}>${lab}</text>`;
   }
-  g += `<text x="${l}" y="${H - 3}" text-anchor="start" fill-opacity="0.7">${fDate(x0)}</text><text x="${W - r}" y="${H - 3}" text-anchor="end" fill-opacity="0.7">${fDate(x1)}</text>`;
-  if (yb === ya) g += `<text x="${(l + W - r) / 2}" y="${H - 3}" text-anchor="middle" font-weight="700">${ya}</text>`;
+  if (!o.years) g += `<text x="${l}" y="${H - 3}" text-anchor="start" fill-opacity="0.7">${fDate(x0)}</text><text x="${W - r}" y="${H - 3}" text-anchor="end" fill-opacity="0.7">${fDate(x1)}</text>`;
+  if (yb === ya && !o.years) g += `<text x="${(l + W - r) / 2}" y="${H - 3}" text-anchor="middle" font-weight="700">${ya}</text>`;
   const lines = series.map((s) => {
-    const line = `<polyline fill="none" stroke="${s.color}" stroke-width="${s.dash ? 1.5 : 2}" ${s.dash ? 'stroke-dasharray="4 3"' : ""} points="${s.pts.map((p) => `${X(p[0]).toFixed(1)},${Y(p[1]).toFixed(1)}`).join(" ")}"/>`;
-    const dots = s.dots ? s.pts.map((p) => `<circle cx="${X(p[0]).toFixed(1)}" cy="${Y(p[1]).toFixed(1)}" r="${p[3] ? 4.5 : 3}" fill="${p[3] || s.color}" stroke="#fff" stroke-width="1"/>`).join("") : "";
+    const xy = (p) => `${X(p[0]).toFixed(1)},${Y(p[1]).toFixed(1)}`;
+    const sw = s.dash ? 1.5 : 2, dash = s.dash ? 'stroke-dasharray="4 3"' : "";
+    // a part year (the one in progress, or the first one on record): the stretch to it is faint and dotted, and its dot
+    // hollow, so a few months don't read as a rise or a fall
+    const part = (p) => !!PM[yearOf(p[0])];
+    let line = "", run = [s.pts[0]];
+    const flush = () => { if (run.length >= 2) line += `<polyline fill="none" stroke="${s.color}" stroke-width="${sw}" ${dash} points="${run.map(xy).join(" ")}"/>`; };
+    for (let i = 1; i < s.pts.length; i++) {
+      const a = s.pts[i - 1], c = s.pts[i];
+      if (part(a) || part(c)) {
+        flush(); run = [c];
+        line += `<polyline fill="none" stroke="${s.color}" stroke-width="${sw}" stroke-opacity=".55" stroke-dasharray="2 4" points="${xy(a)} ${xy(c)}"/>`;
+      } else run.push(c);
+    }
+    flush();
+    const dots = s.dots || o.years ? s.pts.map((p) => {
+      const hollow = part(p);
+      return `<circle cx="${X(p[0]).toFixed(1)}" cy="${Y(p[1]).toFixed(1)}" r="${p[3] ? 4.5 : hollow ? 3.5 : 3}" fill="${hollow ? "#fff" : p[3] || s.color}" stroke="${hollow ? s.color : "#fff"}" stroke-width="${hollow ? 1.5 : 1}"/>`;
+    }).join("") : "";
     return line + dots;
   }).join("");
   // charts that are on a log scale say so on the picture itself too
@@ -1032,7 +1065,10 @@ document.addEventListener("mousemove", (e) => {
   const hx = G.X(n.at);
   svg.querySelector(".ch-hover").innerHTML = `<line x1="${hx}" x2="${hx}" y1="${G.t}" y2="${G.H - G.b}" stroke="#18202f" stroke-opacity=".35" stroke-dasharray="3 3"/>` +
     n.rows.filter((r) => r.exact).map((r) => `<circle cx="${G.X(r.p[0])}" cy="${G.Y(r.p[1])}" r="5" fill="${r.p[3] || r.s.color}" stroke="#fff" stroke-width="2"/>`).join("");
-  CHART_TIP.innerHTML = `<div class="d">${fDate(n.at)}${G.sm ? ' <span class="muted">· smoothed</span>' : ""}</div>` + n.rows.filter((r) => r.exact).map((r) =>
+  const yo = C.opts.years, ty = yo && yearOf(n.at), pm = yo && (C.opts.partialYears || {})[ty];
+  const isLast = yo && ty === Math.max(...G.series.flatMap((s) => s.pts.map((p) => yearOf(p[0]))));
+  const head = yo ? `${ty}${pm ? ` <span class="muted">· ${pm} of 12 months${isLast ? " so far" : " on record"}</span>` : ""}` : fDate(n.at);
+  CHART_TIP.innerHTML = `<div class="d">${head}${G.sm ? ' <span class="muted">· smoothed</span>' : ""}</div>` + n.rows.filter((r) => r.exact).map((r) =>
     `<div class="r"><i style="background:${r.p[3] || r.s.color}"></i><span>${esc(r.s.name)}</span><b>${(r.s.fmt || tipFmt)(r.p[1])}</b></div>${r.p[2] ? `<div class="x">${esc(r.p[2])}</div>` : ""}`).join("") +
     (n.best[4] ? `<div class="h">Click to open the race</div>` : "");
   CHART_TIP.hidden = false;
@@ -1107,6 +1143,7 @@ function chartPng(box) {
   const dark = document.documentElement.classList.contains("dark");
   const copy = svg.cloneNode(true);
   copy.querySelector(".ch-hover") && (copy.querySelector(".ch-hover").innerHTML = "");
+  if (dark) copy.querySelectorAll('circle[fill="#fff"]').forEach((c) => c.setAttribute("fill", "#151b26"));
   copy.setAttribute("xmlns", "http://www.w3.org/2000/svg");
   copy.setAttribute("width", vb.width); copy.setAttribute("height", vb.height);
   const style = document.createElementNS("http://www.w3.org/2000/svg", "style");
@@ -1140,9 +1177,9 @@ function chartPng(box) {
 function chartCsv(box) {
   const C = CHARTS[box.id], dates = new Map();
   C.series.forEach((s, i) => s.points.forEach((p) => { if (isNum(p[1])) { if (!dates.has(p[0])) dates.set(p[0], {}); dates.get(p[0])[i] = p[1]; } }));
-  const day = (ts) => new Date(ts * 1000).toISOString().slice(0, 10);
+  const day = C.opts.years ? (ts) => String(yearOf(ts)) : (ts) => new Date(ts * 1000).toISOString().slice(0, 10);
   const q = (v) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
-  const lines = [["Date", ...C.series.map((s) => s.name)].map(q).join(",")];
+  const lines = [[C.opts.years ? "Year" : "Date", ...C.series.map((s) => s.name)].map(q).join(",")];
   [...dates.keys()].sort((a, b) => a - b).forEach((ts) => lines.push([day(ts), ...C.series.map((_, i) => (dates.get(ts)[i] ?? ""))].join(",")));
   saveBlob(new Blob(["\ufeff" + lines.join("\r\n")], { type: "text/csv;charset=utf-8" }), chartTitle(box) + ".csv");
 }
@@ -1523,6 +1560,7 @@ async function drawGithubBox() {
   const box = $("#gh-box");
   if (!box) return;
   const g = GH || (await githubCheck(false)) || {};
+  if (!box.isConnected) return;   // you've moved on to another page meanwhile
   const auto = g.auto !== false;
   box.innerHTML = `<label class="gh-auto"><input type="checkbox" data-gh-auto ${auto ? "checked" : ""}> Check for updates automatically</label>
     <div class="gh-status">${g.error ? `<span class="err-inline">${esc(g.error)}</span>`
@@ -2865,9 +2903,11 @@ async function stableFinancePage(route) {
     <tbody>${yrRows}</tbody></table></div>` : '<div class="empty">No yearly figures.</div>';
   html += `<div class="grid cols-2" style="margin-top:16px">${panel("Year by year", yearTable, "▲▼ vs the year before · hover for exact amounts")}
     ${years.length >= 2 ? panel("Income vs expenses by year", lineChart([
-      { name: "Income", color: "#1f5240", dots: true, points: years.map((y) => [yearStart(y.year) + 182 * 86400, y.income_total, `${y.year}${y.months < 12 ? ` (${y.months} months)` : ""}`]) },
-      { name: "Expenses", color: "#c0504d", dots: true, points: years.map((y) => [yearStart(y.year) + 182 * 86400, y.expense_total]) },
-      { name: "Net", color: "#3e6e9e", dash: true, points: years.map((y) => [yearStart(y.year) + 182 * 86400, y.net]) }], { ...STABLE_LOG, ranges: false }), "Each dot is a whole year") : ""}</div>`;
+      { name: "Income", color: "#1f5240", dots: true, points: years.map((y) => [yearStart(y.year) + YEAR_S / 2, y.income_total]) },
+      { name: "Expenses", color: "#c0504d", dots: true, points: years.map((y) => [yearStart(y.year) + YEAR_S / 2, y.expense_total]) },
+      { name: "Net", color: "#3e6e9e", dash: true, dots: true, points: years.map((y) => [yearStart(y.year) + YEAR_S / 2, y.net]) }],
+      { ...STABLE_LOG, ranges: false, years: true, height: 240, partialYears: Object.fromEntries(years.filter((y) => y.months < 12).map((y) => [y.year, y.months])) }),
+      years.some((y) => y.months < 12) ? "One dot per year · hollow dots are part years" : "One dot per year") : ""}</div>`;
   html += `<div style="margin-top:16px">${panel("Income by category", finYearTable(years, fin.income_cats || [], "income", "income_total"))}</div>
     <div style="margin-top:16px">${panel("Expenses by category", finYearTable(years, fin.expense_cats || [], "expenses", "expense_total", true), "The game's own expense categories · the detail below breaks them down")}</div>`;
   html += `<div style="margin-top:16px">${panel("Month by month", finMonthly(fin.months || []), "Each month's income and expenses · ▸ shows the categories")}</div>`;
@@ -5333,6 +5373,7 @@ async function drawAutoBox() {
   const box = $("#auto-box");
   if (!box) return;
   const a = await (await fetch("/api/auto")).json();
+  if (!box.isConnected) return;   // you've moved on to another page meanwhile
   const st = a.settings || {};
   const opt = (v, list) => list.map(([x, t]) => `<option value="${x}" ${+v === x ? "selected" : ""}>${t}</option>`).join("");
   const stateTxt = { off: "Off", current: "Up to date", waiting: "Change seen", updating: "Updating…", skipped: "Not loaded", error: "Problem", nofile: "No file to watch" }[a.state] || "";
