@@ -1553,7 +1553,8 @@ def api_status(con, q):
     out = {"loaded": bool(con), "meta": meta, "last_path": cfg.get("last_path"), "job": job_snapshot(), "app": update_status(),
            "db": {"id": ACTIVE["id"], "name": slot_name(ACTIVE["id"]), "legacy": ACTIVE["id"] == LEGACY_ID},
            "legacy": legacy_present(), "db_count": len(list_slots()), "desktop": os.environ.get("HRMV_DESKTOP") == "1",
-           "has_exe": os.path.exists(os.path.join(APP_DIR, DESKTOP_EXE)), "platform": PLATFORM, "windowed": WINDOWED}
+           "has_exe": os.path.exists(os.path.join(APP_DIR, DESKTOP_EXE)), "platform": PLATFORM, "windowed": WINDOWED,
+           "window_problem": os.environ.get("HRMV_WINDOW_PROBLEM") or None}
     if con:
         if meta.get("player_id"):
             out["player"] = one(con, "select person_person_id as id, person_full_name as name from persons where person_person_id=?", (meta["player_id"],))
@@ -5185,7 +5186,7 @@ class Handler(BaseHTTPRequestHandler):
 
 # --------------------------------------------------------------------------- in-app updates
 
-VERSION = "14.9"
+VERSION = "15.0"
 BACKUP_DIR = os.path.join(APP_DIR, "backups")
 UPDATE_PENDING = os.path.join(DATA_DIR, "update_pending.json")
 UPDATE_RESULT = os.path.join(DATA_DIR, "update_result.json")

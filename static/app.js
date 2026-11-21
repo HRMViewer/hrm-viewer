@@ -4906,7 +4906,7 @@ function settingsPage() {
         ? row("Desktop app", "HRM Viewer can open in its own window instead of the browser: close this, then double-click <b>HRM Viewer.exe</b> in the viewer's folder.", "")
         : "",
     STATUS && STATUS.desktop && STATUS.platform === "linux" && !STATUS.windowed
-      ? row("Stop the viewer", "HRM Viewer is running in your browser because it couldn't open its own window (install WebKitGTK for that). Closing the browser tab leaves it running; stop it here when you're done.", `<button class="btn" id="set-stop">Stop the viewer</button>`)
+      ? row("Stop the viewer", `HRM Viewer is running in your browser because it couldn't open its own window${STATUS.window_problem ? `: <b>${esc(STATUS.window_problem)}</b>` : ""}. It needs WebKitGTK (the package is usually called <code>libwebkit2gtk-4.1</code> or <code>webkit2gtk-4.1</code>; version 4.0 works too). Closing the browser tab leaves it running; stop it here when you're done.`, `<button class="btn" id="set-stop">Stop the viewer</button>`)
       : "",
     row("Updates", "New versions come from GitHub. The viewer checks for them, offers to install them, and can go back to an earlier one. Untick “Check for updates automatically” to only check when you press Check now.", `<div id="gh-box" class="gh-box"><span class="muted small">Checking…</span></div>`),
     row("Install an update", "Or choose an HRM-Viewer-update zip file you've downloaded. Your data isn't touched.", `<button class="btn primary" data-open-update>Install an update</button>`),

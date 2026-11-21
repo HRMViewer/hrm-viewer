@@ -1,5 +1,15 @@
 [
   {
+    "version": "15.0",
+    "date": "2026-11-22",
+    "title": "Linux: opens in its own window on more systems",
+    "changes": [
+      "Linux: HRM Viewer now works with WebKitGTK 4.0 as well as 4.1. Many systems (Ubuntu 22.04, Linux Mint and others) come with 4.0, which before made it open in the browser.",
+      "Linux: if the window can't start because of the graphics driver (a blank or crashing window, common with some NVIDIA cards and virtual machines), it tries again with WebKitGTK's safe graphics settings, and remembers what worked for next time.",
+      "Linux: when it still has to open in the browser, Settings now says why (for example \"WebKitGTK 4.1 isn't installed\"), and so does data/desktop.log."
+    ]
+  },
+  {
     "version": "14.9",
     "date": "2026-11-22",
     "title": "The same filters on every table",

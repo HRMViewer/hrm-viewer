@@ -484,6 +484,10 @@ html,body{height:100%;margin:0;background:#0a1a3b;color:#fff;font:15px -apple-sy
 @keyframes m{0%{transform:translateX(-100%)}100%{transform:translateX(250%)}}
 #e{color:#ffb4ae;max-width:520px;margin:14px auto 0;line-height:1.5;display:none}</style></head><body><div class="b">
 <svg class="l" viewBox="0 0 16 16"><rect width="16" height="16" rx="3.4" fill="#e2231a"/><path d="M4.3 13.2 3.7 9.3a4.3 4.3 0 0 1 8.6 0l-.6 3.9" stroke="white" stroke-width="2.4" fill="none" stroke-linecap="round"/></svg>
-<h1>HRM <b>Viewer</b></h1><div id="s">Starting…</div><div class="bar"><i></i></div><div id="e"></div></div></body></html>`
+<h1>HRM <b>Viewer</b></h1><div id="s">Starting…</div><div class="bar"><i></i></div><div id="e"></div></div>
+<script>window.addEventListener("load",function(){try{window.hrmvShown&&window.hrmvShown()}catch(e){}})</script></body></html>`
+
+// printed by the window app once its first page is on screen
+const windowShown = "HRMV_WINDOW_SHOWN"
 
 var startMsgs = []string{"Starting…", "Starting the viewer…", "Opening your database…", "Getting your data ready…", "Almost there…"}

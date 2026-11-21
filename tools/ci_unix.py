@@ -1,7 +1,7 @@
 """Build the Mac and Linux downloads (used by the GitHub desktop-builds workflow).
 
 usage:
-  python3 tools/ci_unix.py linux <out dir> <HRM Viewer launcher> <hrm-viewer-window> <python dir>
+  python3 tools/ci_unix.py linux <out dir> <HRM Viewer launcher> <hrm-viewer-window> <python dir> [<hrm-viewer-window for WebKitGTK 4.0>]
       -> <out>/HRM-Viewer-<version>-linux.tar.gz   (an "HRM Viewer" folder: unpack it anywhere and open "HRM Viewer")
   python3 tools/ci_unix.py mac <out dir> <universal HRM Viewer binary> <python dir for arm64> <python dir for x86_64>
       -> <out>/HRM Viewer.app   (the workflow signs it and zips it as HRM-Viewer-<version>-mac.zip)
@@ -62,7 +62,7 @@ def executable(path):
     os.chmod(path, os.stat(path).st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
 
 
-def build_linux(out, launcher, window, pydir):
+def build_linux(out, launcher, window, pydir, window40=None):
     stage = os.path.join(out, "linux-stage")
     shutil.rmtree(stage, ignore_errors=True)
     top = os.path.join(stage, "HRM Viewer")
@@ -72,6 +72,9 @@ def build_linux(out, launcher, window, pydir):
     shutil.copy2(window, os.path.join(top, "lib", "hrm-viewer-window"))
     executable(os.path.join(top, "HRM Viewer"))
     executable(os.path.join(top, "lib", "hrm-viewer-window"))
+    if window40:   # the same window app for systems that have WebKitGTK 4.0 rather than 4.1
+        shutil.copy2(window40, os.path.join(top, "lib", "hrm-viewer-window-4.0"))
+        executable(os.path.join(top, "lib", "hrm-viewer-window-4.0"))
     shutil.copy2(os.path.join(root, "desktop", "res", "icon256.png"), os.path.join(top, "hrm-viewer.png"))
     shutil.copy2(os.path.join(root, "static", "quick-guide.pdf"), os.path.join(top, "HRM Viewer - Quick Guide.pdf"))
     copy_python(pydir, os.path.join(top, "python"))
@@ -129,7 +132,7 @@ if __name__ == "__main__":
     kind, out = sys.argv[1], sys.argv[2]
     os.makedirs(out, exist_ok=True)
     if kind == "linux":
-        build_linux(out, *sys.argv[3:6])
+        build_linux(out, *sys.argv[3:7])
     elif kind == "mac":
         build_mac(out, *sys.argv[3:6])
     else:

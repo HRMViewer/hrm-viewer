@@ -54,9 +54,11 @@ ON LINUX (INCLUDING STEAM DECK DESKTOP MODE)
    The first time, it offers to add itself to your applications menu (also in
    Settings > Desktop app).
 It opens in its own window when WebKitGTK is installed (most desktops have it:
-the package is called libwebkit2gtk-4.1 or webkit2gtk-4.1). Without it, the
-viewer opens in your browser instead; stop it with Settings > Stop the viewer
-(or Ctrl+C if you started it from a terminal). Everything it needs, including
+the package is called libwebkit2gtk-4.1 or webkit2gtk-4.1; the older 4.0 works
+too). Without it, the viewer opens in your browser instead, and Settings says
+why; stop it there with "Stop the viewer" (or Ctrl+C if you started it from a
+terminal). If the window flickers or stays blank, HRM Viewer tries again with
+safe graphics settings by itself and remembers what worked. Everything it needs, including
 its own Python, is in the folder, and your data is kept in its "data" folder,
 like on Windows. Files you download in the viewer go to your Downloads folder.
 

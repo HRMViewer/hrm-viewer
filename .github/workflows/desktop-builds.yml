@@ -40,11 +40,11 @@ jobs:
           go-version: ${{ env.GO_VERSION }}
           cache-dependency-path: desktop/go.sum
 
-      - name: WebKitGTK (for the window) and test tools
+      - name: WebKitGTK 4.1 and 4.0 (for the window) and test tools
         run: |
           exec > >(tee -a "$RUNNER_TEMP/log.txt") 2>&1
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev xvfb imagemagick
+          sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev libwebkit2gtk-4.0-dev xvfb imagemagick
 
       - name: Build the launcher and the window app
         working-directory: desktop
@@ -52,6 +52,9 @@ jobs:
           exec > >(tee -a "$RUNNER_TEMP/log.txt") 2>&1
           CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o "$RUNNER_TEMP/HRM Viewer" .
           PKG_CONFIG="$PWD/pkg-config-webkit41.sh" CGO_ENABLED=1 go build -tags webview -trimpath -ldflags "-s -w" -o "$RUNNER_TEMP/hrm-viewer-window" .
+          # the same window app for systems with WebKitGTK 4.0 instead of 4.1 (the launcher tries 4.1 first)
+          CGO_ENABLED=1 go build -tags webview -trimpath -ldflags "-s -w" -o "$RUNNER_TEMP/hrm-viewer-window-4.0" .
+          ldd "$RUNNER_TEMP/hrm-viewer-window" | grep webkit2gtk; ldd "$RUNNER_TEMP/hrm-viewer-window-4.0" | grep webkit2gtk
 
       - name: Get the portable Python
         run: |
@@ -62,7 +65,7 @@ jobs:
       - name: Make the download
         run: |
           exec > >(tee -a "$RUNNER_TEMP/log.txt") 2>&1
-          python3 tools/ci_unix.py linux dist "$RUNNER_TEMP/HRM Viewer" "$RUNNER_TEMP/hrm-viewer-window" "$RUNNER_TEMP/py/python"
+          python3 tools/ci_unix.py linux dist "$RUNNER_TEMP/HRM Viewer" "$RUNNER_TEMP/hrm-viewer-window" "$RUNNER_TEMP/py/python" "$RUNNER_TEMP/hrm-viewer-window-4.0"
 
       - name: Try it
         timeout-minutes: 8

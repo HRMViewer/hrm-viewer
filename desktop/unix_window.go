@@ -31,6 +31,8 @@ func main() {
 	w.SetTitle(title)
 	w.SetSize(1440, 920, webview.HintNone)
 	setupWindow(w) // Mac: the menu bar (copy and paste shortcuts, Quit)
+	// the splash page calls this once it has been drawn: tells the Linux launcher the window really works
+	w.Bind("hrmvShown", func() { os.Stdout.WriteString(windowShown + "\n") })
 	w.SetHtml(splash)
 
 	importPath := importArg()
