@@ -79,10 +79,10 @@
 <section id="start">
   <h2><span class="n">1</span>Getting started</h2>
   <ol>
-    <li>Unzip the <b>HRM Viewer</b> folder somewhere permanent, for example <i>Documents\HRM Viewer</i>.</li>
+    <li>Download <b>HRM-Viewer-&lt;version&gt;-full.zip</b> from <b>github.com/jomdesa-glitch/hrm-viewer/releases</b> and unzip the <b>HRM Viewer</b> folder somewhere permanent, for example <i>Documents\HRM Viewer</i>.</li>
     <li>Double-click <b>HRM Viewer.exe</b>. It opens in its own window. The first time, it offers to add shortcuts to your desktop and Start menu.
       <ul>
-        <li>It needs Python. If it isn't installed, the download page opens: install it (tick <i>“Add python.exe to PATH”</i>) and start the viewer again.</li>
+        <li>Nothing else needs installing: everything it uses, including its own Python, is in the folder.</li>
         <li>If Windows says <i>“Windows protected your PC”</i>, click <span class="ui">More info</span> → <span class="ui">Run anyway</span>.</li>
       </ul>
     </li>
@@ -199,8 +199,9 @@
 <section id="update">
   <h2><span class="n">10</span>Updating the viewer</h2>
   <h3>From GitHub (easiest)</h3>
-  <p>New versions are published on GitHub. When one is out, a bar at the top of the viewer says <span class="ui">HRM Viewer &lt;version&gt; is available</span>. Click <span class="ui">Install now</span> and the viewer downloads it, installs it and restarts by itself. <span class="ui">What's new</span> shows the changes first; <span class="ui">Later</span> hides the bar until the next version.</p>
-  <p><span class="ui">Settings → Viewer → Updates from GitHub</span> shows whether you're up to date, has <span class="ui">Check now</span>, and links to the download page, where anyone can download the full viewer: <b>github.com/jomdesa-glitch/hrm-viewer/releases</b>.</p>
+  <p>New versions are published on GitHub. When one is out, the viewer asks when it opens and shows what's new: click <span class="ui">Install now</span> and it downloads, installs and restarts by itself. <span class="ui">Remind me later</span> asks again next time (a bar at the top stays until then); <span class="ui">Skip this version</span> stops asking about that one.</p>
+  <p><span class="ui">Settings → Viewer → Updates</span> shows whether you're up to date and has <span class="ui">Check now</span>. <span class="ui">All versions</span> lists every published version with its changes: <span class="ui">Go back to this</span> installs an earlier one if you don't like a new version, and you can update again from the same list whenever you like.</p>
+  <p>Anyone can download the full viewer from <b>github.com/jomdesa-glitch/hrm-viewer/releases</b>.</p>
   <h3>From a file</h3>
   <ol>
     <li>Updates also come as <b>HRM-Viewer-update-&lt;version&gt;.zip</b>. Don't unzip it.</li>
@@ -217,7 +218,7 @@
     <li><b>Sectional times</b> are only kept by the game for Group races and for roughly the last few months of other races, so some racecourses have track records but no sectional records.</li>
     <li><b>Live data</b>: the game only writes to database.db when you save, so the viewer shows your last save.</li>
     <li><b>All tables</b> (Settings → All tables) shows every table in the save exactly as stored; type under a column and press Enter to filter (e.g. <code>&gt;100</code>, <code>!null</code>).</li>
-    <li>If the window opens in your browser instead, Windows is missing the Microsoft Edge WebView2 Runtime; the viewer tells you where to get it. <b>Start.bat</b> also opens the viewer in your browser.</li>
+    <li>If the window opens in your browser instead, Windows is missing the Microsoft Edge WebView2 Runtime; the viewer tells you where to get it.</li>
   </ul>
 </section>
 

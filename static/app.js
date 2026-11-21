@@ -1047,74 +1047,126 @@ document.addEventListener("click", async (e) => {
   }
 });
 
-// ------------------------------------------------------------------ updates from GitHub: a banner when a newer version is out, and the Settings row
+// ------------------------------------------------------------------ updates from GitHub: a prompt and a bar when a newer version is out,
+// the Settings row, and a list of every version (to update or go back)
 let GH = null;
+const ghSkipped = () => { try { return localStorage.getItem("hrm.ghLater") || ""; } catch (e) { return ""; } };
+const ghSkip = (v) => { try { localStorage.setItem("hrm.ghLater", v); } catch (e) { /* this session only */ } };
+let GH_HIDE = false;      // bar closed for this session
+let GH_PROMPTED = false;  // the pop-up is shown once each time the viewer opens
 async function githubCheck(force) {
   try { GH = await (await fetch("/api/github" + (force ? "?force=1" : ""), { cache: "no-store" })).json(); } catch (e) { GH = null; }
   githubBanner();
+  if (GH && GH.newer && ghSkipped() !== GH.latest && !GH_PROMPTED && !document.querySelector(".overlay")) { GH_PROMPTED = true; githubPrompt(); }
   return GH;
 }
 function githubBanner() {
   const box = $("#gh-banner");
   if (!box) return;
-  let seen = "";
-  try { seen = localStorage.getItem("hrm.ghLater") || ""; } catch (e) { /* show it */ }
-  box.innerHTML = GH && GH.newer && seen !== GH.latest ? `<div class="banner gh-ban"><span>⬆ <b>HRM Viewer ${esc(GH.latest)}</b> is available (you have ${esc(GH.current)}).</span>
-    <span><button class="btn primary" data-gh-install>Install now</button> <button class="btn" data-gh-notes>What's new</button> <button class="btn" data-gh-later>Later</button></span></div>` : "";
+  box.innerHTML = GH && GH.newer && !GH_HIDE && ghSkipped() !== GH.latest ? `<div class="banner gh-ban"><span>⬆ <b>HRM Viewer ${esc(GH.latest)}</b> is available (you have ${esc(GH.current)}).</span>
+    <span><button class="btn primary" data-gh-install>Install now</button> <button class="btn" data-gh-notes>What's new</button> <button class="btn" data-gh-hide title="Hide until the viewer is opened again">Later</button></span></div>` : "";
+}
+// release notes are short Markdown: headings, "- " lists and **bold**
+function ghNotes(md) {
+  const inline = (t) => esc(t).replace(/\*\*(.+?)\*\*/g, "<b>$1</b>").replace(/\*(.+?)\*/g, "<i>$1</i>");
+  let html = "", list = false;
+  for (const line of String(md || "").split(/\r?\n/)) {
+    const li = line.match(/^\s*[-*] (.*)/);
+    if (li) { if (!list) { html += "<ul>"; list = true; } html += `<li>${inline(li[1])}</li>`; continue; }
+    if (list) { html += "</ul>"; list = false; }
+    const h = line.match(/^#+ (.*)/);
+    if (h) html += `<h4>${inline(h[1])}</h4>`;
+    else if (line.trim()) html += `<p>${inline(line)}</p>`;
+  }
+  return (list ? html + "</ul>" : html) || '<p class="muted">No notes.</p>';
+}
+function ghModal(title, body, wide) {
+  const ov = document.createElement("div");
+  ov.className = "overlay";
+  ov.innerHTML = `<div class="modal${wide ? " gh-wide" : ""}"><h2>${title}</h2>${body}</div>`;
+  document.body.appendChild(ov);
+  ov.addEventListener("click", (e) => { if (e.target === ov || e.target.closest("[data-gh-close]")) ov.remove(); });
+  return ov;
+}
+// the pop-up when the viewer opens and a newer version is out
+function githubPrompt() {
+  const ov = ghModal(`A new version is available`, `<p>HRM Viewer <b>${esc(GH.latest)}</b> is out — you have ${esc(GH.current)}. Installing takes a few seconds and your data isn't touched.
+    If you don't like it, you can go back at any time from <span class="ui">Settings → All versions</span>.</p>
+    <div class="gh-notes">${ghNotes(GH.notes)}</div>
+    <div class="gh-acts"><button class="btn" data-gh-skip>Skip this version</button><span></span><button class="btn" data-gh-close>Remind me later</button> <button class="btn primary" data-gh-install>Install now</button></div>`);
+  ov.addEventListener("click", (e) => {
+    if (e.target.closest("[data-gh-skip]")) { ghSkip(GH.latest); githubBanner(); ov.remove(); }
+    if (e.target.closest("[data-gh-install]")) ov.remove();
+  });
 }
 async function drawGithubBox() {
   const box = $("#gh-box");
   if (!box) return;
   const g = GH || (await githubCheck(false)) || {};
-  const repoForm = (val) => `<span class="gh-form"><input type="text" class="gh-repo" placeholder="owner/name" value="${esc(val || "")}" aria-label="GitHub repository">
-    <button class="btn sm" data-gh-save>Save</button></span>`;
-  if (!g.configured) { box.innerHTML = `<div class="muted small" style="margin-bottom:4px">Not connected to a GitHub repository yet.</div>${repoForm("")}`; return; }
   box.innerHTML = `<div class="gh-status">${g.error ? `<span class="err-inline">${esc(g.error)}</span>`
-      : g.newer ? `<b>Version ${esc(g.latest)} is available.</b> <button class="btn primary sm" data-gh-install>Install now</button> <button class="btn sm" data-gh-notes>What's new</button>`
-      : `✓ You have the latest version${g.latest ? ` (${esc(g.latest)})` : ""}.`}</div>
-    <div class="gh-links small"><button class="btn sm" data-gh-check>Check now</button> <a href="${esc(g.page)}" target="_blank" rel="noopener">Download page on GitHub</a>
-      · <span class="muted">${esc(g.repo)}</span> <a href="#" data-gh-edit>change</a></div>`;
+      : g.newer ? `<b>Version ${esc(g.latest)} is available.</b> <button class="btn primary sm" data-gh-install>Install now</button>`
+      : `✓ You have the latest version (${esc(g.current || "")}).`}</div>
+    <div class="gh-links"><button class="btn sm" data-gh-check>Check now</button> <button class="btn sm" data-gh-versions>All versions</button></div>
+    <div class="gh-links small">From <a href="https://github.com/${esc(g.repo || "")}" target="_blank" rel="noopener">github.com/${esc(g.repo || "")}</a></div>`;
 }
-async function githubInstall(btn) {
-  const ov = document.createElement("div");
-  ov.className = "overlay";
-  ov.innerHTML = `<div class="modal"><h2>Installing ${esc((GH && GH.latest) || "the update")}</h2><div class="gh-work"><div class="progress"><div style="width:100%"></div></div>
-    <div class="muted">Downloading from GitHub…</div></div></div>`;
-  document.body.appendChild(ov);
+// every version on GitHub: install a newer one, or go back to an older one
+async function githubVersions() {
+  const ov = ghModal("All versions", `<p class="muted small">Every version published on GitHub. Your data, photos and settings are kept whichever one you choose,
+    and you can come back here to change again.</p><div class="gh-vlist"><span class="muted">Loading…</span></div>`, true);
+  const list = $(".gh-vlist", ov);
+  let j;
+  try { j = await (await fetch("/api/github/releases?force=1", { cache: "no-store" })).json(); } catch (e) { j = { error: e.message }; }
+  if (j.error) { list.innerHTML = `<div class="err">${esc(j.error)}</div>`; return; }
+  if (!j.releases.length) { list.innerHTML = `<p class="muted">No versions published yet.</p>`; return; }
+  list.innerHTML = j.releases.map((r) => `<div class="gh-v${r.current ? " is-cur" : ""}">
+      <div class="gh-vh"><div><b>${esc(r.version)}</b> <span class="muted small">${r.published ? esc(new Date(r.published).toLocaleDateString()) : ""}</span>
+        <div class="small">${esc(String(r.name || "").replace(/^HRM Viewer [\d.]+ — /, ""))}</div></div>
+        <div>${r.current ? '<span class="gh-cur">You have this</span>' : `<button class="btn sm${r.newer ? " primary" : ""}" data-gh-pick="${esc(r.version)}" data-older="${r.newer ? "" : "1"}">${r.newer ? "Update to this" : "Go back to this"}</button>`}
+        <button class="btn sm" data-gh-fold>Changes</button></div></div>
+      <div class="gh-notes" hidden>${ghNotes(r.notes)}</div></div>`).join("");
+  list.addEventListener("click", (e) => {
+    const f = e.target.closest("[data-gh-fold]");
+    if (f) { const n = f.closest(".gh-v").querySelector(".gh-notes"); n.hidden = !n.hidden; return; }
+    const b = e.target.closest("[data-gh-pick]");
+    if (!b) return;
+    const v = b.getAttribute("data-gh-pick");
+    if (b.dataset.older) {
+      if (!b.classList.contains("confirm")) { b.classList.add("confirm"); b.textContent = `Go back to ${v}? Click again`; return; }
+      // don't keep offering the newest version after choosing to go back from it
+      const newest = j.releases[0] && j.releases[0].version;
+      if (newest && newest !== v) ghSkip(newest);
+    }
+    ov.remove();
+    githubInstall(v);
+  });
+}
+async function githubInstall(version) {
+  const target = version || (GH && GH.latest) || "the update";
+  const ov = ghModal(`Installing ${esc(target)}`, `<div class="gh-work"><div class="progress"><div style="width:100%"></div></div><div class="muted">Downloading from GitHub…</div></div>`);
   const say = (m, err) => { $(".gh-work", ov).innerHTML = err ? `<div class="err">${esc(m)}</div><div style="text-align:right;margin-top:12px"><button class="btn" data-gh-close>Close</button></div>` : `<div class="progress"><div style="width:100%"></div></div><div class="muted">${esc(m)}</div>`; };
-  ov.addEventListener("click", (e) => { if (e.target.closest("[data-gh-close]")) ov.remove(); });
   try {
-    const r = await fetch("/api/github/install", { method: "POST" });
+    const r = await fetch("/api/github/install", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(version ? { version } : {}) });
     const j = await r.json();
     if (!r.ok) return say(j.error || "The update couldn't be installed.", true);
-    if (j.restarting) { say("Installed. Restarting the viewer…"); waitForVersion(j.version, (m) => say(m)); }
-    else say("Installed. Close the viewer's window and start it again to finish.");
+    if (j.restarting) { say(`Installed ${j.version}. Restarting the viewer…`); waitForVersion(j.version, (m) => say(m)); }
+    else say("Installed. Close HRM Viewer and open it again to finish.");
   } catch (e) { say("The update couldn't be installed: " + e.message, true); }
 }
-function githubNotes() {
-  const ov = document.createElement("div");
-  ov.className = "overlay";
-  ov.innerHTML = `<div class="modal"><h2>What's new in ${esc(GH.latest)}</h2><div class="gh-notes">${esc(GH.notes || "No notes.")}</div>
-    <div style="text-align:right;margin-top:14px"><a class="btn" href="${esc(GH.release_page || GH.page)}" target="_blank" rel="noopener">Open on GitHub</a> <button class="btn primary" data-gh-install>Install now</button> <button class="btn" data-gh-close>Close</button></div></div>`;
-  document.body.appendChild(ov);
-  ov.addEventListener("click", (e) => { if (e.target === ov || e.target.closest("[data-gh-close], [data-gh-install]")) ov.remove(); });
+function githubNotesModal() {
+  ghModal(`What's new in ${esc(GH.latest)}`, `<div class="gh-notes">${ghNotes(GH.notes)}</div>
+    <div class="gh-acts"><a class="btn" href="${esc(GH.release_page || GH.page)}" target="_blank" rel="noopener">Open on GitHub</a><span></span><button class="btn" data-gh-close>Close</button> <button class="btn primary" data-gh-install>Install now</button></div>`)
+    .addEventListener("click", (e) => { if (e.target.closest("[data-gh-install]")) e.currentTarget.remove(); });
 }
 document.addEventListener("click", async (e) => {
-  if (e.target.closest("[data-gh-install]")) { e.preventDefault(); return githubInstall(); }
-  if (e.target.closest("[data-gh-notes]")) { e.preventDefault(); return githubNotes(); }
-  if (e.target.closest("[data-gh-later]")) { try { localStorage.setItem("hrm.ghLater", GH.latest); } catch (er) { /* session */ } $("#gh-banner").innerHTML = ""; return; }
+  const inst = e.target.closest("[data-gh-install]");
+  if (inst) { e.preventDefault(); return githubInstall(inst.dataset.ver || ""); }
+  if (e.target.closest("[data-gh-notes]")) { e.preventDefault(); return githubNotesModal(); }
+  if (e.target.closest("[data-gh-hide]")) { GH_HIDE = true; return githubBanner(); }
+  if (e.target.closest("[data-gh-versions]")) { e.preventDefault(); return githubVersions(); }
   if (e.target.closest("[data-gh-check]")) { $("#gh-box").innerHTML = '<span class="muted small">Checking…</span>'; await githubCheck(true); return drawGithubBox(); }
-  if (e.target.closest("[data-gh-edit]")) { e.preventDefault(); const g = GH || {}; $("#gh-box").innerHTML = `<span class="gh-form"><input type="text" class="gh-repo" placeholder="owner/name" value="${esc(g.repo || "")}"><button class="btn sm" data-gh-save>Save</button></span>`; return; }
-  if (e.target.closest("[data-gh-save]")) {
-    const repo = $(".gh-repo").value.trim();
-    const r = await fetch("/api/github/repo", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ repo }) });
-    const j = await r.json();
-    if (!r.ok) { $("#gh-box").insertAdjacentHTML("beforeend", `<div class="err-inline">${esc(j.error)}</div>`); return; }
-    GH = j; githubBanner(); drawGithubBox();
-  }
 });
 // check when the viewer opens, then every 6 hours while it's open
-setTimeout(() => githubCheck(false), 4000);
+setTimeout(() => githubCheck(false), 2500);
 setInterval(() => githubCheck(false), 6 * 3600 * 1000);
 
 // the Quick Guide (PDF) in a large pop-up inside the viewer
@@ -3350,7 +3402,7 @@ function drawUpdate(box, rollback, backupName) {
   const working = (m) => { body.innerHTML = `<div class="progress"><div style="width:100%;animation:none"></div></div><div class="muted">${esc(m)}</div>`; };
   const after = (j) => {
     if (j.restarting) { working("Installed. Restarting the viewer…"); waitForVersion(j.version, (m) => working(m)); }
-    else working("Installed. Close the viewer's window and start it again with Start.bat to finish.");
+    else working("Installed. Close HRM Viewer and open it again to finish.");
   };
   if (rollback) {
     if (!back) { body.innerHTML = '<div class="empty">There is no earlier version to go back to.</div>'; return; }
@@ -3871,7 +3923,7 @@ function settingsPage() {
       : STATUS && STATUS.has_exe
         ? row("Desktop app", "HRM Viewer can open in its own window instead of the browser: close this, then double-click <b>HRM Viewer.exe</b> in the viewer's folder.", "")
         : "",
-    row("Updates from GitHub", "New versions are published on GitHub. The viewer checks for them and offers to install.", `<div id="gh-box" class="gh-box"><span class="muted small">Checking…</span></div>`),
+    row("Updates", "New versions come from GitHub. The viewer checks for them, offers to install them, and can go back to an earlier one.", `<div id="gh-box" class="gh-box"><span class="muted small">Checking…</span></div>`),
     row("Install an update", "Or choose an HRM-Viewer-update zip file you've downloaded. Your data isn't touched.", `<button class="btn primary" data-open-update>Install an update</button>`),
     row("Quick Guide", "How to use the main features, as a PDF. It's updated with every version (also in your HRM Viewer folder).",
       `<span style="display:inline-flex;gap:8px"><button class="btn" data-guide>Open the guide</button><a class="btn" href="/quick-guide.pdf" download="HRM Viewer - Quick Guide.pdf">Download PDF</a></span>`),
@@ -3987,7 +4039,7 @@ async function databasesPage() {
       <div class="row-f"><label>Name <input type="text" id="imp-name" placeholder="optional — uses the player's name" style="width:240px"></label>
         <label><input type="checkbox" id="imp-move"> Move instead of copy (frees the space in the old folder)</label></div>
       <div class="row-f"><button class="btn primary" id="imp-go">Bring it in</button><span id="imp-msg" class="small"></span></div>
-      <p class="help">Paste the path of the other viewer's folder (the one with Start.bat), its <code>data</code> folder, or a <code>current.db</code> file. A game <code>database.db</code> works too — it's loaded as a new database.</p>`)}</div>`;
+      <p class="help">Paste the path of the other viewer's folder (the one with HRM Viewer.exe), its <code>data</code> folder, or a <code>current.db</code> file. A game <code>database.db</code> works too — it's loaded as a new database.</p>`)}</div>`;
   html += `<div id="db-progress" class="overlay" hidden><div class="modal"><h2 id="dbp-title">Working…</h2><div class="progress"><div id="dbp-bar"></div></div><div id="dbp-step" class="muted"></div><div id="dbp-err"></div>
     <div style="text-align:right;margin-top:12px"><button class="btn" id="dbp-close" hidden>Close</button></div></div></div>`;
   return html;

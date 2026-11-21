@@ -1,5 +1,16 @@
 [
   {
+    "version": "12.4",
+    "date": "2026-11-21",
+    "title": "Just download and open",
+    "changes": [
+      "The full download now has everything it needs, including its own Python: unzip it and double-click HRM Viewer.exe. Nothing else to install.",
+      "HRM Viewer.exe is the only way to open the viewer now, in its own window. Start.bat and Load database.bat are gone (old copies are tidied away); drag a database.db onto HRM Viewer.exe to load it.",
+      "When a new version is out, the viewer asks when it opens: Install now, Remind me later or Skip this version, with what's new in it.",
+      "Settings \u2192 Viewer \u2192 Updates always uses the HRM Viewer repository on GitHub. All versions lists every published version, so you can go back to an earlier one if you don't like a new one, or update again."
+    ]
+  },
+  {
     "version": "12.3",
     "date": "2026-11-21",
     "title": "Connected to GitHub",

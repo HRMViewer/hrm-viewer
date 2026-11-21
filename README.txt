@@ -11,38 +11,30 @@ New here? Open "HRM Viewer - Quick Guide.pdf" in this folder for a short
 guide to the main features (updated with every version).
 
 
-THE DESKTOP APP
+GETTING STARTED
 ---------------
-Double-click "HRM Viewer.exe". The viewer opens in its own window, like any
-other program (no browser, no black window), and stops when you close the
-window. The first time, it offers to add HRM Viewer to your desktop and Start
-menu (also in Settings > Desktop app). Drag a database.db onto HRM Viewer.exe
-to load it. Keep HRM Viewer.exe in this folder; use a shortcut to open it from
-anywhere else. It needs Python (like Start.bat) and the Microsoft Edge WebView2
-Runtime, which comes with Windows 10 and 11. If WebView2 is missing, the viewer
-opens in your browser and tells you where to get it. Start.bat still works.
-
-FIRST TIME
-----------
-1. Unzip this folder somewhere permanent, e.g. Documents\HRM Viewer.
-2. Double-click HRM Viewer.exe (or Start.bat to use your browser).
-   - If Python isn't installed, it opens the download page. Install it
-     (tick "Add python.exe to PATH"), then double-click Start.bat again.
+1. Unzip the download somewhere permanent, e.g. Documents\HRM Viewer.
+2. Double-click "HRM Viewer.exe". That's all: everything it needs is in this
+   folder (including its own Python in the "python" folder), so nothing else
+   has to be installed.
    - Windows may show "Windows protected your PC". Click "More info" and then
      "Run anyway". This only happens because the file isn't from the Store.
-3. Your browser opens the viewer. Click "Load database" and either paste
-   the path to database.db or choose the file.
+3. Click "Load database" and choose your game's database.db (or paste its path).
 
-Leave the black Start.bat window open while you use the viewer. Close it to stop.
-The viewer's address is http://127.0.0.1:8765 if you want to bookmark it.
-
+The viewer opens in its own window, like any other program, and stops when you
+close the window. The first time, it offers to add HRM Viewer to your desktop
+and Start menu (also in Settings > Desktop app). You can also drag a database.db
+onto HRM Viewer.exe to load it. Keep HRM Viewer.exe in this folder; use a
+shortcut to open it from anywhere else. It uses the Microsoft Edge WebView2
+Runtime, which comes with Windows 10 and 11; if it's missing, the viewer opens in
+your browser and tells you where to get it.
 
 LOADING A NEWER SAVE
 --------------------
 Save your game first, then any of these:
   - In the viewer, click "Load new database" and press Load. The path is
     remembered after the first time.
-  - Drag database.db onto "Load database.bat".
+  - Drag database.db onto "HRM Viewer.exe".
 
 Each load builds on what's stored:
   - Records in the new file replace the older versions (newest wins).
@@ -63,9 +55,12 @@ Your stored data isn't touched until the new file has been checked.
 
 UPDATING THE VIEWER
 -------------------
-New versions are published on GitHub. When one is out, the viewer shows a bar at
-the top: click "Install now" and it downloads, installs and restarts by itself.
-Settings > Viewer > Updates from GitHub has "Check now" and the download page.
+New versions are published on GitHub. When one is out, the viewer asks when it
+opens (and shows a bar at the top): click "Install now" and it downloads,
+installs and restarts by itself. "Skip this version" stops it asking about that
+one. Settings > Viewer > Updates has "Check now" and "All versions": every
+published version, so you can go back to an earlier one if you don't like a
+new one (and update again later).
 Download page: https://github.com/jomdesa-glitch/hrm-viewer/releases
 
 Updates also come as a file called HRM-Viewer-update-<version>.zip. Don't unzip it.
@@ -80,7 +75,7 @@ viewer puts the previous version back by itself.
 
 WHERE THE DATA IS KEPT
 ----------------------
-The "data" folder next to Start.bat holds your stored databases. Since
+The "data" folder next to HRM Viewer.exe holds your stored databases. Since
 version 7.9 each database has its own folder in "data\databases" (about
 1.2 GB each). Delete the "data" folder to clear everything. The "backups"
 folder holds earlier versions of the viewer's program files (not your data).

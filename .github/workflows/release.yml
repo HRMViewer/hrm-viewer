@@ -6,11 +6,14 @@ name: Release
 on:
   push:
     branches: [main]
-    paths: ["app.py", "static/**", "desktop/**", "package/**", "tools/ci_build.py", ".github/workflows/release.yml"]
+    paths: ["app.py", "static/**", "desktop/**", "tools/ci_build.py", ".github/workflows/release.yml"]
   workflow_dispatch:
 
 permissions:
   contents: write
+
+env:
+  PY_VERSION: "3.13.12"   # the Python that ships inside the full download
 
 concurrency:
   group: release
@@ -42,9 +45,16 @@ jobs:
         working-directory: desktop
         run: GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags "-H windowsgui -s -w" -o "$RUNNER_TEMP/HRM Viewer.exe" .
 
+      - name: Get the Windows embeddable Python
+        if: steps.v.outputs.new == 'yes'
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/py.zip" "https://www.python.org/ftp/python/${PY_VERSION}/python-${PY_VERSION}-embed-amd64.zip"
+          mkdir -p "$RUNNER_TEMP/python" && unzip -q "$RUNNER_TEMP/py.zip" -d "$RUNNER_TEMP/python"
+          ls "$RUNNER_TEMP/python"
+
       - name: Build the zips
         if: steps.v.outputs.new == 'yes'
-        run: python3 tools/ci_build.py "$RUNNER_TEMP/HRM Viewer.exe" dist
+        run: python3 tools/ci_build.py "$RUNNER_TEMP/HRM Viewer.exe" dist "$RUNNER_TEMP/python"
 
       - name: Publish the release
         if: steps.v.outputs.new == 'yes'

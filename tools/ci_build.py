@@ -1,6 +1,7 @@
 """Build the two release zips from this repository (used by the GitHub release workflow).
 
-usage: python3 tools/ci_build.py <HRM Viewer.exe> <out dir>
+usage: python3 tools/ci_build.py <HRM Viewer.exe> <out dir> <python folder>
+(the python folder is the Windows embeddable Python, unzipped; it goes in the full download so nothing needs installing)
 Writes HRM-Viewer-update-<v>.zip and HRM-Viewer-<v>-full.zip, plus notes.md for the release page."""
 import json
 import os
@@ -10,7 +11,10 @@ import sys
 import zipfile
 
 root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-exe, out = sys.argv[1], sys.argv[2]
+exe, out, pydir = sys.argv[1], sys.argv[2], sys.argv[3]
+for need in ("python.exe", "pythonw.exe", "_sqlite3.pyd", "sqlite3.dll", "_ssl.pyd"):
+    if not os.path.exists(os.path.join(pydir, need)):
+        sys.exit("The bundled Python is missing %s" % need)
 os.makedirs(out, exist_ok=True)
 version = re.search(r'^VERSION = "([^"]+)"', open(os.path.join(root, "app.py")).read(), re.M).group(1)
 log = json.load(open(os.path.join(root, "static", "changelog.json")))
@@ -33,8 +37,10 @@ with zipfile.ZipFile(full, "w", zipfile.ZIP_DEFLATED) as z:
     z.write(os.path.join(root, "static", "quick-guide.pdf"), top + "HRM Viewer - Quick Guide.pdf")
     z.writestr(top + "update.json", json.dumps({"app": "hrm-viewer", "version": version,
                                                  "notes": "Full package of version %s." % version}, indent=2))
-    for f in ["Start.bat", "Load database.bat"]:
-        z.write(os.path.join(root, "package", f), top + f)
+    for dirpath, _, names in os.walk(pydir):
+        for n in sorted(names):
+            full_path = os.path.join(dirpath, n)
+            z.write(full_path, top + "python/" + os.path.relpath(full_path, pydir).replace(os.sep, "/"))
     for f in ["app.py", "README.txt"] + ["static/" + s for s in static]:
         z.write(os.path.join(root, f), top + f)
 

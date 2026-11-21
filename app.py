@@ -3543,6 +3543,11 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json(auto_status())
         if path == "/api/github":
             return self.send_json(github_check(force=q.get("force") == "1"))
+        if path == "/api/github/releases":
+            try:
+                return self.send_json({"current": VERSION, "repo": github_repo(), "releases": github_releases(force=q.get("force") == "1")})
+            except Exception as e:
+                return self.send_json({"error": "Couldn't reach GitHub (%s)." % (getattr(e, "reason", None) or getattr(e, "code", None) or e)}, 502)
         if path == "/api/horse_pics":
             return self.send_json(gallery_index())
         m = re.match(r"^/api/horse_images/(-?\d+)$", path)
@@ -3662,7 +3667,7 @@ class Handler(BaseHTTPRequestHandler):
                 move = bool(data.get("move"))
                 src_db, src_meta = find_viewer_data(data.get("path"))
                 if not src_db:
-                    return self.send_json({"error": "No stored data found there. Give the folder of the other HRM Viewer (the one with Start.bat in it), its data folder, or a database file."}, 400)
+                    return self.send_json({"error": "No stored data found there. Give the folder of the other HRM Viewer (the one with HRM Viewer.exe in it), its data folder, or a database file."}, 400)
                 here = os.path.abspath(DATA_DIR)
                 if os.path.abspath(src_db).startswith(here + os.sep):
                     return self.send_json({"error": "That's this viewer's own data. Use the Databases list instead."}, 400)
@@ -3917,21 +3922,29 @@ class Handler(BaseHTTPRequestHandler):
             return
         if path == "/api/update":
             return self.handle_update(parse_qs(urlparse(self.path).query).get("check") == ["1"])
-        if path == "/api/github/repo":
-            length = to_int(self.headers.get("Content-Length"), 0)
-            repo = (json.loads(self.rfile.read(length) or b"{}").get("repo") or "").strip().replace("https://github.com/", "").strip("/")
-            if repo and not re.match(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$", repo):
-                return self.send_json({"error": "Enter it as owner/name, e.g. someone/hrm-viewer."}, 400)
-            cfg = read_json(CONFIG_FILE, {})
-            cfg["update_repo"] = repo
-            write_json(CONFIG_FILE, cfg)
-            return self.send_json(github_check(force=True))
         if path == "/api/github/install":
-            info = github_check(force=True)
-            if not info.get("newer") or not info.get("update_url"):
-                return self.send_json({"error": info.get("error") or "There's no newer version on GitHub."}, 409)
+            length = to_int(self.headers.get("Content-Length"), 0)
             try:
-                data = github_get(info["update_url"], binary=True)
+                want = str((json.loads(self.rfile.read(length) or b"{}") if length else {}).get("version") or "")
+            except ValueError:
+                want = ""
+            if want:    # a particular version, newer or older (going back)
+                try:
+                    rel = next((r for r in github_releases(force=True) if r["version"] == want), None)
+                except Exception as e:
+                    return self.send_json({"error": "Couldn't reach GitHub (%s)." % (getattr(e, "reason", None) or e)}, 502)
+                if not rel:
+                    return self.send_json({"error": "Version %s isn't available on GitHub." % want}, 404)
+                if rel["current"]:
+                    return self.send_json({"error": "You already have version %s." % want}, 409)
+                url = rel["update_url"]
+            else:
+                info = github_check(force=True)
+                if not info.get("newer") or not info.get("update_url"):
+                    return self.send_json({"error": info.get("error") or "There's no newer version on GitHub."}, 409)
+                url = info["update_url"]
+            try:
+                data = github_get(url, binary=True)
             except Exception as e:
                 return self.send_json({"error": "Couldn't download the update from GitHub: %s" % e}, 502)
             return self.install_update_bytes(data, check_only=False)
@@ -3977,7 +3990,7 @@ class Handler(BaseHTTPRequestHandler):
 
 # --------------------------------------------------------------------------- in-app updates
 
-VERSION = "12.3"
+VERSION = "12.4"
 BACKUP_DIR = os.path.join(APP_DIR, "backups")
 UPDATE_PENDING = os.path.join(DATA_DIR, "update_pending.json")
 UPDATE_RESULT = os.path.join(DATA_DIR, "update_result.json")
@@ -4120,10 +4133,12 @@ def restore_backup(path):
 GITHUB_REPO = "jomdesa-glitch/hrm-viewer"   # the public repository the releases come from
 GITHUB_API = os.environ.get("HRMV_GITHUB_API", "https://api.github.com")
 GH_CACHE = {"at": 0, "repo": None, "data": None}
+GH_REL_CACHE = {"at": 0, "data": None}
+GH_OLDEST = "12.4"   # going back further would lose the built-in Python, so older releases aren't offered
 
 
 def github_repo():
-    r = (read_json(CONFIG_FILE, {}).get("update_repo") or GITHUB_REPO or "").strip()
+    r = (os.environ.get("HRMV_GITHUB_REPO") or GITHUB_REPO).strip()
     return r if re.match(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$", r) else ""
 
 
@@ -4162,6 +4177,28 @@ def github_check(force=False):
         else:
             out.update({"error": "Couldn't reach GitHub (%s)." % (getattr(e, "reason", None) or getattr(e, "code", None) or e)})
     GH_CACHE.update({"at": time.time(), "repo": repo, "data": out})
+    return out
+
+
+def github_releases(force=False):
+    """Every published version on GitHub (newest first) that can be installed from inside the viewer."""
+    repo = github_repo()
+    if not force and GH_REL_CACHE["data"] and time.time() - GH_REL_CACHE["at"] < 600:
+        return GH_REL_CACHE["data"]
+    out = []
+    for rel in github_get("%s/repos/%s/releases?per_page=60" % (GITHUB_API, repo)):
+        if rel.get("draft") or rel.get("prerelease"):
+            continue
+        v = str(rel.get("tag_name") or "").lstrip("vV")
+        upd = next((a for a in rel.get("assets") or [] if a.get("name") == "HRM-Viewer-update-%s.zip" % v), None)
+        if not v or not upd or not re.match(r"^\d+(\.\d+)*$", v) or version_tuple(v) < version_tuple(GH_OLDEST):
+            continue
+        out.append({"version": v, "name": rel.get("name") or v, "notes": (rel.get("body") or "")[:4000],
+                    "published": rel.get("published_at"), "page": rel.get("html_url"),
+                    "update_url": upd.get("browser_download_url"), "size": upd.get("size"),
+                    "current": version_tuple(v) == version_tuple(VERSION), "newer": version_tuple(v) > version_tuple(VERSION)})
+    out.sort(key=lambda r: version_tuple(r["version"]), reverse=True)
+    GH_REL_CACHE.update({"at": time.time(), "data": out})
     return out
 
 
@@ -4285,6 +4322,18 @@ def sync_desktop_exe():
         print("Couldn't put the desktop app in place: %s" % e)
 
 
+def remove_launchers():
+    """HRM Viewer.exe is the only way to open the viewer now: tidy away the old batch files
+    (only when the viewer was opened by the app, so a running Start.bat is never pulled from under itself)."""
+    if os.environ.get("HRMV_DESKTOP") != "1" or not os.path.exists(os.path.join(APP_DIR, DESKTOP_EXE)):
+        return
+    for f in ("Start.bat", "Load database.bat"):
+        try:
+            os.remove(os.path.join(APP_DIR, f))
+        except OSError:
+            pass
+
+
 def mark_started():
     """Called once the server is running: a pending update has worked."""
     pending = read_json(UPDATE_PENDING, None)
@@ -4312,6 +4361,7 @@ def main():
     os.makedirs(DBS_DIR, exist_ok=True)
     sync_desktop_exe()
     sync_guide()
+    remove_launchers()
     set_paths(resolve_active())
     remember_active(ACTIVE["id"])
     for sid in list_slots():

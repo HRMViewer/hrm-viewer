@@ -102,6 +102,10 @@ func serverUp() bool {
 }
 
 func findPython() (string, []string) {
+	// the full download carries its own Python in the "python" folder, so nothing needs installing
+	if p := filepath.Join(appDir, "python", "python.exe"); exists(p) {
+		return p, nil
+	}
 	for _, c := range []struct {
 		exe  string
 		args []string
@@ -341,9 +345,9 @@ func reportFailure(w webview2.WebView, err error) {
 	var msg string
 	switch err.Error() {
 	case "nopython":
-		msg = "Python isn't installed on this computer yet. HRM Viewer needs it to read your save.\n\n1. Click OK to open the Python download page.\n2. Run the installer and tick \"Add python.exe to PATH\" on its first screen.\n3. Open HRM Viewer again."
+		msg = "Part of HRM Viewer is missing (its \"python\" folder).\n\nClick OK to open the download page, download HRM-Viewer-<version>-full.zip, unzip it and open HRM Viewer.exe from there. To keep your data, copy your old \"data\" folder into the new HRM Viewer folder."
 		if msgBox(msg, 0x1|0x30) == 1 {
-			openURL("https://www.python.org/downloads/windows/")
+			openURL("https://github.com/jomdesa-glitch/hrm-viewer/releases/latest")
 		}
 		if w != nil {
 			w.Terminate()
@@ -354,7 +358,7 @@ func reportFailure(w webview2.WebView, err error) {
 	default:
 		msg = "The viewer stopped while starting."
 	}
-	msg += " Details are in data\\desktop.log in the HRM Viewer folder. Start.bat shows the same details in a window."
+	msg += " Details are in data\\desktop.log in the HRM Viewer folder."
 	logf("failed: %v", err)
 	if w != nil {
 		w.Eval("document.querySelector('.bar').style.display='none';document.getElementById('s').textContent='Something went wrong';var e=document.getElementById('e');e.style.display='block';e.textContent=" + jsStr(msg))
