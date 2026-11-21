@@ -35,16 +35,24 @@ jobs:
         run: |
           V=$(python3 -c "import re;print(re.search(r'^VERSION = \"([^\"]+)\"', open('app.py').read(), re.M).group(1))")
           echo "version=$V" >> "$GITHUB_OUTPUT"
-          if gh release view "v$V" >/dev/null 2>&1; then echo "new=no" >> "$GITHUB_OUTPUT"; echo "v$V is already out"; else echo "new=yes" >> "$GITHUB_OUTPUT"; fi
+          # yes: a new release · add: it's out but a download is missing (it gets built and added) · no: nothing to do
+          if ! gh release view "v$V" >/dev/null 2>&1; then echo "new=yes" >> "$GITHUB_OUTPUT"
+          else
+            have=$(gh release view "v$V" --json assets --jq '.assets[].name')
+            echo "v$V is out with: $have"
+            if echo "$have" | grep -q -- "-mac.zip$" && echo "$have" | grep -q -- "-linux.tar.gz$"; then echo "new=no" >> "$GITHUB_OUTPUT"; else echo "new=add" >> "$GITHUB_OUTPUT"; fi
+          fi
 
   mac-linux:
     needs: check
-    if: needs.check.outputs.new == 'yes'
+    if: needs.check.outputs.new != 'no'
     uses: ./.github/workflows/desktop-builds.yml
+    with:
+      mac: true
 
   release:
     needs: [check, mac-linux]
-    if: needs.check.outputs.new == 'yes'
+    if: needs.check.outputs.new != 'no'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -81,7 +89,37 @@ jobs:
         run: |
           ls -la dist
           TITLE="HRM Viewer $V — $(python3 -c "import json,os;v=os.environ['V'];print(next(e['title'] for e in json.load(open('static/changelog.json')) if e['version']==v))")"
-          FILES=("dist/HRM-Viewer-update-$V.zip" "dist/HRM-Viewer-$V-full.zip")
-          for f in "dist/HRM-Viewer-$V-mac.zip" "dist/HRM-Viewer-$V-linux.tar.gz"; do [ -f "$f" ] && FILES+=("$f"); done
-          gh release create "v$V" "${FILES[@]}" \
-            --target "$GITHUB_SHA" --title "$TITLE" --notes-file dist/notes.md --latest
+          # every download must be there: Windows (update + full), Mac and Linux
+          for f in "dist/HRM-Viewer-update-$V.zip" "dist/HRM-Viewer-$V-full.zip" "dist/HRM-Viewer-$V-mac.zip" "dist/HRM-Viewer-$V-linux.tar.gz"; do
+            [ -f "$f" ] || { echo "missing $f: not publishing"; exit 1; }
+          done
+          if [ "${{ needs.check.outputs.new }}" = "add" ]; then
+            # already out without some downloads: add them (and the notes that list them)
+            gh release upload "v$V" "dist/HRM-Viewer-$V-mac.zip" "dist/HRM-Viewer-$V-linux.tar.gz" --clobber
+            gh release edit "v$V" --notes-file dist/notes.md
+          else
+            gh release create "v$V" "dist/HRM-Viewer-update-$V.zip" "dist/HRM-Viewer-$V-full.zip" "dist/HRM-Viewer-$V-mac.zip" "dist/HRM-Viewer-$V-linux.tar.gz" \
+              --target "$GITHUB_SHA" --title "$TITLE" --notes-file dist/notes.md --latest
+          fi
+
+      - name: Keep a log of this release run
+        if: always()
+        run: |
+          mkdir -p "$RUNNER_TEMP/rl" && cd "$RUNNER_TEMP/rl"
+          { echo "version ${{ needs.check.outputs.version }} mode ${{ needs.check.outputs.new }} at $(date -u)"; echo '${{ toJSON(needs) }}'; ls -la "$GITHUB_WORKSPACE/dist" 2>&1; echo "job: ${{ job.status }}"; } > log.txt
+          git init -q && git checkout -q -b ci-release-log && git add -A && git -c user.name=ci -c user.email=ci@localhost commit -qm "release log"
+          git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" ci-release-log
+
+  # always: how each part went (Mac and Linux builds, publishing), so a failed or partial release can be looked into
+  report:
+    needs: [check, mac-linux, release]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Keep a summary of this release run
+        run: |
+          mkdir -p "$RUNNER_TEMP/rs" && cd "$RUNNER_TEMP/rs"
+          echo '${{ toJSON(needs) }}' > needs.json
+          echo "version ${{ needs.check.outputs.version }} mode ${{ needs.check.outputs.new }} at $(date -u)" > summary.txt
+          git init -q && git checkout -q -b ci-release-summary && git add -A && git -c user.name=ci -c user.email=ci@localhost commit -qm "release summary"
+          git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" ci-release-summary
