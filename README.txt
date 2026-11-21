@@ -31,8 +31,6 @@ your browser and tells you where to get it.
 
 ON A MAC
 --------
-(The Mac version is being tested and will come in a later update; these are
-the steps once it's on the download page.)
 1. Download HRM-Viewer-<version>-mac.zip and double-click it to unzip.
 2. Drag "HRM Viewer" into your Applications folder.
 3. Open it. The first time, the Mac says it "could not verify" HRM Viewer,

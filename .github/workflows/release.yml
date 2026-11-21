@@ -41,8 +41,6 @@ jobs:
     needs: check
     if: needs.check.outputs.new == 'yes'
     uses: ./.github/workflows/desktop-builds.yml
-    with:
-      mac: false   # the Mac app is still being tried out on the desktop-test branch; switch on when it passes
 
   release:
     needs: [check, mac-linux]
