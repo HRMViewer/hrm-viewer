@@ -2424,7 +2424,7 @@ document.addEventListener("click", (e) => {
 
 async function stableFinancePage(route) {
   const id = route.parts[1], q = route.q;
-  const [d, fin] = await Promise.all([api("stable/" + id), api(`stable_finance/${id}?` + new URLSearchParams({ ...(q.year ? { year: q.year } : {}), ...(q.dir === "in" ? { dir: "in" } : {}) }))]);
+  const [d, fin] = await Promise.all([api("stable/" + id), api(`stable_finance/${id}?` + new URLSearchParams({ ...(q.year ? { year: q.year } : {}), ...(q.month ? { month: q.month } : {}), ...(q.dir === "in" ? { dir: "in" } : {}) }))]);
   let html = stableHead(d, "financials");
   const lf = d.latest_finance || {}, monthly = d.finance || [];
   const years = (fin.years || []).map((y) => ({ ...y, net: (y.income_total || 0) - (y.expense_total || 0) }));
@@ -2467,10 +2467,47 @@ async function stableFinancePage(route) {
   const inc = fin.detail_dir === "in";
   const W = inc ? { what: "Income", paid: "Received in", payee: "Paid by", total: "Total received", filter: "Filter by type, note or who paid…", payments: "Payments", none: "No money received that year." }
     : { what: "Expense", paid: "Paid out in", payee: "Paid to", total: "Total paid out", filter: "Filter by type, note or who was paid…", payments: "Payments", none: "No payments recorded that year." };
+  // any year and month on record: the payment log has each payment for recent years; for the rest (the game keeps
+  // only a yearly total of older payments) the breakdown comes from the monthly figures, by category
+  const MNS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+  const snap = (fin.months || []).map((m) => ({ y: m.year, mo: new Date(m.date * 1000).getUTCMonth() + 1, m }));
+  const allYears = [...new Set([...dys, ...snap.map((x) => x.y)])].filter(Boolean).sort((a, b) => b - a);
+  const year = fin.detail_year || allYears[0];
+  const logMonths = dys.includes(year) ? fin.detail_months || [] : [];
+  const yearMonths = [...new Set([...logMonths, ...snap.filter((x) => x.y === year).map((x) => x.mo)])].sort((a, b) => a - b);
+  const qMonth = yearMonths.includes(+q.month) ? +q.month : 0;
+  const period = (qMonth ? MNS[qMonth - 1] + " " : "") + year;
+  const fromLog = !!(det && det.year === year && (det.month || 0) === qMonth && (!qMonth || logMonths.includes(qMonth)));
   const dirSeg = seg("dir", q, [["out", "Expenses"], ["in", "Income"]], "out");
-  const pick = dirSeg + (dys.length > 1 ? seg("year", { year: String(det ? det.year : "") }, dys.slice().reverse().map((y) => [String(y), String(y)]), String(dys[dys.length - 1])) : "");
+  const pick = dirSeg + (allYears.length ? select("year", { year: String(year) }, allYears.map((y) => [String(y), String(y)]), "Which year")
+    + select("month", { month: String(qMonth || "") }, [["", "Whole year"]].concat(yearMonths.map((m) => [String(m), MNS[m - 1] + (logMonths.length && !logMonths.includes(m) ? " (monthly figures)" : "")])), "Which month") : "");
+  const fdBar = (pct, cls) => `<span class="sbar ${cls}"><i style="width:${Math.max(0, Math.min(100, pct)).toFixed(1)}%"></i></span>`;
   let body;
-  if (!det || !det.categories.length) body = `<div class="fd-tools">${pick}</div>` + `<div class="empty">${dys.length ? W.none : "The game hasn't kept individual payments for this stable (older years are only kept as yearly totals)."}</div>`;
+  if (!fromLog) {
+    // from the monthly figures: categories only (no individual payments that far back)
+    const rowsM = snap.filter((x) => x.y === year && (!qMonth || x.mo === qMonth));
+    const tot = {};
+    rowsM.forEach((x) => Object.entries((inc ? x.m.income : x.m.expenses) || {}).forEach(([k, v]) => { tot[k] = (tot[k] || 0) + (v || 0); }));
+    const cats = Object.entries(tot).filter(([, v]) => v).sort((a, b) => b[1] - a[1]);
+    const total = cats.reduce((a, c) => a + c[1], 0);
+    const from = fin.detail_from ? new Date(fin.detail_from * 1000) : null;
+    const why = from
+      ? `The game's payment log only goes back to ${MNS[from.getUTCMonth()]} ${from.getUTCFullYear()} (it keeps a yearly total of older payments), so this is from the monthly figures, by category.`
+      : "The game hasn't kept individual payments for this stable, so this is from the monthly figures, by category.";
+    body = !cats.length ? `<div class="fd-tools">${pick}</div><div class="empty">${!allYears.length ? "The game hasn't kept individual payments for this stable (older years are only kept as yearly totals)."
+        : rowsM.length ? W.none : "No figures for " + esc(period) + "."}</div>`
+      : `<div class="fd-summary">
+          <div><span class="lbl">${W.paid} ${esc(period)}</span><b>${finAmt(total)}</b></div>
+          <div><span class="lbl">Months</span><b>${fNum(rowsM.length)}</b></div>
+          <div><span class="lbl">Biggest category</span><b>${esc(finLabel(cats[0][0]))}</b> <span class="muted">${total ? fNum((100 * cats[0][1]) / total, 0) + "%" : ""}</span></div>
+        </div>
+        <div class="fd-tools">${pick}</div>
+        <div class="note-line">${why}</div>
+        <div class="tbl-wrap"><table class="data fin-detail nosort${inc ? " is-in" : ""}"><thead><tr><th>Category</th><th class="num">Total</th><th class="num">A month</th><th class="fd-share">Share</th></tr></thead>
+        <tbody>${cats.map(([k, v]) => { const p = total ? (100 * v) / total : 0; return `<tr class="fin-cat"><td><b>${esc(finLabel(k))}</b></td><td class="num"><b>${finAmt(v)}</b></td><td class="num">${finAmt(v / Math.max(1, rowsM.length))}</td>
+          <td class="fd-share">${fdBar(p, "cat")}<span class="sval">${fNum(p, p < 10 ? 1 : 0)}%</span></td></tr>`; }).join("")}</tbody>
+        <tfoot><tr><td>${W.total}</td><td class="num">${finAmt(total)}</td><td class="num">${finAmt(total / Math.max(1, rowsM.length))}</td><td></td></tr></tfoot></table></div>`;
+  } else if (!det.categories.length) body = `<div class="fd-tools">${pick}</div><div class="empty">${W.none}</div>`;
   else {
     const payee = (x) => (x.to_type === "person" && x.to_name ? L.person(x.to_id, x.to_name) : x.to_type === "stable" && x.to_name ? L.stable(x.to_id, x.to_name)
       : x.to_type === "racecourse" && x.to_name ? L.course(x.to_id, x.to_name) : esc(finLabel(x.to_type || "—")));
@@ -2499,18 +2536,19 @@ async function stableFinancePage(route) {
     });
     const nPay = det.categories.reduce((a, c) => a + c.n, 0);
     body = `<div class="fd-summary">
-        <div><span class="lbl">${W.paid} ${det.year}</span><b>${finAmt(det.total)}</b></div>
+        <div><span class="lbl">${W.paid} ${esc(period)}</span><b>${finAmt(det.total)}</b></div>
         <div><span class="lbl">Payments</span><b>${fNum(nPay)}</b></div>
         <div><span class="lbl">Biggest category</span><b>${esc(finLabel(top.cat))}</b> <span class="muted">${det.total ? fNum((100 * top.total) / det.total, 0) + "%" : ""}</span></div>
       </div>
       <div class="fd-tools">${pick}<input type="search" class="fd-filter" placeholder="${W.filter}" aria-label="Filter payments">
         <span class="grow"></span><button class="btn sm" data-fd-all="open" data-tip="Show every type in every category">Open all</button><button class="btn sm" data-fd-all="close" data-tip="Fold everything back to the categories">Close all</button></div>
+      ${!qMonth && yearMonths.some((m) => !logMonths.includes(m)) ? `<div class="note-line">The payment log covers ${MNS[logMonths[0] - 1]}–${MNS[logMonths[logMonths.length - 1] - 1]} ${year} only; pick an earlier month to see it from the monthly figures.</div>` : ""}
       <div class="fd-none empty" hidden>Nothing matches that filter.</div>
       <div class="tbl-wrap"><table class="data fin-detail nosort${inc ? " is-in" : ""}"><thead><tr><th>Category / type</th><th class="num">Payments</th><th class="num">Total</th><th class="num">Average</th><th class="fd-share">Share</th></tr></thead>
       <tbody>${rowsHtml}</tbody><tfoot><tr><td>${W.total}</td><td class="num">${fNum(nPay)}</td><td class="num">${finAmt(det.total)}</td><td class="num">${nPay ? finAmt(det.total / nPay) : "—"}</td><td></td></tr></tfoot></table></div>`;
   }
-  html += `<div style="margin-top:16px">${panel(`${W.what} detail${det ? " · " + det.year : ""}`, body,
-    "From the game's payment log, so it can differ a little from the monthly totals above · ▸ shows each payment")}</div>`;
+  html += `<div style="margin-top:16px">${panel(`${W.what} detail${allYears.length ? " · " + esc(period) : ""}`, body,
+    fromLog ? "From the game's payment log, so it can differ a little from the monthly totals above · ▸ shows each payment" : "From the game's monthly figures, by category")}</div>`;
   return html;
 }
 // expense detail: open/close a type's payments, collapse a category, open/close everything, and filter

@@ -2126,9 +2126,23 @@ def api_stable_finance(con, sid, q):
             and coalesce(transaction_type,'') <> 'Yearly Summary'""" % (me, me)
         yr = FIN_YEAR.format("transaction_date")
         out["detail_years"] = [r["year"] for r in rows(con, "select distinct %s as year %s order by 1" % (yr, base), (sid,))]
-        year = to_int(q.get("year"), 0) or (out["detail_years"][-1] if out["detail_years"] else 0)
+        snap_years = sorted({m["year"] for m in out.get("months") or [] if m.get("year")})
+        first = rows(con, "select min(transaction_date) as d %s" % base, (sid,))
+        out["detail_from"] = first[0]["d"] if first else None     # when the payment log starts
+        # any year on record can be picked: years in the payment log get the full detail, older ones are shown
+        # from the monthly figures on the page (the game only keeps a yearly total of their payments)
+        year = to_int(q.get("year"), 0) or (out["detail_years"][-1] if out["detail_years"] else (snap_years[-1] if snap_years else 0))
+        out["detail_year"] = year
+        month = to_int(q.get("month"), 0)
         if year in out["detail_years"]:
-            lo, hi = calendar.timegm((year, 1, 1, 0, 0, 0)), calendar.timegm((year + 1, 1, 1, 0, 0, 0))
+            out["detail_months"] = [r["m"] for r in rows(con, "select distinct cast(strftime('%%m', transaction_date, 'unixepoch') as int) as m %s and %s = ? order by 1" % (base, yr), (sid, year))]
+            if month not in out["detail_months"]:
+                month = 0
+            if month:
+                lo = calendar.timegm((year, month, 1, 0, 0, 0))
+                hi = calendar.timegm((year + (month == 12), month % 12 + 1, 1, 0, 0, 0))
+            else:
+                lo, hi = calendar.timegm((year, 1, 1, 0, 0, 0)), calendar.timegm((year + 1, 1, 1, 0, 0, 0))
             cats = {}
             for r in rows(con, """select transaction_category as cat, transaction_type as type, count(*) as n, sum(transaction_amount) as total
                     %s and transaction_date >= ? and transaction_date < ? group by 1, 2""" % base, (sid, lo, hi)):
@@ -2159,7 +2173,7 @@ def api_stable_finance(con, sid, q):
                     t["items"].append(it)
             for c in cats.values():
                 c["types"].sort(key=lambda t: -(t["total"] or 0))
-            out["detail"] = {"year": year, "categories": sorted(cats.values(), key=lambda c: -(c["total"] or 0)),
+            out["detail"] = {"year": year, "month": month or None, "categories": sorted(cats.values(), key=lambda c: -(c["total"] or 0)),
                              "total": sum(c["total"] for c in cats.values())}
     return out
 
@@ -5161,7 +5175,7 @@ class Handler(BaseHTTPRequestHandler):
 
 # --------------------------------------------------------------------------- in-app updates
 
-VERSION = "14.7"
+VERSION = "14.8"
 BACKUP_DIR = os.path.join(APP_DIR, "backups")
 UPDATE_PENDING = os.path.join(DATA_DIR, "update_pending.json")
 UPDATE_RESULT = os.path.join(DATA_DIR, "update_result.json")

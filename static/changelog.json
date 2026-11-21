@@ -1,5 +1,16 @@
 [
   {
+    "version": "14.8",
+    "date": "2026-11-22",
+    "title": "Expense and income detail: any year, any month",
+    "changes": [
+      "Stable Financials: the Expense / Income detail now has a year menu with every year on record, and a month menu (Whole year, or any month in that year).",
+      "Years and months in the game's payment log show every payment, grouped by category and type, as before, now for a single month too.",
+      "Earlier years and months (the game keeps only a yearly total of older payments) show the breakdown by category from the monthly figures, with the total, a monthly average and each category's share. The month menu marks which months come from the monthly figures.",
+      "When a year's payment log is incomplete (for example it only starts in October), the detail says so."
+    ]
+  },
+  {
     "version": "14.7",
     "date": "2026-11-22",
     "title": "Fix: Linux app when it can't open a window",
