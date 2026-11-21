@@ -2533,7 +2533,6 @@ PO_ROLES = {
                  "rank": "coalesce(p.person_management_career_winnings,0)"},
 }
 PO_TOP = 8           # people per section
-PO_WINS = 8          # latest Group/Listed wins per section
 PO_LATEST = 15       # awards / news items sent (the compact panels show the first few)
 PO_NEWS_TYPES = ("HIRE_STAFF", "FIRE_STAFF", "STAFF_RESIGNATION", "STAFF_ROLE_CHANGE", "MARRIAGE_PROPOSAL", "DIVORCE_REQUEST",
                  "SECRET_EXPOSED", "RUMOR", "TRAINING_SUCCESS", "PRAISE")
@@ -2556,7 +2555,6 @@ def po_section(con, key):
     sn = name_map(con, "stables", "stable_stable_id", "stable_name", [r["stable_id"] for r in people])
     ids = [r["id"] for r in people]
     stats = {i: {"starts": 0, "wins": 0, "places": 0, "prize": 0, "G1": 0, "G2": 0, "G3": 0, "listed": 0, "last": None} for i in ids}
-    wins = []
     if ids and rcols:
         marks = ",".join("?" * len(ids))
         who = " or ".join("r.%s in (%s)" % (c, marks) for c in rcols)
@@ -2581,24 +2579,13 @@ def po_section(con, key):
                     left join horses h on h.horse_horse_id=r.race_result_horse_id
                     where %s order by r.race_result_date desc limit 1""" % " or ".join("r.%s=?" % c for c in rcols), [i] * len(rcols))
             stats[i]["last_race"] = lr
-        # the section's latest Group and Listed wins, all of its people together
-        wins = rows(con, """select r.race_result_date as date, r.race_result_race_id as race_id, x.races_race_name as race, x.races_type_of_race as type,
-                r.race_result_horse_id as horse_id, h.horse_name as horse, %s as pid
-                from race_results r join races x on x.races_race_id=r.race_result_race_id and r.race_result_race_id>0
-                left join horses h on h.horse_horse_id=r.race_result_horse_id
-                where r.race_result_rank=1 and x.races_type_of_race in ('G1','G2','G3','listed') and (%s)
-                order by r.race_result_date desc limit %d""" % (pick, who, PO_WINS), params)
-        names = {r["id"]: r["name"] for r in people}
-        for w in wins:
-            w["person"] = names.get(w["pid"])
     for r in people:
         r["stable"] = sn.get(r["stable_id"])
         r["is_player"] = r["is_player"] in ("true", 1, "1", True)
         r.update(stats[r["id"]])
         r["group"] = r["G1"] + r["G2"] + r["G3"]
         r["total_gl"] = r["group"] + r["listed"]
-    tot = {k: sum(r[k] for r in people) for k in ("group", "listed", "total_gl")}
-    return {"key": key, "people": people, "wins": wins, "totals": tot}
+    return {"key": key, "people": people}
 
 
 def api_people_overview(con):
@@ -4760,7 +4747,7 @@ class Handler(BaseHTTPRequestHandler):
 
 # --------------------------------------------------------------------------- in-app updates
 
-VERSION = "14.0"
+VERSION = "14.1"
 BACKUP_DIR = os.path.join(APP_DIR, "backups")
 UPDATE_PENDING = os.path.join(DATA_DIR, "update_pending.json")
 UPDATE_RESULT = os.path.join(DATA_DIR, "update_result.json")

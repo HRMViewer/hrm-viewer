@@ -1,5 +1,13 @@
 [
   {
+    "version": "14.1",
+    "date": "2026-11-21",
+    "title": "Tidier People overview",
+    "changes": [
+      "People overview: the Group & Listed wins list under the Jockeys, Trainers and Managers tables is gone; each person's Group, Listed and combined wins are already in the table."
+    ]
+  },
+  {
     "version": "14.0",
     "date": "2026-11-21",
     "title": "New Overview for each person",

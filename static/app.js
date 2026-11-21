@@ -3109,7 +3109,6 @@ const PO_SECTIONS = {
   trainers: { title: "Trainers", noun: "trainers", races: "Runners", all: "#/jockeys?view=trainers", rank: "career wins as a trainer or head trainer" },
   managers: { title: "Managers", noun: "managers", races: "Runners", all: "#/jockeys?view=managers", rank: "career prize money as a manager" },
 };
-const GL = { G1: "G1", G2: "G2", G3: "G3", listed: "listed" };
 
 // one people section; the three sections only differ in their wording (PO_SECTIONS)
 function roleSection(meta, sec) {
@@ -3127,14 +3126,7 @@ function roleSection(meta, sec) {
     { h: "Latest race", f: (r) => (r.last_race ? `${L.race(r.last_race.race_id, r.last_race.race)}
         <div class="muted small">${fDate(r.last_race.date)}${r.last_race.rank ? " · " + ord(r.last_race.rank) : ""}</div>` : '<span class="muted">No races yet</span>') },
   ], people) : `<div class="empty">No ${meta.noun} working at a stable right now.</div>`;
-  const t = sec.totals || {};
-  const wins = (sec.wins || []).length ? `<ul class="po-wins">${sec.wins.map((w) => `<li><span class="muted small">${fDate(w.date)}</span> ${grade(GL[w.type])}
-      ${L.race(w.race_id, w.race)} <span class="muted small">·</span> ${L.horse(w.horse_id, w.horse)} <span class="muted small">· ${esc(w.person || "")}</span></li>`).join("")}</ul>`
-    : `<div class="empty">No Group or Listed wins for these ${meta.noun} yet.</div>`;
-  return panel(meta.title, `${table_}
-    <div class="po-gl"><div class="po-gl-head"><b>Group &amp; Listed wins</b>
-      <span class="po-pill">Group ${fNum(t.group || 0)}</span><span class="po-pill l">Listed ${fNum(t.listed || 0)}</span><span class="po-pill t">Total ${fNum(t.total_gl || 0)}</span>
-      <span class="muted small">latest first</span></div>${wins}</div>`,
+  return panel(meta.title, table_,
     `Top ${people.length || ""} working now, by ${meta.rank} · <a href="${meta.all}">All ${meta.noun}</a>`, "po-sec");
 }
 
