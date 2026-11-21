@@ -306,6 +306,10 @@ func main() {
 		for time.Now().Before(limit) {
 			select {
 			case <-exited:
+				if cmd.ProcessState != nil && cmd.ProcessState.ExitCode() == 4 {
+					ready <- fmt.Errorf("portbusy") // another program took the port in the meantime
+					return
+				}
 				ready <- fmt.Errorf("stopped")
 				return
 			default:
@@ -383,6 +387,8 @@ func reportFailure(w webview2.WebView, err error) {
 			w.Terminate()
 		}
 		return
+	case "portbusy":
+		msg = fmt.Sprintf("Another program on this computer is using the viewer's address (port %d), so it couldn't start. Close that program or restart your PC, then open HRM Viewer again.", port)
 	case "timeout":
 		msg = "The viewer is taking too long to start."
 	default:

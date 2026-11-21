@@ -1,5 +1,14 @@
 [
   {
+    "version": "12.9",
+    "date": "2026-11-21",
+    "title": "Clearer message when the port is taken",
+    "changes": [
+      "If another program grabs the viewer's address just as it starts, HRM Viewer.exe now says so straight away (close that program or restart your PC) instead of a general \u201cstopped while starting\u201d.",
+      "The viewer tells apart \u201cHRM Viewer is already running\u201d from \u201canother program has the port\u201d, and a port clash never undoes an update you've just installed."
+    ]
+  },
+  {
     "version": "12.8",
     "date": "2026-11-21",
     "title": "Fix: stuck on \u201cAlmost there\u2026\u201d",

@@ -4087,11 +4087,12 @@ class Handler(BaseHTTPRequestHandler):
 
 # --------------------------------------------------------------------------- in-app updates
 
-VERSION = "12.8"
+VERSION = "12.9"
 BACKUP_DIR = os.path.join(APP_DIR, "backups")
 UPDATE_PENDING = os.path.join(DATA_DIR, "update_pending.json")
 UPDATE_RESULT = os.path.join(DATA_DIR, "update_result.json")
 RESTART_CODE = 3
+PORT_BUSY_CODE = 4    # another program has the port: nothing to restart or roll back
 UPDATABLE = re.compile(r"^(app\.py|README\.txt|HRM Viewer\.new\.exe|static/[A-Za-z0-9._-]+)$")
 DESKTOP_EXE = "HRM Viewer.exe"
 UPDATE_LOCK = threading.Lock()
@@ -4347,6 +4348,8 @@ def supervise(argv):
         except KeyboardInterrupt:
             return 0
         first = False
+        if rc == PORT_BUSY_CODE:     # not a failed update: leave the installed version alone
+            return rc
         if rc == RESTART_CODE:
             print("\nRestarting the viewer...\n")
             continue
@@ -4443,6 +4446,16 @@ def mark_started():
             pass
 
 
+def viewer_answering(port):
+    """Is HRM Viewer itself (not some other program) answering on this port?"""
+    try:
+        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))    # straight to this computer, never via a proxy
+        with opener.open("http://127.0.0.1:%d/api/status" % port, timeout=2) as r:
+            return r.status == 200 and b'"app"' in r.read(1 << 20)
+    except Exception:
+        return False
+
+
 class ViewerServer(ThreadingHTTPServer):
     """On Windows, SO_REUSEADDR lets a second program bind a port another one is already using (and the other one keeps
     getting the visitors), so the viewer asks for its port to itself there: if anything else has it, starting says so."""
@@ -4528,10 +4541,14 @@ def main():
     try:
         server = ViewerServer(("127.0.0.1", args.port), Handler)
     except OSError:
-        print("Port %d is busy - the viewer may already be running, or another program is using it. Opening it in your browser." % args.port)
-        if not args.no_browser:
-            webbrowser.open("http://127.0.0.1:%d/" % args.port)
-        return
+        if viewer_answering(args.port):
+            print("Port %d is busy - the viewer is already running. Opening it in your browser." % args.port)
+            if not args.no_browser:
+                webbrowser.open("http://127.0.0.1:%d/" % args.port)
+            return
+        print("Port %d is already in use by another program (not the viewer), so the viewer can't start there. "
+              "Close that program or restart your PC, then open the viewer again." % args.port)
+        sys.exit(PORT_BUSY_CODE)
     server.daemon_threads = True
     global PORT
     PORT = args.port
