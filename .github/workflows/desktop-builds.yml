@@ -95,6 +95,22 @@ jobs:
             dist/linux-screenshot.png
           if-no-files-found: error
 
+  # which Mac machines does this repository get? (test builds only: each reports when it starts)
+  mac-probe:
+    if: github.ref == 'refs/heads/desktop-test'
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, macos-15, macos-14, macos-13]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - name: Report
+        run: |
+          mkdir -p "$RUNNER_TEMP/p" && cd "$RUNNER_TEMP/p" && echo "${{ matrix.os }}: macOS $(sw_vers -productVersion) $(uname -m) at $(date -u)" > status.txt
+          git init -q && git checkout -q -b "ci-probe-${{ matrix.os }}" && git add -A && git -c user.name=ci -c user.email=ci@localhost commit -qm probe
+          git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" "ci-probe-${{ matrix.os }}"
+
   mac:
     # left out of a release with mac: false (test pushes and manual runs always build it)
     # (written this way because GitHub treats an empty input as equal to false: test pushes have no inputs)
