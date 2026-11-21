@@ -468,6 +468,11 @@ function allFields(obj) {
 
 // SVG line chart: series = [{name, color, points:[[t, v, tip?], ...], dots, dash}]
 const PALETTE = ["#1f5240", "#b5872c", "#3e6e9e", "#a8714a", "#7a4f9a", "#c0504d"];
+// the same colours lightened for dark mode, so lines stand out against the dark background
+const DARK_COLS = { "#1f5240": "#4cb98a", "#b5872c": "#e0b453", "#3e6e9e": "#6fa8e6", "#a8714a": "#d9a077", "#7a4f9a": "#b38ae0", "#c0504d": "#ef7a76", "#18202f": "#e2e7ef" };
+const isDark = () => document.documentElement.classList.contains("dark");
+const chCol = (c) => (isDark() && DARK_COLS[String(c).toLowerCase()]) || c;
+const seriesCol = (s, i) => chCol(s.color || PALETTE[i % PALETTE.length]);
 const yearOf = (ts) => new Date(ts * 1000).getUTCFullYear();
 const yearStart = (y) => Date.UTC(y, 0, 1) / 1000;
 // Logarithmic y-axis (opt-in with { scale: "symlog" }). A plain log scale can't show zero or negative values, and stable
@@ -505,10 +510,20 @@ let CHART_SEQ = 0;
 function lineChart(series, opts = {}) {
   const id = "ch" + ++CHART_SEQ;
   CHARTS[id] = { series, opts: Object.assign({ yFmt: (v) => fNum(v), height: 220, invert: false, yInt: false, yMin: null, yMax: null, width: 680 }, opts), hidden: new Set(), range: chartDefaultRange() };
+  if (opts.scale === "auto") CHARTS[id].opts.scale = autoScale(series);
   const ok = series.some((s) => s.points.filter((p) => isNum(p[1])).length) && series.flatMap((s) => s.points.filter((p) => isNum(p[1]))).length >= 2;
   if (!ok) { delete CHARTS[id]; return `<div class="empty">Not enough history to chart.</div>`; }
   return `<div class="chartbox" id="${id}">${chartInner(id)}</div>`;
 }
+// "auto": a log scale only when a few values dwarf the rest (the biggest is over 20 times the typical size),
+// otherwise a plain linear scale; the Linear / Log switch still changes it
+function autoScale(series) {
+  const v = series.flatMap((s) => s.points.map((p) => Math.abs(p[1]))).filter((x) => isNum(x) && x > 0).sort((a, b) => a - b);
+  if (v.length < 3) return "linear";
+  return v[v.length - 1] / v[v.length >> 1] > 20 ? "symlog" : "linear";
+}
+// smoothing: each point averaged with its neighbours (one each side), so the trend shows through month-to-month swings
+const smooth3 = (pts) => pts.map((p, i) => { const w = pts.slice(Math.max(0, i - 1), i + 2); const q = p.slice(); q[1] = w.reduce((a, x) => a + x[1], 0) / w.length; return q; });
 function chartDefaultRange() { try { return localStorage.getItem("hrm.chartRange") || "all"; } catch (e) { return "all"; } }
 const RANGES = [["all", "All", 0], ["10y", "10 years", 3652], ["5y", "5 years", 1826], ["3y", "3 years", 1096], ["2y", "2 years", 730], ["1y", "1 year", 365],
   ["9m", "9 months", 274], ["6m", "6 months", 183], ["3m", "3 months", 91], ["1m", "1 month", 30]];
@@ -519,23 +534,30 @@ function chartInner(id) {
   let rg = RANGES.find((r) => r[0] === C.range) || RANGES[0];
   if (rg[2] && rg[2] * 86400 >= tMax - tMin) rg = RANGES[0];
   const from = rg[2] ? tMax - rg[2] * 86400 : -Infinity;
-  const series = C.series.map((s, i) => ({ ...s, i, color: s.color || PALETTE[i % PALETTE.length], pts: s.points.filter((p) => isNum(p[1]) && p[0] >= from).sort((a, b) => a[0] - b[0]) }))
+  // smoothing is offered on charts with plenty of points (not positions or counts)
+  const canSmooth = o.smooth !== false && !o.invert && !o.yInt && C.series.some((s) => !s.dots && s.points.filter((p) => isNum(p[1])).length >= 24);
+  const sm = canSmooth && C.smooth;
+  const series = C.series.map((s, i) => { const pts = s.points.filter((p) => isNum(p[1]) && p[0] >= from).sort((a, b) => a[0] - b[0]);
+    return { ...s, i, color: seriesCol(s, i), pts: sm && !s.dots && pts.length >= 3 ? smooth3(pts) : pts }; })
     .filter((s) => !C.hidden.has(s.i) && s.pts.length);
   const all = series.flatMap((s) => s.pts);
   const W = o.width, H = o.height, l = 64, r = 12, t = 10, b = 30;
-  const ranges = o.ranges !== false && (tMax - tMin) / 86400 > 31 ? `<div class="ch-ranges">${RANGES.filter((x) => !x[2] || x[2] * 86400 < tMax - tMin).map((x) =>
+  // only ranges that leave at least 4 points on the busiest line (1M is no use on a monthly chart)
+  const inRange = (days) => Math.max(...C.series.map((s) => s.points.filter((p) => isNum(p[1]) && p[0] >= tMax - days * 86400).length));
+  const ranges = o.ranges !== false && (tMax - tMin) / 86400 > 31 ? `<div class="ch-ranges">${RANGES.filter((x) => !x[2] || (x[2] * 86400 < tMax - tMin && (x[0] === rg[0] || inRange(x[2]) >= 4))).map((x) =>
     `<button class="${x[0] === rg[0] ? "on" : ""}" data-chrange="${x[0]}" title="Show ${x[2] ? "the last " + x[1] : "everything"}">${x[2] ? x[0].toUpperCase() : "All"}</button>`).join("")}</div>` : "";
   // the chart's tool row: linear/log switch (not for positions), time range, enlarge, picture and data downloads
   const canLog = !o.invert && !o.yInt;
   const scaleSw = canLog ? `<div class="ch-sw" role="group" aria-label="Scale"><button class="${o.scale === "symlog" ? "" : "on"}" data-chscale="linear" data-tip="Linear scale: equal steps for equal amounts">Linear</button><button class="${o.scale === "symlog" ? "on" : ""}" data-chscale="symlog" data-tip="Logarithmic scale: each gridline is 10 times the one below, so a few very big values don't squash the rest. Zero and negative values still show; hover for exact amounts.">Log</button></div>` : "";
-  const tools = `<div class="ch-tools">${o.big ? "" : `<button data-chexp data-tip="Open this chart large">⤢</button>`}<button data-chpng data-tip="Download this chart as a picture (PNG)">PNG</button><button data-chcsv data-tip="Download the numbers behind this chart (CSV)">CSV</button></div>`;
+  const smBtn = canSmooth ? `<button class="${sm ? "on" : ""}" data-chsmooth data-tip="${sm ? "Show the actual values again" : "Smooth the lines: each point is averaged with the ones either side, so the trend shows through the ups and downs. Hover values are smoothed too."}">Smooth</button>` : "";
+  const tools = `<div class="ch-tools">${smBtn}${o.big ? "" : `<button data-chexp data-tip="Open this chart large">⤢</button>`}<button data-chpng data-tip="Download this chart as a picture (PNG)">PNG</button><button data-chcsv data-tip="Download the numbers behind this chart (CSV)">CSV</button></div>`;
   const rangeBtns = `<div class="ch-bar">${scaleSw}<span class="grow"></span>${ranges}${tools}</div>`;
   // legend: click to hide/show a line, double-click to show only that line; each entry shows the latest value in view
   const fmtOf = (s) => s.fmt || o.tipFmt || o.yFmt;
   const latestOf = (i) => { const sv = series.find((x) => x.i === i); return sv && sv.pts.length ? sv.pts[sv.pts.length - 1] : null; };
   const legend = C.series.length > 1 ? `<div class="legend ch-legend">${C.series.map((s, i) => { const lp = latestOf(i);
     return `<span class="lg ${C.hidden.has(i) ? "off" : ""}" data-lg="${i}" title="Click to ${C.hidden.has(i) ? "show" : "hide"} this line · double-click to show only this line">
-      <i style="background:${s.color || PALETTE[i % PALETTE.length]}"></i>${esc(s.name)}${lp && !C.hidden.has(i) ? ` <b class="lg-v">${fmtOf(s)(lp[1])}</b>` : ""}</span>`; }).join("")}</div>`
+      <i style="background:${seriesCol(s, i)}"></i>${esc(s.name)}${lp && !C.hidden.has(i) ? ` <b class="lg-v">${fmtOf(s)(lp[1])}</b>` : ""}</span>`; }).join("")}</div>`
     : (() => { const sv = series[0]; if (!sv || sv.pts.length < 2) return "";
       const vals = sv.pts.map((p) => p[1]), hi = sv.pts.reduce((a, p) => (p[1] > a[1] ? p : a)), lo = sv.pts.reduce((a, p) => (p[1] < a[1] ? p : a)), f = fmtOf(sv);
       const first = vals[0], last = vals[vals.length - 1], ch = first ? ((last - first) / Math.abs(first)) * 100 : null;
@@ -566,7 +588,7 @@ function chartInner(id) {
     if (lo >= 0 && f0 < 0) f0 = 0;
   }
   const Y = o.invert ? (v) => t + ((f(v) - f0) / (f1 - f0)) * (H - t - b) : (v) => t + (1 - (f(v) - f0) / (f1 - f0)) * (H - t - b);
-  C.geo = { x0, x1, l, r, W, H, t, b, X, Y, series };
+  C.geo = { x0, x1, l, r, W, H, t, b, X, Y, series, sm };
   let g = "";
   let yt = niceTicks(y0, y1, 6);
   if (o.yInt) { const step = Math.max(1, Math.ceil((y1 - y0) / 5)); yt = []; for (let v = Math.ceil(y0); v <= y1; v += step) yt.push(v); if (!yt.includes(1) && y0 <= 1) yt.unshift(1); }
@@ -604,7 +626,8 @@ function chartInner(id) {
     return line + dots;
   }).join("");
   // charts that are on a log scale say so on the picture itself too
-  const logTag = LOG ? `<text class="ch-logmark" x="${W - r - 4}" y="${t + 11}" text-anchor="end">log scale</text>` : "";
+  const tags = [LOG && "log scale", sm && "smoothed"].filter(Boolean).join(" · ");
+  const logTag = tags ? `<text class="ch-logmark" x="${W - r - 4}" y="${t + 11}" text-anchor="end">${tags}</text>` : "";
   return rangeBtns + `<svg class="chart${LOG ? " is-log" : ""}" viewBox="0 0 ${W} ${H}" role="img">${g}${logTag}${lines}<g class="ch-hover"></g>
     <rect class="ch-hit" x="${l}" y="${t}" width="${W - l - r}" height="${H - t - b}" fill="transparent"/></svg>` + legend;
 }
@@ -643,7 +666,7 @@ document.addEventListener("mousemove", (e) => {
   const hx = G.X(n.at);
   svg.querySelector(".ch-hover").innerHTML = `<line x1="${hx}" x2="${hx}" y1="${G.t}" y2="${G.H - G.b}" stroke="#18202f" stroke-opacity=".35" stroke-dasharray="3 3"/>` +
     n.rows.filter((r) => r.exact).map((r) => `<circle cx="${G.X(r.p[0])}" cy="${G.Y(r.p[1])}" r="5" fill="${r.p[3] || r.s.color}" stroke="#fff" stroke-width="2"/>`).join("");
-  CHART_TIP.innerHTML = `<div class="d">${fDate(n.at)}</div>` + n.rows.filter((r) => r.exact).map((r) =>
+  CHART_TIP.innerHTML = `<div class="d">${fDate(n.at)}${G.sm ? ' <span class="muted">· smoothed</span>' : ""}</div>` + n.rows.filter((r) => r.exact).map((r) =>
     `<div class="r"><i style="background:${r.p[3] || r.s.color}"></i><span>${esc(r.s.name)}</span><b>${(r.s.fmt || tipFmt)(r.p[1])}</b></div>${r.p[2] ? `<div class="x">${esc(r.p[2])}</div>` : ""}`).join("") +
     (n.best[4] ? `<div class="h">Click to open the race</div>` : "");
   CHART_TIP.hidden = false;
@@ -678,6 +701,7 @@ document.addEventListener("click", (e) => {
   if (rg) { C.range = rg.dataset.chrange; box.innerHTML = chartInner(box.id); return; }
   const sc = e.target.closest("[data-chscale]");
   if (sc) { C.opts.scale = sc.dataset.chscale; box.innerHTML = chartInner(box.id); return; }
+  if (e.target.closest("[data-chsmooth]")) { C.smooth = !C.smooth; box.innerHTML = chartInner(box.id); return; }
   if (e.target.closest("[data-chexp]")) { chartBig(box); return; }
   if (e.target.closest("[data-chpng]")) { chartPng(box); return; }
   if (e.target.closest("[data-chcsv]")) { chartCsv(box); return; }
@@ -699,7 +723,7 @@ function saveBlob(blob, name) {
 // the chart large, in a pop-up, with the same lines, range and scale
 function chartBig(box) {
   const C = CHARTS[box.id], id = "ch" + ++CHART_SEQ;
-  CHARTS[id] = { series: C.series, opts: { ...C.opts, width: 1200, height: 480, big: true }, hidden: new Set(C.hidden), range: C.range };
+  CHARTS[id] = { series: C.series, opts: { ...C.opts, width: 1200, height: 480, big: true }, hidden: new Set(C.hidden), range: C.range, smooth: C.smooth };
   const ov = document.createElement("div");
   ov.className = "overlay ch-overlay";
   ov.innerHTML = `<div class="modal ch-modal"><div class="ch-mhead"><h2>${esc(chartTitle(box))}</h2><button class="btn" data-chclose>Close</button></div><div class="chartbox" id="${id}">${chartInner(id)}</div></div>`;
@@ -726,7 +750,7 @@ function chartPng(box) {
   bg.setAttribute("width", "100%"); bg.setAttribute("height", "100%"); bg.setAttribute("fill", dark ? "#151b26" : "#ffffff");
   copy.insertBefore(bg, style.nextSibling);
   // the legend underneath, as text, so the picture explains itself
-  const C = CHARTS[box.id], names = C.series.map((s, i) => ({ n: s.name, c: s.color || PALETTE[i % PALETTE.length], off: C.hidden.has(i) })).filter((x) => !x.off);
+  const C = CHARTS[box.id], names = C.series.map((s, i) => ({ n: s.name, c: seriesCol(s, i), off: C.hidden.has(i) })).filter((x) => !x.off);
   const H = vb.height + (names.length > 1 ? 22 : 0);
   copy.setAttribute("height", H); copy.setAttribute("viewBox", `0 0 ${vb.width} ${H}`);
   if (names.length > 1) {
@@ -1247,7 +1271,8 @@ document.addEventListener("click", (e) => {
   const th = e.target.closest("table.data > thead th");
   if (!th || th.hasAttribute("data-sort") || e.target.closest("a, button, input, select")) return;
   const table = th.closest("table");
-  if (table.classList.contains("nosort") || !th.textContent.trim()) return;
+  // group headings (spanning several columns) don't sort: only the column headings below them do
+  if (table.classList.contains("nosort") || !th.textContent.trim() || th.colSpan > 1 || th.parentNode.classList.contains("grp-row")) return;
   const col = [...th.parentNode.children].indexOf(th), tbody = table.tBodies[0];
   if (!tbody) return;
   // keep fold-out rows (form panels, record history) with the row above them
@@ -1263,7 +1288,9 @@ document.addEventListener("click", (e) => {
   const prev = th.dataset.cdir;
   const dir = prev ? (prev === "asc" ? "desc" : "asc") : numeric ? "desc" : "asc";
   [...th.parentNode.children].forEach((x) => { delete x.dataset.cdir; const a = x.querySelector(".sarr"); if (a) a.remove(); });
+  [...th.parentNode.children].forEach((x) => x.removeAttribute("aria-sort"));
   th.dataset.cdir = dir;
+  th.setAttribute("aria-sort", dir === "asc" ? "ascending" : "descending");
   th.insertAdjacentHTML("beforeend", `<span class="sarr"> ${dir === "asc" ? "▲" : "▼"}</span>`);
   const val = (x) => (numeric ? (x.key.num ? x.key.k : x.key.n2 !== null && x.key.n2 !== undefined ? x.key.n2 : null) : x.key.k === null ? null : String(x.key.k));
   keyed.sort((a, b) => {
@@ -2225,7 +2252,7 @@ function stableHead(d, on) {
     <div class="subtabs"><a href="#/stable/${id}" class="${on === "overview" ? "on" : ""}">Overview</a><a href="#/stable/${id}/financials" class="${on === "financials" ? "on" : ""}">Financials</a><a href="#/stable/${id}/horse-money" class="${on === "horse-money" ? "on" : ""}">Horse finances</a><a href="#/stable/${id}/awards" class="${on === "awards" ? "on" : ""}">Awards</a></div>`;
 }
 // the stable's money charts (moved here from the Overview tab in 10.2): same data, now on a log scale
-const STABLE_LOG = { scale: "symlog", logC: 1000, yFmt: fMoneyShort, tipFmt: fMoney };
+const STABLE_LOG = { scale: "auto", logC: 1000, yFmt: fMoneyShort, tipFmt: fMoney };
 
 async function stablePage(id) {
   const d = await api("stable/" + id);
@@ -2547,7 +2574,6 @@ document.addEventListener("input", (e) => {
 // ------------------------------------------------------------------ people: Family tree tab and Dynasty tab
 const yrs = (r) => (r.birth ? yr(r.birth) : "?") + (r.died ? "–" + yr(r.died) : "");
 const pLink = (r) => (r && r.id ? `${L.person(r.id, r.name)}${r.died ? ' <span class="muted">†</span>' : ""}${r.is_player ? ' <span class="badge good">You</span>' : ""}` : '<span class="muted">—</span>');
-const GEN_WORDS = ["", "Parents", "Grandparents", "Great-grandparents", "Great-great-grandparents", "3× great-grandparents", "4× great-grandparents", "5× great-grandparents", "6× great-grandparents"];
 // what an ancestor is to you: Father, Grandmother, 3× great-grandfather...
 const ancWord = (gen, male) => {
   const w = male ? ["father", "grandfather"] : ["mother", "grandmother"];
@@ -2677,8 +2703,6 @@ async function personTreePage(route) {
     lines.push(`M${from},${mids.length === 2 ? yMid : y + TC.H} V${rowY(path.length) - TC.GY / 2} H${cx} V${rowY(path.length)}`);
   };
   // --- descendants: a person with their partners beside them and each partner's children below that couple
-  const fams = (pid, root) => (root ? f.descendants : (card(pid) && card(pid)._f) || []);
-  const famList = (node, level) => (level >= down ? [] : (node.families || []));
   const wFam = (fam, level) => {
     const kids = level < down ? fam.children : [];
     const kw = kids.map((k) => wDown(k, level + 1)).reduce((a, b) => a + b, 0) + TC.GX * Math.max(0, kids.length - 1);
@@ -4376,7 +4400,24 @@ function addCsvButtons(root) {
     wrap.parentNode.insertBefore(bar, wrap);
   }
 }
-new MutationObserver(() => addCsvButtons(APP)).observe(APP, { childList: true, subtree: true });
+// sortable column headings can be reached with Tab and sorted with Enter or Space
+function markSortable(root) {
+  for (const tbl of root.querySelectorAll("table.data:not([data-kb])")) {
+    tbl.dataset.kb = "1";
+    if (!tbl.tHead || !tbl.tHead.rows.length) continue;
+    const row = tbl.tHead.rows[tbl.tHead.rows.length - 1];
+    for (const th of row.cells) {
+      const server = th.hasAttribute("data-sort"), client = !tbl.classList.contains("nosort") && th.colSpan === 1 && th.textContent.trim();
+      if (!server && !client) continue;
+      th.tabIndex = 0;
+      if (th.classList.contains("sorted")) th.setAttribute("aria-sort", /▲/.test(th.textContent) ? "ascending" : "descending");
+    }
+  }
+}
+document.addEventListener("keydown", (e) => {
+  if ((e.key === "Enter" || e.key === " ") && e.target.matches && e.target.matches("table.data > thead th[tabindex]")) { e.preventDefault(); e.target.click(); }
+});
+new MutationObserver(() => { addCsvButtons(APP); markSortable(APP); }).observe(APP, { childList: true, subtree: true });
 // quick filter: hide rows that don't contain the text (a row's fold-out goes with it); Esc clears
 function filterTable(inp) {
   const tbl = inp._tbl, q = inp.value.trim().toLowerCase();
@@ -4536,6 +4577,8 @@ function applyTheme(mode) {
   document.documentElement.classList.toggle("dark", dark);
   if (window.hrmColours) window.hrmColours();   // each mode has its own custom colours
   if ($("#colour-box")) drawColours();
+  // charts pick their line colours for the mode when drawn, so redraw any on screen
+  $$(".chartbox").forEach((b) => { if (CHARTS[b.id]) b.innerHTML = chartInner(b.id); });
 }
 // ------------------------------------------------------------------ your own colours (Settings > Colours), one set for light mode and one for dark
 const COLOUR_KEYS = [["accent", "Accent", "Buttons, links, selected tabs", "--blue"], ["header", "Top bar", "The bar across the top", "--header"],

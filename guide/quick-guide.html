@@ -174,7 +174,7 @@
   <h2><span class="n">8</span>Tables &amp; charts</h2>
   <h3>Tables</h3>
   <ul>
-    <li><b>Sort</b>: click any column heading (click again to reverse).</li>
+    <li><b>Sort</b>: click any column heading (click again to reverse). A faint <span class="k">↕</span> shows when you point at one. With the keyboard, <span class="k">Tab</span> to a heading and press <span class="k">Enter</span>.</li>
     <li><b>Filter rows</b>: bigger tables have a filter box next to their CSV button. <span class="k">Esc</span> clears it.</li>
     <li><b>CSV</b>: downloads the table for Excel. On list pages, <span class="ui">Export CSV</span> at the top downloads every matching row, not just the page.</li>
     <li><b>Rows per page</b>: change it under a list (up to 5,000), or set a default in Settings.</li>
@@ -182,8 +182,9 @@
   <h3>Charts</h3>
   <ul>
     <li>Point at a chart for exact values on that date.</li>
-    <li><span class="ui">Linear / Log</span> switches the scale; Log stops one huge value squashing the rest.</li>
-    <li>Time range buttons (All, 10Y … 1M), <span class="k">⤢</span> to open the chart large, <span class="ui">PNG</span> for a picture, <span class="ui">CSV</span> for the numbers.</li>
+    <li><span class="ui">Linear / Log</span> switches the scale; Log stops one huge value squashing the rest. Money charts start on Log only when a few values dwarf the rest.</li>
+    <li><span class="ui">Smooth</span> (charts with lots of points) averages each point with its neighbours so the trend shows through month-to-month swings; click again for the actual values.</li>
+    <li>Time range buttons (All, 10Y … 1M; ranges too short to show a trend are left out), <span class="k">⤢</span> to open the chart large, <span class="ui">PNG</span> for a picture, <span class="ui">CSV</span> for the numbers.</li>
     <li>Click a name in the legend to hide that line; <b>double-click</b> it to show only that line.</li>
   </ul>
 </section>

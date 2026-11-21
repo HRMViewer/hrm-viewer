@@ -443,6 +443,9 @@ tr.rdetail > td { max-width: 0; }               /* keep the panel inside the run
 table.data:not(.nosort) > thead th:not([data-sort]) { cursor: pointer; user-select: none; }
 table.data:not(.nosort) > thead th:not([data-sort]):hover { color: var(--ink); }
 table.data > thead th .sarr { font-size: .85em; color: var(--blue); }
+/* a faint up-down arrow on hover shows a column can be sorted; the focus ring is for keyboard users */
+table.data > thead th[tabindex]:not(.sorted):not([data-cdir]):hover::after { content: " \2195"; font-size: .85em; opacity: .45; }
+table.data > thead th[tabindex]:focus-visible { outline: 2px solid var(--blue); outline-offset: -2px; }
 
 /* 7.6: track condition and sectionals */
 .tc { display: inline-block; padding: 0 8px; border-radius: 5px; font-weight: 700; }
@@ -754,6 +757,7 @@ table.hm-mini td.hm-bar .sbar { width: 90px; margin: 0; }
 .ch-sw button.on { background: var(--navy); color: #fff; }
 .ch-tools { display: inline-flex; gap: 4px; }
 .ch-tools button { border: 1px solid var(--line); background: var(--panel); border-radius: 5px; padding: 1px 7px; font: inherit; font-size: var(--fs-xs); color: var(--muted); cursor: pointer; }
+.ch-tools button.on { background: var(--navy); color: #fff; border-color: var(--navy); }
 .ch-tools button:hover, .ch-sw button:not(.on):hover, .ch-ranges button:not(.on):hover { color: var(--blue); border-color: #9db8ec; }
 .ch-legend .lg-v { font-weight: 700; color: var(--ink); margin-left: 2px; }
 .ch-stats { display: flex; gap: 16px; flex-wrap: wrap; font-size: var(--fs-sm); color: var(--muted); margin-top: 4px; }
@@ -866,8 +870,6 @@ html.hdr-light .topbar { border-bottom: 1px solid var(--line); }
 .bv-row[hidden] { display: none; }
 /* 12.2: updates from GitHub */
 .gh-box { display: flex; flex-direction: column; gap: 6px; align-items: flex-end; text-align: right; }
-.gh-form { display: inline-flex; gap: 6px; }
-.gh-repo { width: 200px; padding: 4px 8px; border: 1px solid var(--line); border-radius: 6px; font: inherit; }
 .gh-links { color: var(--muted); }
 .err-inline { color: var(--bad); font-size: var(--fs-sm); }
 .gh-notes { white-space: pre-wrap; max-height: 50vh; overflow: auto; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; font-size: var(--fs-sm); }

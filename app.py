@@ -1727,10 +1727,8 @@ def api_horses(con, q):
         where.append("h.horse_name like ?")
         params.append("%" + q["q"] + "%")
     status = q.get("status") or "alive"
-    if status == "alive":
-        where.append("h.horse_deceased_date is null and h.horse_horse_id not in (select pk from hrmv_removed where tbl='horses')")
-    elif status == "dead":
-        where.append("h.horse_deceased_date is not null")
+    if status in ("alive", "dead"):
+        where.append(HORSE_STATUS_SQL[status])
     if q.get("gender"):
         where.append("h.horse_gender=?")
         params.append(q["gender"])
@@ -2192,6 +2190,23 @@ def stable_group(con, sid):
     return ids
 
 
+BARE_NAMES = {}
+
+
+def bare_horse_names(con):
+    """Every horse by its name without the game's prefixes, lower case: {name: [(id, stable id), ...]} in id order.
+    Worked out once per loaded save."""
+    if BARE_NAMES.get("gen") != DB_GEN:
+        out = {}
+        sub = HM_NAME_PREFIX.sub
+        for hid, name, stable in con.execute("select horse_horse_id, horse_name, horse_stable_id from horses where horse_name is not null order by horse_horse_id"):
+            bare = (sub("", name) if name[:1] in ("(", "\u2020", " ") else name).strip().lower()
+            out.setdefault(bare, []).append((hid, stable))
+        BARE_NAMES.clear()
+        BARE_NAMES.update(gen=DB_GEN, names=out)
+    return BARE_NAMES["names"]
+
+
 def horse_trades(con, sid):
     """Private horse sales involving this stable or its group: {hid, date, amount, buyer, seller, internal}.
     The game notes them as "<buyer> purchased <horse> from <seller>." and pays from the buying stable to the selling one."""
@@ -2212,14 +2227,14 @@ def horse_trades(con, sid):
         if m:
             wanted.setdefault(HM_NAME_PREFIX.sub("", m.group(1)).strip().lower(), []).append(t)
     # horse names in notes can carry the game's prefixes ((F), (P), †) or not, so match on the bare name
+    names = bare_horse_names(con)
     ids = {}
-    for r in con.execute("select horse_horse_id, horse_name, horse_stable_id from horses where horse_name is not null"):
-        bare = HM_NAME_PREFIX.sub("", r[1]).strip().lower()
-        if bare in wanted:
+    for bare in wanted:
+        for hid, stable in names.get(bare, ()):
             prev = ids.get(bare)
             # several horses with the same name: prefer one that has been with the group
-            if prev is None or (r[2] in group and prev[1] not in group):
-                ids[bare] = (r[0], r[2])
+            if prev is None or (stable in group and prev[1] not in group):
+                ids[bare] = (hid, stable)
     out = []
     for bare, ts in wanted.items():
         if bare not in ids:
@@ -2536,7 +2551,6 @@ PO_TOP = 8           # people per section
 PO_LATEST = 15       # awards / news items sent (the compact panels show the first few)
 PO_NEWS_TYPES = ("HIRE_STAFF", "FIRE_STAFF", "STAFF_RESIGNATION", "STAFF_ROLE_CHANGE", "MARRIAGE_PROPOSAL", "DIVORCE_REQUEST",
                  "SECRET_EXPOSED", "RUMOR", "TRAINING_SUCCESS", "PRAISE")
-GRADED = ("G1", "G2", "G3")
 
 
 PO_AGG = {}          # (data generation, role, year) -> every person's figures in that role, best first
@@ -2544,48 +2558,90 @@ PO_PAGE = 25         # people per page when showing everyone
 
 
 def po_years(con):
-    """Years with race results, newest first (for the year picker)."""
-    key = (DB_GEN, "years")
-    if key not in PO_AGG:
-        PO_AGG[key] = [r[0] for r in con.execute("""select distinct cast(strftime('%Y', race_result_date, 'unixepoch') as int) as y
-            from race_results where race_result_date is not null and (coalesce(race_result_person_jockey_id,0) > 0 or coalesce(race_result_trainer_id,0) > 0)
-            order by y desc""") if r[0]]
-    return PO_AGG[key]
+    """Years with jockeys or trainers on the results, newest first (for the year picker)."""
+    scan = po_scan(con)
+    return sorted({y for k in ("jockeys", "trainers") for (_, y) in scan[k] if y}, reverse=True)
+
+
+PO_LOCK = threading.Lock()
+
+
+def po_scan(con):
+    """Read the race results once and total everyone's record in each role for each year:
+    races, wins, places, prize money, last race date, and G1/G2/G3/Listed wins.
+    A head trainer who is also the trainer is counted once. Kept for the loaded save."""
+    key = (DB_GEN, "scan")
+    with PO_LOCK:
+        if key in PO_AGG:
+            return PO_AGG[key]
+        for k in [k for k in PO_AGG if k[0] != DB_GEN]:
+            PO_AGG.pop(k, None)
+        rc = columns(con, "race_results")
+        want = ["race_result_person_jockey_id", "race_result_trainer_id", "race_result_stable_head_trainer_id", "race_result_stable_manager_id"]
+        sel = ", ".join(c if c in rc else "null" for c in want)
+        grade = {}
+        if has_table(con, "races") and "races_type_of_race" in columns(con, "races"):
+            gi = {"G1": 0, "G2": 1, "G3": 2, "listed": 3}
+            grade = {rid: gi[t] for rid, t in con.execute(
+                "select races_race_id, races_type_of_race from races where races_type_of_race in ('G1','G2','G3','listed')")}
+        out = {"jockeys": {}, "trainers": {}, "managers": {}}
+        J, T, M = out["jockeys"], out["trainers"], out["managers"]
+        years = {}
+
+        def add(d, pid, y, rk, cash, dt, g):
+            a = d.get((pid, y))
+            if a is None:
+                a = d[(pid, y)] = [0, 0, 0, 0, 0, 0, 0, 0, 0]   # starts wins places prize last G1 G2 G3 listed
+            a[0] += 1
+            if rk is not None and 1 <= rk <= 3:
+                a[2] += 1
+                if rk == 1:
+                    a[1] += 1
+                    if g is not None:
+                        a[5 + g] += 1
+            if cash:
+                a[3] += cash
+            if dt and dt > a[4]:
+                a[4] = dt
+        for j, tr, ht, mg, dt, rk, cash, rid in con.execute(
+                "select %s, race_result_date, race_result_rank, race_result_cash_received, race_result_race_id from race_results" % sel):
+            y = years.get(dt)
+            if y is None:
+                y = years[dt] = time.gmtime(dt).tm_year if dt is not None else None
+            g = grade.get(rid)
+            if j and j > 0:
+                add(J, j, y, rk, cash, dt, g)
+            if tr and tr > 0:
+                add(T, tr, y, rk, cash, dt, g)
+            if ht and ht > 0 and ht != tr:
+                add(T, ht, y, rk, cash, dt, g)
+            if mg and mg > 0:
+                add(M, mg, y, rk, cash, dt, g)
+        PO_AGG[key] = out
+        return out
 
 
 def po_agg(con, key, year):
-    """Everyone's record in one role (all time or one calendar year): races, wins, places, prize money, last race date,
-    and Group (G1/G2/G3) and Listed wins. Worked out once per loaded save and kept."""
+    """Everyone's record in one role, all time (year None) or one calendar year, best first."""
     ck = (DB_GEN, key, year)
     if ck in PO_AGG:
         return PO_AGG[ck]
-    for k in [k for k in PO_AGG if k[0] != DB_GEN]:
-        PO_AGG.pop(k, None)
-    rc = columns(con, "race_results")
-    cols = [c for c in PO_ROLES[key]["cols"] if c in rc]
-    when = ""
-    args = []
-    if year:
-        when = " and race_result_date >= ? and race_result_date < ?"
-        args = [calendar.timegm((year, 1, 1, 0, 0, 0)), calendar.timegm((year + 1, 1, 1, 0, 0, 0))]
-    pick = "race_result_race_id, race_result_rank, race_result_cash_received, race_result_date"
-    # one row per (person, result); a head trainer who is also the trainer is counted once
-    parts, params = [], []
-    for i, c in enumerate(cols):
-        extra = "".join(" and (%s is null or %s <> %s)" % (cols[j], c, cols[j]) for j in range(i))
-        parts.append("select %s as pid, %s from race_results where %s > 0%s%s" % (c, pick, c, extra, when))
-        params += args
-    graded = lambda t: "(select races_race_id from races where races_type_of_race='%s')" % t
-    data = rows(con, """select pid, count(*) as starts, sum(race_result_rank=1) as wins, sum(race_result_rank between 1 and 3) as places,
-            sum(race_result_cash_received) as prize, max(race_result_date) as last,
-            sum(race_result_rank=1 and race_result_race_id in %s) as G1, sum(race_result_rank=1 and race_result_race_id in %s) as G2,
-            sum(race_result_rank=1 and race_result_race_id in %s) as G3, sum(race_result_rank=1 and race_result_race_id in %s) as listed
-            from (%s) group by pid""" % (graded("G1"), graded("G2"), graded("G3"), graded("listed"), " union all ".join(parts)), params) if cols else []
-    for r in data:
-        for k in ("wins", "places", "prize", "G1", "G2", "G3", "listed"):
-            r[k] = r[k] or 0
-        r["group"] = r["G1"] + r["G2"] + r["G3"]
-        r["total_gl"] = r["group"] + r["listed"]
+    per = {}
+    for (pid, y), a in po_scan(con)[key].items():
+        if year and y != year:
+            continue
+        t = per.get(pid)
+        if t is None:
+            per[pid] = list(a)
+        else:
+            for i in (0, 1, 2, 3, 5, 6, 7, 8):
+                t[i] += a[i]
+            t[4] = max(t[4], a[4])
+    data = []
+    for pid, a in per.items():
+        g = a[5] + a[6] + a[7]
+        data.append({"pid": pid, "starts": a[0], "wins": a[1], "places": a[2], "prize": a[3], "last": a[4] or None,
+                     "G1": a[5], "G2": a[6], "G3": a[7], "listed": a[8], "group": g, "total_gl": g + a[8]})
     data.sort(key=lambda r: (-r["wins"], -r["prize"]))
     PO_AGG[ck] = data
     return data
@@ -3202,7 +3258,6 @@ def api_table(con, name, q):
 
 DERIVED_VERSION = 6
 YEAR = 365.2425 * 86400
-STAKES_TYPES = "('G1','G2','G3','listed')"
 
 
 def build_derived(con):
@@ -3360,10 +3415,8 @@ def horse_table_query(con, q):
     if q.get("q"):
         where.append("h.horse_name like ?"); params.append("%" + q["q"] + "%")
     status = q.get("status") or "alive"
-    if status == "alive":
-        where.append("h.horse_deceased_date is null and h.horse_horse_id not in (select pk from hrmv_removed where tbl='horses')")
-    elif status == "dead":
-        where.append("h.horse_deceased_date is not null")
+    if status in ("alive", "dead"):
+        where.append(HORSE_STATUS_SQL[status])
     if q.get("gender"):
         where.append("h.horse_gender=?"); params.append(q["gender"])
     if q.get("stable"):
@@ -4318,13 +4371,7 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def send_json(self, obj, code=200):
-        body = json.dumps(obj, default=str).encode("utf-8")
-        self.send_response(code)
-        self.send_header("Content-Type", "application/json; charset=utf-8")
-        self.send_header("Content-Length", str(len(body)))
-        self.send_header("Cache-Control", "no-store")
-        self.end_headers()
-        self.wfile.write(body)
+        self.send_body(json.dumps(obj, default=str).encode("utf-8"), code)
 
     def do_GET(self):
         url = urlparse(self.path)
@@ -4797,7 +4844,7 @@ class Handler(BaseHTTPRequestHandler):
 
 # --------------------------------------------------------------------------- in-app updates
 
-VERSION = "14.2"
+VERSION = "14.3"
 BACKUP_DIR = os.path.join(APP_DIR, "backups")
 UPDATE_PENDING = os.path.join(DATA_DIR, "update_pending.json")
 UPDATE_RESULT = os.path.join(DATA_DIR, "update_result.json")

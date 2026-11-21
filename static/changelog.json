@@ -1,5 +1,21 @@
 [
   {
+    "version": "14.3",
+    "date": "2026-11-21",
+    "title": "Faster pages, clearer tables and charts",
+    "changes": [
+      "People overview opens faster (about 6 seconds down to 4 the first time after loading a save, and it's done in the background), and switching to another year now takes a fraction of a second instead of about 4 seconds.",
+      "Horse finances tab opens faster: horse names for trading fees are matched once per save instead of every time.",
+      "Charts: money charts now pick Linear or Log for you. Log is used only when a few values dwarf the rest, so the year-by-year chart and Net worth & cash read naturally (Linear / Log still switches).",
+      "Charts: new Smooth button on charts with lots of points, which averages each point with its neighbours to show the trend through the monthly ups and downs.",
+      "Charts: lines are brighter in dark mode so they stand out, and they recolour straight away when you switch modes.",
+      "Charts: time ranges too short to show anything (such as 1M on a monthly chart) are no longer offered, so the buttons fit on one row.",
+      "Tables: a faint ↕ shows on a heading you can sort by; headings can be sorted from the keyboard (Tab, then Enter).",
+      "Tables: clicking a group heading above the columns (such as Group & Listed) no longer sorts the table by the wrong column.",
+      "Behind the scenes: removed unused code and styles and shared a few repeated pieces."
+    ]
+  },
+  {
     "version": "14.2",
     "date": "2026-11-21",
     "title": "People overview by year, and everyone",
