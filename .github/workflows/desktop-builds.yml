@@ -145,7 +145,12 @@ jobs:
       - name: Sign it (ad hoc, free) and zip it
         run: |
           exec > >(tee -a "$RUNNER_TEMP/log.txt") 2>&1
-          codesign --force --deep --sign - "dist/HRM Viewer.app"
+          # sign every program file inside first (the Pythons' libraries and the Intel Python aren't signed when they
+          # arrive), then the app around them: free "ad hoc" signatures, which Macs need to run code
+          find "dist/HRM Viewer.app/Contents/Resources" -type f \( -name "*.so" -o -name "*.dylib" -o -perm -u+x \) -print0 \
+            | while IFS= read -r -d '' f; do if file -b "$f" | grep -q "Mach-O"; then codesign --force --sign - "$f"; fi; done
+          echo "signed $(find "dist/HRM Viewer.app/Contents/Resources" -type f \( -name "*.so" -o -name "*.dylib" \) | wc -l) libraries"
+          codesign --force --sign - "dist/HRM Viewer.app"
           codesign --verify --deep --verbose=2 "dist/HRM Viewer.app"
           V=$(cat dist/version.txt)
           ditto -c -k --sequesterRsrc --keepParent "dist/HRM Viewer.app" "dist/HRM-Viewer-$V-mac.zip"
@@ -169,6 +174,14 @@ jobs:
           cp -R "$RUNNER_TEMP/dl/HRM Viewer.app" "$RUNNER_TEMP/nopy.app" && rm -rf "$RUNNER_TEMP/nopy.app/Contents/Resources/python-"*
           codesign --force --deep --sign - "$RUNNER_TEMP/nopy.app" && xattr -w -r com.apple.quarantine "0083;$(printf %x $(date +%s));Safari;" "$RUNNER_TEMP/nopy.app"
           echo "--- without the Pythons:"; syspolicy_check distribution "$RUNNER_TEMP/nopy.app" 2>&1 | grep -E "Error$|Ticket|Xprotect|passed|failed" || true
+          # and a plain "hello" app built here and signed the same way: if it gets the same message, it's just how this check
+          # treats any app that isn't notarised
+          mkdir -p "$RUNNER_TEMP/Hello.app/Contents/MacOS" && printf 'int main(){return 0;}' > "$RUNNER_TEMP/h.c"
+          clang -o "$RUNNER_TEMP/Hello.app/Contents/MacOS/Hello" "$RUNNER_TEMP/h.c"
+          /usr/libexec/PlistBuddy -c "Add :CFBundleExecutable string Hello" -c "Add :CFBundleIdentifier string test.hello" -c "Add :CFBundlePackageType string APPL" "$RUNNER_TEMP/Hello.app/Contents/Info.plist"
+          codesign --force --sign - "$RUNNER_TEMP/Hello.app" && xattr -w -r com.apple.quarantine "0083;$(printf %x $(date +%s));Safari;" "$RUNNER_TEMP/Hello.app"
+          echo "--- a plain hello app:"; syspolicy_check distribution "$RUNNER_TEMP/Hello.app" 2>&1 | grep -E "Error$|Ticket|Xprotect|passed|failed" || true
+          codesign --verify --deep --strict --verbose=2 "dist/HRM Viewer.app" 2>&1 | tail -3 || true
 
       - name: Try it
         timeout-minutes: 8
