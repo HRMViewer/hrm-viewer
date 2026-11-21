@@ -1012,3 +1012,12 @@ table.sr-table td.sr-rank { color: var(--muted); width: 3em; }
 table.sr-table tr.me td.sr-rank { color: var(--ink); font-weight: 700; }
 table.sr-table .sr-val { color: #1e7a45; }
 html.dark table.sr-table .sr-val { color: #4cc38a; }
+
+/* ---------- short messages in the corner (Mac/Linux window: "Saved to Downloads") */
+#toasts { position: fixed; right: 18px; bottom: 18px; z-index: 1000; display: flex; flex-direction: column; gap: 8px; align-items: flex-end; }
+.toast { display: flex; align-items: center; gap: 12px; background: var(--navy); color: #fff; padding: 10px 14px; border-radius: 10px;
+  box-shadow: 0 6px 24px rgba(10, 26, 59, .25); font-size: var(--fs-sm); max-width: 460px; transition: opacity .5s, transform .5s; }
+.toast b { word-break: break-all; }
+.toast .btn { flex: none; }
+.toast.out { opacity: 0; transform: translateY(8px); }
+html.dark .toast { background: #26324a; }

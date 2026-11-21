@@ -1553,7 +1553,7 @@ def api_status(con, q):
     out = {"loaded": bool(con), "meta": meta, "last_path": cfg.get("last_path"), "job": job_snapshot(), "app": update_status(),
            "db": {"id": ACTIVE["id"], "name": slot_name(ACTIVE["id"]), "legacy": ACTIVE["id"] == LEGACY_ID},
            "legacy": legacy_present(), "db_count": len(list_slots()), "desktop": os.environ.get("HRMV_DESKTOP") == "1",
-           "has_exe": os.path.exists(os.path.join(APP_DIR, DESKTOP_EXE))}
+           "has_exe": os.path.exists(os.path.join(APP_DIR, DESKTOP_EXE)), "platform": PLATFORM, "windowed": WINDOWED}
     if con:
         if meta.get("player_id"):
             out["player"] = one(con, "select person_person_id as id, person_full_name as name from persons where person_person_id=?", (meta["player_id"],))
@@ -4565,6 +4565,71 @@ def gallery_delete(hid, name):
     return horse_gallery(hid)
 
 
+# ------------------------------------------------------------------ Mac and Linux desktop app helpers
+PLATFORM = "windows" if os.name == "nt" else ("mac" if sys.platform == "darwin" else "linux")
+# shown in the app's own window on Mac or Linux (WebKit): downloads and outside links are handed to the viewer,
+# which saves to Downloads and opens links in the browser (a bare web view does neither by itself)
+WINDOWED = os.environ.get("HRMV_WINDOW") == "webkit"
+
+
+def downloads_dir():
+    home = os.path.expanduser("~")
+    d = None
+    if PLATFORM == "linux" and shutil.which("xdg-user-dir"):
+        import subprocess
+        try:
+            out = subprocess.run(["xdg-user-dir", "DOWNLOAD"], capture_output=True, text=True, timeout=5).stdout.strip()
+            if out and os.path.abspath(out) != os.path.abspath(home):
+                d = out
+        except Exception:
+            pass
+    d = d or os.path.join(home, "Downloads")
+    os.makedirs(d, exist_ok=True)
+    return d
+
+
+def save_download(name, data):
+    """Save a file the page asked to download into the Downloads folder; never overwrites (adds (1), (2)...)."""
+    name = os.path.basename((name or "").replace("\\", "/")).strip().lstrip(".") or "download"
+    name = re.sub(r'[\x00-\x1f<>:"|?*/]', "_", name)[:180]
+    d = downloads_dir()
+    stem, ext = os.path.splitext(name)
+    path, n = os.path.join(d, name), 1
+    while os.path.exists(path):
+        path, n = os.path.join(d, "%s (%d)%s" % (stem, n, ext)), n + 1
+    with open(path, "wb") as f:
+        f.write(data)
+    return path
+
+
+def open_outside(target):
+    """Open a web address in the browser, or a folder in Finder / the file manager."""
+    import subprocess
+    if PLATFORM == "windows":
+        os.startfile(target)
+    else:
+        subprocess.Popen(["open" if PLATFORM == "mac" else "xdg-open", target], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+def linux_menu_entry():
+    """Add HRM Viewer to the applications menu (~/.local/share/applications), opening the "HRM Viewer" launcher."""
+    launcher = os.environ.get("HRMV_LAUNCHER") or os.path.join(APP_DIR, "HRM Viewer")
+    if not os.path.exists(launcher):
+        raise OSError("Couldn't find the HRM Viewer launcher next to app.py.")
+    esc = lambda v: '"%s"' % re.sub(r'(["`$\\])', r"\\\1", v)
+    icon = os.path.join(APP_DIR, "hrm-viewer.png")
+    lines = ["[Desktop Entry]", "Type=Application", "Name=HRM Viewer", "Comment=Browse your Horse Racing Manager save",
+             "Exec=%s %%f" % esc(launcher), "Icon=%s" % (icon if os.path.exists(icon) else "applications-games"),
+             "Terminal=false", "Categories=Game;Utility;", "StartupWMClass=hrm-viewer-window"]
+    d = os.path.join(os.environ.get("XDG_DATA_HOME") or os.path.join(os.path.expanduser("~"), ".local", "share"), "applications")
+    os.makedirs(d, exist_ok=True)
+    path = os.path.join(d, "hrm-viewer.desktop")
+    with open(path, "w") as f:
+        f.write("\n".join(lines) + "\n")
+    os.chmod(path, 0o755)
+    return path
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = "HRMViewer/1.0"
 
@@ -4872,6 +4937,44 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         path = urlparse(self.path).path
+        # only the viewer's own pages (and the desktop apps, which send no Origin) may change things:
+        # a web page elsewhere can't reach into the viewer through your browser
+        origin = self.headers.get("Origin")
+        if origin and not re.match(r"^https?://(127\.0\.0\.1|localhost)(:\d+)?$", origin):
+            return self.send_json({"error": "Not allowed."}, 403)
+        if path == "/api/desktop/save":
+            if not WINDOWED:
+                return self.send_json({"error": "Only for the HRM Viewer window on Mac and Linux."}, 400)
+            length = to_int(self.headers.get("Content-Length"), 0)
+            if length <= 0 or length > 1024 * 1024 * 1024:
+                return self.send_json({"error": "Nothing to save."}, 400)
+            data = self.rfile.read(length)
+            name = parse_qs(urlparse(self.path).query).get("name", ["download"])[-1]
+            try:
+                return self.send_json({"ok": True, "path": save_download(name, data)})
+            except OSError as e:
+                return self.send_json({"error": "Couldn't save it: %s" % e}, 500)
+        if path in ("/api/desktop/open", "/api/desktop/reveal"):
+            length = to_int(self.headers.get("Content-Length"), 0)
+            try:
+                data = json.loads(self.rfile.read(length) or b"{}") if length else {}
+            except ValueError:
+                data = {}
+            if path == "/api/desktop/open":
+                url = str(data.get("url") or "")
+                if not re.match(r"^https?://", url):
+                    return self.send_json({"error": "Only web addresses can be opened."}, 400)
+                open_outside(url)
+                return self.send_json({"ok": True})
+            p = os.path.abspath(str(data.get("path") or ""))
+            if not p.startswith(os.path.abspath(downloads_dir()) + os.sep) or not os.path.exists(p):
+                return self.send_json({"error": "Only files saved to Downloads can be shown."}, 400)
+            if PLATFORM == "mac":
+                import subprocess
+                subprocess.Popen(["open", "-R", p])
+            else:
+                open_outside(os.path.dirname(p))
+            return self.send_json({"ok": True})
         m = re.match(r"^/api/horse_images/(-?\d+)(?:/(main|banner|bannerview|delete))?$", path)
         if m:
             hid, act = int(m.group(1)), m.group(2)
@@ -4949,6 +5052,11 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json({"ok": True})
         if path == "/api/desktop/shortcut":
             # put "HRM Viewer" shortcuts on the desktop and in the Start menu (Windows)
+            if PLATFORM == "linux":
+                try:
+                    return self.send_json({"ok": True, "path": linux_menu_entry()})
+                except OSError as e:
+                    return self.send_json({"error": "Couldn't add it to the menu: %s" % e}, 500)
             exe = os.path.join(APP_DIR, DESKTOP_EXE)
             if os.name != "nt" or not os.path.exists(exe):
                 return self.send_json({"error": "This only works on Windows with HRM Viewer.exe in the viewer's folder."}, 400)
@@ -5165,6 +5273,8 @@ def replace_file(rel, content):
 
 
 def install_files(files, remove_others=True):
+    if PLATFORM != "windows":   # updates carry the Windows app too; Mac and Linux have their own
+        files = {rel: c for rel, c in files.items() if rel not in ("static/desktop-app.exe", "HRM Viewer.new.exe")}
     for rel, content in files.items():
         replace_file(rel, content)
     if remove_others:
@@ -5199,6 +5309,9 @@ GITHUB_API = os.environ.get("HRMV_GITHUB_API", "https://api.github.com")
 GH_CACHE = {"at": 0, "repo": None, "data": None}
 GH_REL_CACHE = {"at": 0, "data": None}
 GH_OLDEST = "12.4"   # going back further would lose the built-in Python, so older releases aren't offered
+GH_OLDEST_UNIX = "14.6"   # the first version made for Mac and Linux
+FULL_ASSET = {"windows": r"^HRM-Viewer-[\d.]+-full\.zip$", "mac": r"^HRM-Viewer-[\d.]+-mac\.zip$",
+              "linux": r"^HRM-Viewer-[\d.]+-linux\.tar\.gz$"}
 
 
 def github_repo():
@@ -5238,7 +5351,7 @@ def github_check(force=False):
         tag = str(rel.get("tag_name") or "").lstrip("vV")
         assets = rel.get("assets") or []
         upd = next((a for a in assets if re.match(r"^HRM-Viewer-update-[\d.]+\.zip$", a.get("name") or "")), None)
-        full = next((a for a in assets if re.match(r"^HRM-Viewer-[\d.]+-full\.zip$", a.get("name") or "")), None)
+        full = next((a for a in assets if re.match(FULL_ASSET[PLATFORM], a.get("name") or "")), None)
         out.update({"latest": tag, "name": rel.get("name") or tag, "notes": (rel.get("body") or "")[:4000],
                     "published": rel.get("published_at"), "release_page": rel.get("html_url"),
                     "update_url": upd and upd.get("browser_download_url"), "update_size": upd and upd.get("size"),
@@ -5264,7 +5377,8 @@ def github_releases(force=False):
             continue
         v = str(rel.get("tag_name") or "").lstrip("vV")
         upd = next((a for a in rel.get("assets") or [] if a.get("name") == "HRM-Viewer-update-%s.zip" % v), None)
-        if not v or not upd or not re.match(r"^\d+(\.\d+)*$", v) or version_tuple(v) < version_tuple(GH_OLDEST):
+        oldest = GH_OLDEST if PLATFORM == "windows" else GH_OLDEST_UNIX
+        if not v or not upd or not re.match(r"^\d+(\.\d+)*$", v) or version_tuple(v) < version_tuple(oldest):
             continue
         out.append({"version": v, "name": rel.get("name") or v, "notes": (rel.get("body") or "")[:4000],
                     "published": rel.get("published_at"), "page": rel.get("html_url"),
@@ -5380,7 +5494,7 @@ def sync_desktop_exe():
     If HRM Viewer.exe is open (and so can't be replaced), leave the new one as HRM Viewer.new.exe:
     the app swaps it in the next time it starts."""
     src = os.path.join(STATIC_DIR, "desktop-app.exe")
-    if not os.path.exists(src):
+    if os.name != "nt" or not os.path.exists(src):
         return
     dst = os.path.join(APP_DIR, DESKTOP_EXE)
     try:
@@ -5487,7 +5601,24 @@ class ViewerServer(ThreadingHTTPServer):
         super().server_bind()
 
 
+def watch_launcher():
+    """Mac and Linux app: the launcher keeps a pipe open to the viewer. When the launcher goes away for any reason
+    (window closed, Quit from the Dock, a crash), the pipe closes and the viewer stops too, rather than staying behind."""
+    if os.environ.get("HRMV_WATCH_STDIN") != "1":
+        return
+
+    def run():
+        try:
+            while sys.stdin.buffer.read(4096):
+                pass
+        except Exception:
+            pass
+        os._exit(0)
+    threading.Thread(target=run, daemon=True).start()
+
+
 def main():
+    watch_launcher()
     if "--child" not in sys.argv[1:] and os.environ.get("HRMV_NO_SUPERVISOR") != "1":
         # Run the real viewer in a child process so it can restart itself after an update.
         sys.exit(supervise(sys.argv[1:]))

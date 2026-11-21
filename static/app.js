@@ -4094,7 +4094,7 @@ function openLoad(resume) {
         <label><input type="radio" name="load-into" value="new"> A new database named <input type="text" id="load-newname" placeholder="e.g. Second career" style="width:220px"></label></div>
       <p class="help">Use a new database for a different save, so each save keeps its own history. You can switch between them on the <a href="#/databases" onclick="document.getElementById('load-ov').remove()">Databases</a> page.</p>
       <h3>From its location on this computer (recommended)</h3>
-      <div class="row"><input type="text" id="load-path" value="${esc(last || "")}" placeholder="C:\\Users\\you\\...\\database.db"><button class="btn primary" id="load-path-btn">Load</button></div>
+      <div class="row"><input type="text" id="load-path" value="${esc(last || "")}" placeholder="${pathHint("database.db")}"><button class="btn primary" id="load-path-btn">Load</button></div>
       <p class="help">Paste the full path to <code>database.db</code>, or to the folder it's in. It's remembered, so next time you can just press Load. To get the path in File Explorer, hold Shift, right-click the file and choose “Copy as path”.</p>
       <div class="or">or</div>
       <h3>Choose the file</h3>
@@ -4817,11 +4817,18 @@ function settingsPage() {
   ].join("") : '<div class="empty">No stables found for your player in this database.</div>') +
     panel("Viewer", [
     row("Version", `HRM Viewer <b>${esc(a.version || "")}</b>`, `<a class="btn" href="#/versions">Versions &amp; changes</a>`),
-    STATUS && STATUS.desktop
+    STATUS && STATUS.desktop && STATUS.platform === "mac"
+      ? row("Desktop app", "You're using the HRM Viewer app. Keep it in your Applications folder and drag it to the Dock to open it like any other app. Your data is kept in Library/Application Support/HRM Viewer, so it stays when you replace the app with a newer one.", "")
+      : STATUS && STATUS.desktop && STATUS.platform === "linux"
+      ? row("Desktop app", "You're using the HRM Viewer app. Add it to your applications menu to open it like any other program.", `<button class="btn" id="set-shortcut">Add to menu</button>`)
+      : STATUS && STATUS.desktop
       ? row("Desktop app", "You're using the HRM Viewer app. Add it to your desktop and Start menu to open it like any other program.", `<button class="btn" id="set-shortcut">Add shortcuts</button>`)
       : STATUS && STATUS.has_exe
         ? row("Desktop app", "HRM Viewer can open in its own window instead of the browser: close this, then double-click <b>HRM Viewer.exe</b> in the viewer's folder.", "")
         : "",
+    STATUS && STATUS.desktop && STATUS.platform === "linux" && !STATUS.windowed
+      ? row("Stop the viewer", "HRM Viewer is running in your browser because it couldn't open its own window (install WebKitGTK for that). Closing the browser tab leaves it running; stop it here when you're done.", `<button class="btn" id="set-stop">Stop the viewer</button>`)
+      : "",
     row("Updates", "New versions come from GitHub. The viewer checks for them, offers to install them, and can go back to an earlier one. Untick “Check for updates automatically” to only check when you press Check now.", `<div id="gh-box" class="gh-box"><span class="muted small">Checking…</span></div>`),
     row("Install an update", "Or choose an HRM-Viewer-update zip file you've downloaded. Your data isn't touched.", `<button class="btn primary" data-open-update>Install an update</button>`),
     row("Quick Guide", "How to use the main features, as a PDF. It's updated with every version (also in your HRM Viewer folder).",
@@ -4847,7 +4854,7 @@ async function drawAutoBox() {
       <div class="set-h">The viewer watches the <b>database.db</b> this database was loaded from. When the game saves, it waits until the file is finished and loads it the normal way (newest wins, history kept). It only does this for the same save, never for an older file or a different career.</div></div>
       <div class="set-c"><label class="switch"><input type="checkbox" id="auto-on" ${st.enabled ? "checked" : ""}><span></span></label></div></div>
     <div class="set-row"><div style="flex:1"><div class="set-t">File being watched</div><div class="set-h">${a.path ? `<code>${esc(a.path)}</code>${a.exists ? (a.file_mtime ? ` · last changed ${new Date(a.file_mtime * 1000).toLocaleString("en-NZ")}` : "") : ' · <b class="bad-t">not found</b>'}` : "None yet — enter the path to the game's database.db below."}</div>
-        <div class="row-f"><input type="text" id="auto-path" value="${esc(a.path || "")}" placeholder="C:\\Users\\you\\...\\database.db" style="flex:1;min-width:320px">
+        <div class="row-f"><input type="text" id="auto-path" value="${esc(a.path || "")}" placeholder="${pathHint("database.db")}" style="flex:1;min-width:320px">
           <button class="btn primary" id="auto-path-go">Watch this file</button></div>
         <div class="set-h">Paste the full path to the game's <code>database.db</code> (or the folder it's in). In File Explorer, hold Shift, right-click the file and choose “Copy as path”. It must be the same save as this database; if it's newer than the stored data it's loaded straight away.</div>
         <div id="auto-path-msg"></div></div>
@@ -4889,12 +4896,18 @@ settingsPage.after = () => {
   $("#set-side").onchange = (e) => setSideMenu(e.target.value);
   const st = $("#set-stable");
   if (st) st.onchange = () => { setMyStable(st.value); renderSidebar(); };
+  const stopBtn = $("#set-stop");
+  if (stopBtn) stopBtn.onclick = async () => {
+    await fetch("/api/quit", { method: "POST" }).catch(() => {});
+    APP.innerHTML = `<div class="welcome"><h1>HRM Viewer has stopped</h1><p>You can close this tab. Open HRM Viewer again to carry on.</p></div>`;
+  };
   const sc = $("#set-shortcut");
   if (sc) sc.onclick = async () => {
+    const label = sc.textContent;
     sc.disabled = true; sc.textContent = "Adding…";
     const r = await fetch("/api/desktop/shortcut", { method: "POST" });
     const j = await r.json().catch(() => ({}));
-    sc.textContent = r.ok ? "✓ Added" : "Add shortcuts"; sc.disabled = r.ok;
+    sc.textContent = r.ok ? "✓ Added" : label; sc.disabled = r.ok;
     if (!r.ok) sc.insertAdjacentHTML("afterend", `<div class="err" style="margin-top:6px">${esc(j.error || "Couldn't add the shortcuts.")}</div>`);
   };
   $("#set-reset").onclick = () => {
@@ -4934,7 +4947,7 @@ async function databasesPage() {
     ${panel("Add a new database", `<p class="muted">Load a game save as a separate database, e.g. another career. Your other databases aren't touched.</p>
       <p><button class="btn sm primary" onclick="openLoad(); setTimeout(() => { const r = document.querySelector('input[name=load-into][value=new]'); if (r) { r.checked = true; document.getElementById('load-newname').focus(); } }, 50)">Load a save as a new database</button></p>`)}
     ${panel("Bring in databases from another HRM Viewer folder", `<p class="muted">If you kept an older copy of the viewer (for example a folder you unzipped before), you can bring its stored data in here as a separate database.</p>
-      <div class="row-f"><input type="text" id="imp-path" placeholder="C:\\Users\\you\\Downloads\\HRM Viewer" style="flex:1;min-width:260px"></div>
+      <div class="row-f"><input type="text" id="imp-path" placeholder="${pathHint("Downloads/HRM Viewer", true)}" style="flex:1;min-width:260px"></div>
       <div class="row-f"><label>Name <input type="text" id="imp-name" placeholder="optional — uses the player's name" style="width:240px"></label>
         <label><input type="checkbox" id="imp-move"> Move instead of copy (frees the space in the old folder)</label></div>
       <div class="row-f"><button class="btn sm primary" id="imp-go">Bring it in</button><span id="imp-msg" class="small"></span></div>
@@ -5022,4 +5035,72 @@ window.addEventListener("keydown", (e) => { if (e.key === "Escape") closeDrawer(
   autoPoll();
   if (!STATUS) { APP.innerHTML = `<div class="err-box">Can't reach the viewer. Make sure its window is still open, then refresh this page.</div>`; return; }
   render();
+  setTimeout(offerLinuxMenu, 2500);
 })();
+
+
+// ------------------------------------------------------------------ Mac and Linux
+// an example path in the style of this computer (for the "type a path" boxes)
+function pathHint(tail, dir) {
+  const p = (STATUS && STATUS.platform) || "windows";
+  if (p === "mac") return dir ? "/Users/you/" + tail : "/Users/you/…/" + tail;
+  if (p === "linux") return dir ? "/home/you/" + tail : "/home/you/…/" + tail;
+  return dir ? "C:\\Users\\you\\" + tail.replace(/\//g, "\\") : "C:\\Users\\you\\...\\" + tail;
+}
+// a short message in the corner, with an optional button
+function toast(html, action, ms = 6000) {
+  let box = document.getElementById("toasts");
+  if (!box) { box = document.createElement("div"); box.id = "toasts"; document.body.appendChild(box); }
+  const t = document.createElement("div");
+  t.className = "toast";
+  t.innerHTML = `<span>${html}</span>`;
+  if (action) { const b = document.createElement("button"); b.className = "btn sm"; b.textContent = action[0]; b.onclick = () => { action[1](); t.remove(); }; t.appendChild(b); }
+  box.appendChild(t);
+  setTimeout(() => t.classList.add("out"), ms);
+  setTimeout(() => t.remove(), ms + 600);
+  return t;
+}
+// In the app's own window on Mac and Linux the web view can't download files or open new windows by itself,
+// so the viewer does it: downloads go to your Downloads folder, outside links open in your browser.
+const nativeWindow = () => !!(STATUS && STATUS.windowed);
+async function nativeSave(a) {
+  const t = toast("Saving…");
+  try {
+    const r = await fetch(a.href);
+    if (!r.ok) throw new Error("the file couldn't be made (" + r.status + ")");
+    let name = a.getAttribute("download");
+    if (!name) {
+      const m = /filename\*?=(?:UTF-8'')?"?([^";]+)"?/i.exec(r.headers.get("Content-Disposition") || "");
+      name = m ? decodeURIComponent(m[1]) : decodeURIComponent((a.pathname || "").split("/").pop() || "download");
+    }
+    const res = await (await fetch("/api/desktop/save?name=" + encodeURIComponent(name), { method: "POST", body: await r.blob() })).json();
+    t.remove();
+    if (res.error) throw new Error(res.error);
+    const shown = res.path.split(/[\\/]/).pop();
+    toast(`Saved to Downloads: <b>${esc(shown)}</b>`, [STATUS.platform === "mac" ? "Show in Finder" : "Show in folder",
+      () => fetch("/api/desktop/reveal", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: res.path }) })]);
+  } catch (err) {
+    t.remove();
+    toast(`Couldn't save the file: ${esc(err.message)}`);
+  }
+}
+document.addEventListener("click", (e) => {
+  if (!nativeWindow() || e.defaultPrevented) return;
+  const a = e.target.closest && e.target.closest("a[href]");
+  if (!a) return;
+  if (a.hasAttribute("download")) { e.preventDefault(); e.stopPropagation(); nativeSave(a); return; }
+  const outside = /^https?:/i.test(a.href) && new URL(a.href).origin !== location.origin;
+  if (outside) {
+    e.preventDefault(); e.stopPropagation();
+    fetch("/api/desktop/open", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url: a.href }) });
+  }
+}, true);
+// Linux: offer once to add HRM Viewer to the applications menu (the Windows app asks the same about shortcuts)
+function offerLinuxMenu() {
+  if (!STATUS || !STATUS.desktop || STATUS.platform !== "linux") return;
+  try { if (localStorage.getItem("hrm.menuAsked")) return; localStorage.setItem("hrm.menuAsked", "1"); } catch (e) { return; }
+  toast("Add HRM Viewer to your applications menu, so you can open it like any other program?", ["Add to menu", async () => {
+    const r = await fetch("/api/desktop/shortcut", { method: "POST" });
+    toast(r.ok ? "Added. HRM Viewer is in your applications menu." : "Couldn't add it. You can try again in Settings.");
+  }], 20000);
+}

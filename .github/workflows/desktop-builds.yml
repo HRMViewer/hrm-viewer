@@ -1,0 +1,107 @@
+# Builds the Mac and Linux downloads and tries each one on a real machine (opens the app, checks the viewer
+# answers from its own window, quits, checks it stopped). Used by the release workflow; can also be run by hand
+# or by pushing to the desktop-test branch, which publishes nothing.
+name: Mac and Linux builds
+
+on:
+  workflow_call:
+  workflow_dispatch:
+  push:
+    branches: [desktop-test]
+
+env:
+  GO_VERSION: "1.24.7"
+  PBS_TAG: "20251202"      # python-build-standalone release with the portable Python that ships inside
+  PBS_PY: "3.13.10"
+
+jobs:
+  linux:
+    # built on the oldest supported Ubuntu so it runs on as many Linux versions as possible
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: desktop/go.sum
+
+      - name: WebKitGTK (for the window) and test tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev xvfb imagemagick
+
+      - name: Build the launcher and the window app
+        working-directory: desktop
+        run: |
+          CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o "$RUNNER_TEMP/HRM Viewer" .
+          PKG_CONFIG="$PWD/pkg-config-webkit41.sh" CGO_ENABLED=1 go build -tags webview -trimpath -ldflags "-s -w" -o "$RUNNER_TEMP/hrm-viewer-window" .
+
+      - name: Get the portable Python
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/py.tgz" "https://github.com/astral-sh/python-build-standalone/releases/download/${PBS_TAG}/cpython-${PBS_PY}%2B${PBS_TAG}-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz"
+          mkdir -p "$RUNNER_TEMP/py" && tar xzf "$RUNNER_TEMP/py.tgz" -C "$RUNNER_TEMP/py"
+
+      - name: Make the download
+        run: python3 tools/ci_unix.py linux dist "$RUNNER_TEMP/HRM Viewer" "$RUNNER_TEMP/hrm-viewer-window" "$RUNNER_TEMP/py/python"
+
+      - name: Try it
+        run: bash tools/smoke_linux.sh "$PWD/dist"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-package
+          path: |
+            dist/*.tar.gz
+            dist/linux-screenshot.png
+          if-no-files-found: error
+
+  mac:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: desktop/go.sum
+
+      - name: Build the app for Apple Silicon and Intel Macs
+        working-directory: desktop
+        env:
+          MACOSX_DEPLOYMENT_TARGET: "11.0"
+          CGO_ENABLED: "1"
+        run: |
+          GOARCH=arm64 go build -tags webview -trimpath -ldflags "-s -w" -o "$RUNNER_TEMP/hv-arm64" .
+          GOARCH=amd64 CC="clang -arch x86_64" CXX="clang++ -arch x86_64" go build -tags webview -trimpath -ldflags "-s -w" -o "$RUNNER_TEMP/hv-amd64" .
+          lipo -create -output "$RUNNER_TEMP/HRM Viewer" "$RUNNER_TEMP/hv-arm64" "$RUNNER_TEMP/hv-amd64"
+          lipo -info "$RUNNER_TEMP/HRM Viewer"
+
+      - name: Get the portable Pythons
+        run: |
+          for arch in aarch64 x86_64; do
+            curl -fsSL -o "$RUNNER_TEMP/py-$arch.tgz" "https://github.com/astral-sh/python-build-standalone/releases/download/${PBS_TAG}/cpython-${PBS_PY}%2B${PBS_TAG}-${arch}-apple-darwin-install_only_stripped.tar.gz"
+            mkdir -p "$RUNNER_TEMP/py-$arch" && tar xzf "$RUNNER_TEMP/py-$arch.tgz" -C "$RUNNER_TEMP/py-$arch"
+          done
+
+      - name: Make the app
+        run: python3 tools/ci_unix.py mac dist "$RUNNER_TEMP/HRM Viewer" "$RUNNER_TEMP/py-aarch64/python" "$RUNNER_TEMP/py-x86_64/python"
+
+      - name: Sign it (ad hoc, free) and zip it
+        run: |
+          codesign --force --deep --sign - "dist/HRM Viewer.app"
+          codesign --verify --deep --verbose=2 "dist/HRM Viewer.app"
+          V=$(cat dist/version.txt)
+          ditto -c -k --sequesterRsrc --keepParent "dist/HRM Viewer.app" "dist/HRM-Viewer-$V-mac.zip"
+          ls -la dist
+
+      - name: Try it
+        run: bash tools/smoke_mac.sh "$PWD/dist/HRM Viewer.app" "$PWD/dist"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mac-package
+          path: |
+            dist/*-mac.zip
+            dist/mac-screenshot.png
+          if-no-files-found: error
