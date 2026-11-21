@@ -95,22 +95,6 @@ jobs:
             dist/linux-screenshot.png
           if-no-files-found: error
 
-  # which Mac machines does this repository get? (test builds only: each reports when it starts)
-  mac-probe:
-    if: github.ref == 'refs/heads/desktop-test'
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [macos-15-intel]
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 10
-    steps:
-      - name: Report
-        run: |
-          mkdir -p "$RUNNER_TEMP/p" && cd "$RUNNER_TEMP/p" && echo "${{ matrix.os }}: macOS $(sw_vers -productVersion) $(uname -m) at $(date -u)" > status.txt
-          git init -q && git checkout -q -b "ci-probe-${{ matrix.os }}" && git add -A && git -c user.name=ci -c user.email=ci@localhost commit -qm probe
-          git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" "ci-probe-${{ matrix.os }}"
-
   mac:
     # left out of a release with mac: false (test pushes and manual runs always build it)
     # (written this way because GitHub treats an empty input as equal to false: test pushes have no inputs)
@@ -170,7 +154,8 @@ jobs:
         timeout-minutes: 8
         run: |
           exec > >(tee -a "$RUNNER_TEMP/log.txt") 2>&1
-          bash tools/smoke_mac.sh "$PWD/dist/HRM Viewer.app" "$PWD/dist"
+          # 14.9: a release with the Mac changes, to try an in-app update (going back) on the Mac
+          bash tools/smoke_mac.sh "$PWD/dist/HRM Viewer.app" "$PWD/dist" 14.9
 
 
       - name: Share the results (test builds only)
@@ -193,3 +178,36 @@ jobs:
             dist/*-mac.zip
             dist/mac-screenshot.png
           if-no-files-found: error
+
+  # the same app tried on an Intel Mac (the app holds both; this runs its Intel half and the Intel Python)
+  mac-intel:
+    needs: mac
+    timeout-minutes: 25
+    runs-on: macos-15-intel
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: mac-package
+          path: dist
+
+      - name: Try it on Intel
+        timeout-minutes: 10
+        run: |
+          exec > >(tee -a "$RUNNER_TEMP/log.txt") 2>&1
+          ditto -x -k dist/HRM-Viewer-*-mac.zip dist
+          codesign --verify --deep --verbose=2 "dist/HRM Viewer.app"
+          bash tools/smoke_mac.sh "$PWD/dist/HRM Viewer.app" "$PWD/dist"
+
+      - name: Share the results (test builds only)
+        if: always() && github.ref == 'refs/heads/desktop-test'
+        run: |
+          mkdir -p "$RUNNER_TEMP/res"
+          cp "$RUNNER_TEMP/log.txt" "$RUNNER_TEMP/res/" 2>/dev/null || true
+          cp dist/mac-screenshot.png "$RUNNER_TEMP/res/" 2>/dev/null || true
+          cp "$HOME/Library/Application Support/HRM Viewer/data/desktop.log" "$RUNNER_TEMP/res/desktop.log" 2>/dev/null || true
+          echo "${{ job.status }}" > "$RUNNER_TEMP/res/status.txt"
+          cd "$RUNNER_TEMP/res" && git init -q && git checkout -q -b ci-results-mac-intel && git add -A
+          git -c user.name=ci -c user.email=ci@localhost commit -qm "mac intel results"
+          git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" ci-results-mac-intel
