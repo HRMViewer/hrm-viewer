@@ -150,6 +150,17 @@ jobs:
           ditto -c -k --sequesterRsrc --keepParent "dist/HRM Viewer.app" "dist/HRM-Viewer-$V-mac.zip"
           ls -la dist
 
+      - name: What macOS makes of it after a download
+        run: |
+          exec > >(tee -a "$RUNNER_TEMP/log.txt") 2>&1
+          # unzip a copy and mark it as downloaded by a browser, as a real download would be
+          mkdir -p "$RUNNER_TEMP/dl" && ditto -x -k dist/HRM-Viewer-*-mac.zip "$RUNNER_TEMP/dl"
+          xattr -w -r com.apple.quarantine "0083;$(printf %x $(date +%s));Safari;" "$RUNNER_TEMP/dl/HRM Viewer.app"
+          # expected: "rejected" (not notarized: the person clicks Open Anyway once). "damaged" would mean it can't be opened at all.
+          spctl --assess --type execute -vvv "$RUNNER_TEMP/dl/HRM Viewer.app" 2>&1 | tee "$RUNNER_TEMP/gk.txt" || true
+          if grep -qi "damaged\|invalid signature\|code has no resources" "$RUNNER_TEMP/gk.txt"; then echo "macOS would call it damaged"; exit 1; fi
+          syspolicy_check distribution "$RUNNER_TEMP/dl/HRM Viewer.app" 2>&1 | head -40 || true
+
       - name: Try it
         timeout-minutes: 8
         run: |
