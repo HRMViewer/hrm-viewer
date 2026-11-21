@@ -4086,7 +4086,7 @@ class Handler(BaseHTTPRequestHandler):
 
 # --------------------------------------------------------------------------- in-app updates
 
-VERSION = "12.6"
+VERSION = "12.7"
 BACKUP_DIR = os.path.join(APP_DIR, "backups")
 UPDATE_PENDING = os.path.join(DATA_DIR, "update_pending.json")
 UPDATE_RESULT = os.path.join(DATA_DIR, "update_result.json")
@@ -4226,7 +4226,7 @@ def restore_backup(path):
 # ------------------------------------------------------------------ updates from GitHub Releases
 # Each release is tagged v<version> and carries HRM-Viewer-update-<version>.zip (for the in-app installer) and
 # HRM-Viewer-<version>-full.zip (for new downloads). The viewer asks GitHub for the latest release now and then.
-GITHUB_REPO = "jomdesa-glitch/hrm-viewer"   # the public repository the releases come from
+GITHUB_REPO = "HRMViewer/hrm-viewer"   # the public repository the releases come from
 GITHUB_API = os.environ.get("HRMV_GITHUB_API", "https://api.github.com")
 GH_CACHE = {"at": 0, "repo": None, "data": None}
 GH_REL_CACHE = {"at": 0, "data": None}

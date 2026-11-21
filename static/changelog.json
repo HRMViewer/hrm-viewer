@@ -1,5 +1,13 @@
 [
   {
+    "version": "12.7",
+    "date": "2026-11-21",
+    "title": "New home on GitHub",
+    "changes": [
+      "HRM Viewer now lives at github.com/HRMViewer/hrm-viewer. Updates, All versions and the download page all use the new address (the old one still forwards there)."
+    ]
+  },
+  {
     "version": "12.6",
     "date": "2026-11-21",
     "title": "Stables you manage, and Jockey stats",

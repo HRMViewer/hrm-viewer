@@ -4,7 +4,7 @@ A desktop viewer for **Horse Racing Manager** saves: browse your horses, stables
 
 ## Download
 
-1. Go to **[Releases](https://github.com/jomdesa-glitch/hrm-viewer/releases/latest)** and download **HRM-Viewer-&lt;version&gt;-full.zip**.
+1. Go to **[Releases](https://github.com/HRMViewer/hrm-viewer/releases/latest)** and download **HRM-Viewer-&lt;version&gt;-full.zip**.
 2. Unzip it anywhere (for example your Documents folder).
 3. Double-click **HRM Viewer.exe**, then click **Load new database** and choose your game's `database.db`.
 

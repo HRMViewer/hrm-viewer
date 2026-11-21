@@ -347,7 +347,7 @@ func reportFailure(w webview2.WebView, err error) {
 	case "nopython":
 		msg = "Part of HRM Viewer is missing (its \"python\" folder).\n\nClick OK to open the download page, download HRM-Viewer-<version>-full.zip, unzip it and open HRM Viewer.exe from there. To keep your data, copy your old \"data\" folder into the new HRM Viewer folder."
 		if msgBox(msg, 0x1|0x30) == 1 {
-			openURL("https://github.com/jomdesa-glitch/hrm-viewer/releases/latest")
+			openURL("https://github.com/HRMViewer/hrm-viewer/releases/latest")
 		}
 		if w != nil {
 			w.Terminate()
