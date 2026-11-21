@@ -963,3 +963,24 @@ table.fin-detail.is-in .sbar.type i { background: #9fcbb6; }
 .tc-meta { font-size: var(--fs-xs); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tc-go { position: absolute; right: 6px; top: 4px; font-size: var(--fs-xs); }
 .tc-tag { margin-left: 4px; font-weight: 700; color: #b5872c; }
+/* 13.9: People overview */
+.po-layout { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 16px; align-items: start; }
+.po-main { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.po-side { display: flex; flex-direction: column; gap: 16px; position: sticky; top: 12px; }
+@media (max-width: 1100px) { .po-layout { grid-template-columns: 1fr; } .po-side { position: static; display: grid; grid-template-columns: 1fr 1fr; } }
+@media (max-width: 700px) { .po-side { grid-template-columns: 1fr; } }
+.po-gl { margin-top: 12px; border-top: 1px solid var(--line); padding-top: 10px; }
+.po-gl-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
+.po-pill { font-size: var(--fs-xs); font-weight: 700; padding: 1px 8px; border-radius: 999px; background: #eaf1fd; color: var(--blue); }
+.po-pill.l { background: #f3efe4; color: #8a6a1f; } .po-pill.t { background: var(--bg); color: var(--text); border: 1px solid var(--line); }
+.po-wins { list-style: none; margin: 0; padding: 0; columns: 2; column-gap: 24px; font-size: var(--fs-sm); }
+.po-wins li { break-inside: avoid; padding: 3px 0; }
+@media (max-width: 900px) { .po-wins { columns: 1; } }
+.cp .panel-head { margin-bottom: 6px; }
+.cp-list { list-style: none; margin: 0; padding: 0; }
+.cp-list li { display: grid; grid-template-columns: 74px minmax(0, 1fr); gap: 8px; padding: 5px 0; border-top: 1px solid var(--line); font-size: var(--fs-sm); }
+.cp-list li:first-child { border-top: 0; }
+.cp-d { color: var(--muted); font-size: var(--fs-xs); padding-top: 1px; }
+.cp.collapsed .cp-more { display: none; }
+.cp-toggle { margin-top: 6px; background: none; border: 0; color: var(--blue); cursor: pointer; font: inherit; font-size: var(--fs-sm); padding: 2px 0; }
+.po-side > .panel { margin: 0; }

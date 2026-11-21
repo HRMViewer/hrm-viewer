@@ -61,6 +61,8 @@ INDEXES = [
     ("race_results", "race_result_person_jockey_id"),
     ("race_results", "race_result_stable_id"),
     ("race_results", "race_result_trainer_id"),
+    ("race_results", "race_result_stable_head_trainer_id"),     # People overview: trainers' races
+    ("race_results", "race_result_stable_manager_id"),          # People overview: managers' races
     ("race_participants", "race_participant_race_id"),
     ("race_participants", "race_participant_horse_id"),
     ("race_participants", "race_participant_person_jockey_id"),
@@ -2518,6 +2520,106 @@ def api_careers(con, q):
     return {"total": total, "page": page, "page_size": page_size(), "rows": data, "view": view}
 
 
+# ------------------------------------------------------------------ People overview
+# Three sections (jockeys, trainers, managers) built the same way, then the latest awards and news about people.
+# A race "belongs" to a person through the race result: the jockey who rode, the trainer or head trainer of the horse,
+# or the stable's manager at the time. Group = races of type G1, G2 or G3; Listed = type "listed".
+PO_ROLES = {
+    "jockeys": {"jobs": ("Jockey",), "cols": ("race_result_person_jockey_id",),
+                "rank": "coalesce(p.person_jockey_wins,0)"},
+    "trainers": {"jobs": ("Trainer", "Head trainer"), "cols": ("race_result_trainer_id", "race_result_stable_head_trainer_id"),
+                 "rank": "coalesce(p.person_trainer_wins,0)+coalesce(p.person_head_trainer_wins,0)"},
+    "managers": {"jobs": ("Manager",), "cols": ("race_result_stable_manager_id",),
+                 "rank": "coalesce(p.person_management_career_winnings,0)"},
+}
+PO_TOP = 8           # people per section
+PO_WINS = 8          # latest Group/Listed wins per section
+PO_LATEST = 15       # awards / news items sent (the compact panels show the first few)
+PO_NEWS_TYPES = ("HIRE_STAFF", "FIRE_STAFF", "STAFF_RESIGNATION", "STAFF_ROLE_CHANGE", "MARRIAGE_PROPOSAL", "DIVORCE_REQUEST",
+                 "SECRET_EXPOSED", "RUMOR", "TRAINING_SUCCESS", "PRAISE")
+GRADED = ("G1", "G2", "G3")
+
+
+def po_section(con, key):
+    cfg = PO_ROLES[key]
+    rcols = [c for c in cfg["cols"] if c in columns(con, "race_results")]
+    jobs = ",".join("'%s'" % j for j in cfg["jobs"])
+    people = rows(con, """select p.person_person_id as id, p.person_full_name as name, p.person_birth_date as birth, p.person_is_player as is_player,
+            p.person_reputation as reputation, p.person_fame_calculated as fame,
+            (select f.staff_current_role from staff f where f.staff_person_id=p.person_person_id and f.staff_end_date is null
+                and f.staff_current_role in (%s) order by f.staff_start_date limit 1) as job,
+            (select f.staff_stable_id from staff f where f.staff_person_id=p.person_person_id and f.staff_end_date is null
+                and f.staff_current_role in (%s) order by f.staff_start_date limit 1) as stable_id
+        from persons p
+        where p.person_deceased_date is null and p.person_person_id in (select staff_person_id from staff where staff_end_date is null and staff_current_role in (%s))
+        order by %s desc limit %d""" % (jobs, jobs, jobs, cfg["rank"], PO_TOP))
+    sn = name_map(con, "stables", "stable_stable_id", "stable_name", [r["stable_id"] for r in people])
+    ids = [r["id"] for r in people]
+    stats = {i: {"starts": 0, "wins": 0, "places": 0, "prize": 0, "G1": 0, "G2": 0, "G3": 0, "listed": 0, "last": None} for i in ids}
+    wins = []
+    if ids and rcols:
+        marks = ",".join("?" * len(ids))
+        who = " or ".join("r.%s in (%s)" % (c, marks) for c in rcols)
+        pick = "coalesce(%s)" % ", ".join("case when r.%s in (%s) then r.%s end" % (c, marks, c) for c in rcols) if len(rcols) > 1 else "r." + rcols[0]
+        params = (ids * len(rcols) if len(rcols) > 1 else []) + ids * len(rcols)     # the person column in SELECT, then WHERE
+        for r in rows(con, """select %s as pid, count(*) as starts, sum(r.race_result_rank=1) as wins, sum(r.race_result_rank between 1 and 3) as places,
+                sum(r.race_result_cash_received) as prize, max(r.race_result_date) as last,
+                sum(r.race_result_rank=1 and x.races_type_of_race='G1') as g1, sum(r.race_result_rank=1 and x.races_type_of_race='G2') as g2,
+                sum(r.race_result_rank=1 and x.races_type_of_race='G3') as g3, sum(r.race_result_rank=1 and x.races_type_of_race='listed') as listed
+                from race_results r left join races x on x.races_race_id=r.race_result_race_id and r.race_result_race_id>0
+                where %s group by 1""" % (pick, who), params):
+            if r["pid"] in stats:
+                stats[r["pid"]].update(starts=r["starts"], wins=r["wins"] or 0, places=r["places"] or 0, prize=r["prize"] or 0, last=r["last"],
+                                       G1=r["g1"] or 0, G2=r["g2"] or 0, G3=r["g3"] or 0, listed=r["listed"] or 0)
+        # each person's most recent race
+        for i in ids:
+            if not stats[i]["last"]:
+                continue
+            lr = one(con, """select r.race_result_date as date, r.race_result_rank as rank, r.race_result_race_id as race_id, x.races_race_name as race,
+                    x.races_type_of_race as type, r.race_result_horse_id as horse_id, h.horse_name as horse
+                    from race_results r left join races x on x.races_race_id=r.race_result_race_id and r.race_result_race_id>0
+                    left join horses h on h.horse_horse_id=r.race_result_horse_id
+                    where %s order by r.race_result_date desc limit 1""" % " or ".join("r.%s=?" % c for c in rcols), [i] * len(rcols))
+            stats[i]["last_race"] = lr
+        # the section's latest Group and Listed wins, all of its people together
+        wins = rows(con, """select r.race_result_date as date, r.race_result_race_id as race_id, x.races_race_name as race, x.races_type_of_race as type,
+                r.race_result_horse_id as horse_id, h.horse_name as horse, %s as pid
+                from race_results r join races x on x.races_race_id=r.race_result_race_id and r.race_result_race_id>0
+                left join horses h on h.horse_horse_id=r.race_result_horse_id
+                where r.race_result_rank=1 and x.races_type_of_race in ('G1','G2','G3','listed') and (%s)
+                order by r.race_result_date desc limit %d""" % (pick, who, PO_WINS), params)
+        names = {r["id"]: r["name"] for r in people}
+        for w in wins:
+            w["person"] = names.get(w["pid"])
+    for r in people:
+        r["stable"] = sn.get(r["stable_id"])
+        r["is_player"] = r["is_player"] in ("true", 1, "1", True)
+        r.update(stats[r["id"]])
+        r["group"] = r["G1"] + r["G2"] + r["G3"]
+        r["total_gl"] = r["group"] + r["listed"]
+    tot = {k: sum(r[k] for r in people) for k in ("group", "listed", "total_gl")}
+    return {"key": key, "people": people, "wins": wins, "totals": tot}
+
+
+def api_people_overview(con):
+    out = {"sections": [po_section(con, k) for k in PO_ROLES] if has_table(con, "staff") and has_table(con, "race_results") else []}
+    # latest awards won by people
+    out["awards"] = []
+    if has_table(con, "awards"):
+        concepts = dict(con.execute("select concept_id, concept_name from concepts").fetchall()) if has_table(con, "concepts") else {}
+        aw = rows(con, """select a.award_category as cat, a.award_year as year, a.award_date as date, a.award_rank as rank, a.award_description as description,
+                a.award_entity_id as pid from awards a where a.award_entity_type='person' order by a.award_date desc, a.award_rank limit %d""" % PO_LATEST)
+        pn = name_map(con, "persons", "person_person_id", "person_full_name", [a["pid"] for a in aw])
+        for a in aw:
+            a["label"], a["person"] = award_label(a["cat"], concepts), pn.get(a["pid"])
+        out["awards"] = aw
+    # latest news about people: jobs, contracts and life events (not every lost race)
+    out["news"] = rows(con, """select event_timestamp as date, event_type as type, event_outcome as text, event_primary_actor_id as pid
+            from story_events where event_primary_actor_type='person' and event_type in (%s) and event_outcome like '%% %%'
+            order by event_timestamp desc limit %d""" % (",".join("'%s'" % t for t in PO_NEWS_TYPES), PO_LATEST)) if has_table(con, "story_events") else []
+    return out
+
+
 # ------------------------------------------------------------------ people: family tree and dynasty
 FAMILY_GENS = 8
 
@@ -3957,6 +4059,7 @@ ROUTES = [
     (re.compile(r"^/api/awards_of/(horse|person)/(-?\d+)$"), lambda con, m, q: api_awards_of(con, m.group(1), int(m.group(2)))),
     (re.compile(r"^/api/family/(-?\d+)$"), lambda con, m, q: api_family(con, int(m.group(1)))),
     (re.compile(r"^/api/dynasty/(-?\d+)$"), lambda con, m, q: api_dynasty(con, int(m.group(1)))),
+    (re.compile(r"^/api/people_overview$"), lambda con, m, q: api_people_overview(con)),
     (re.compile(r"^/api/people$"), lambda con, m, q: api_people(con, q)),
     (re.compile(r"^/api/careers$"), lambda con, m, q: api_careers(con, q)),
     (re.compile(r"^/api/person/(-?\d+)$"), lambda con, m, q: api_person(con, int(m.group(1)))),
@@ -4600,7 +4703,7 @@ class Handler(BaseHTTPRequestHandler):
 
 # --------------------------------------------------------------------------- in-app updates
 
-VERSION = "13.8"
+VERSION = "13.9"
 BACKUP_DIR = os.path.join(APP_DIR, "backups")
 UPDATE_PENDING = os.path.join(DATA_DIR, "update_pending.json")
 UPDATE_RESULT = os.path.join(DATA_DIR, "update_result.json")

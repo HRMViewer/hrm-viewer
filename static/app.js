@@ -121,7 +121,7 @@ const SECTIONS = [
   { k: "racing", label: "Racing", ic: "flag", href: "#/meetings", routes: ["meetings", "meeting", "races", "race", "courses", "course"] },
   { k: "horses", label: "Horses", ic: "horse", href: "#/horses", routes: ["horses", "horse", "horse-table", "pedigrees", "pedigree"] },
   { k: "stables", label: "Stables", ic: "barn", href: "#/stables", routes: ["stables", "stable", "stable-table"] },
-  { k: "people", label: "People", ic: "user", href: "#/people", routes: ["people", "person", "jockeys"] },
+  { k: "people", label: "People", ic: "user", href: "#/people-overview", routes: ["people-overview", "people", "person", "jockeys"] },
   { k: "awards", label: "Awards", ic: "trophy", href: "#/awards", routes: ["awards"] },
   { k: "settings", label: "Settings", ic: "cog", href: "#/settings", routes: ["settings", "databases", "tables", "versions"], right: true },
 ];
@@ -133,7 +133,7 @@ const SIDE = {
   horses: [["Horses", [["#/horses", "horse", "All horses"], ["#/horse-table", "table", "Horse table"]]],
     ["Breeding", [["#/pedigrees", "tree", "Top sires"], ["#/pedigrees?kind=dams", "tree", "Top dams"], ["#/pedigrees?kind=damsires", "tree", "Broodmare sires"]]]],
   stables: [["Stables", [["#/stables", "barn", "All stables"], ["#/stable-table", "grid", "Stable table"]]]],
-  people: [["People", [["#/people", "user", "All people"], ["#/jockeys", "trophy", "Jockey stats"], ["#/people?role=Jockey&sort=jockey_wins", "trophy", "Top jockeys"], ["#/people?role=Jockey", "user", "Jockeys"],
+  people: [["People", [["#/people-overview", "home", "Overview"], ["#/people", "user", "All people"], ["#/jockeys", "trophy", "Jockey stats"], ["#/people?role=Jockey&sort=jockey_wins", "trophy", "Top jockeys"], ["#/people?role=Jockey", "user", "Jockeys"],
     ["#/people?role=Trainer", "user", "Trainers"], ["#/people?role=Head%20trainer", "user", "Head trainers"], ["#/people?role=Manager", "user", "Managers"]]]],
   awards: [["Awards", [["#/awards", "trophy", "Awards by year"], ["#/awards?view=winners", "star", "Most awards"], ["#/awards?group=hof", "star", "Hall of Fame"]]],
     ["By award", [["#/awards?group=year", "trophy", "Horse of the Year"], ["#/awards?group=age", "horse", "Age divisions"], ["#/awards?group=distance", "flag", "Distance champions"],
@@ -344,7 +344,7 @@ const PAGES = {
       b.textContent = open ? "Close all form" : "Open all form";
     }));
   } }),
-  stables: stablesPage, stable: (r) => (r.parts[2] === "races" ? stableRacesPage(r) : r.parts[2] === "financials" ? stableFinancePage(r) : r.parts[2] === "horse-money" ? stableHorseMoneyPage(r) : r.parts[2] === "awards" ? stableAwardsPage(r) : stablePage(r.parts[1])), people: peoplePage, jockeys: careersPage, person: Object.assign((r) => (r.parts[2] === "awards" ? entityAwardsPage("person", r) : r.parts[2] === "family" ? personFamilyPage(r) : r.parts[2] === "tree" ? personTreePage(r)
+  stables: stablesPage, stable: (r) => (r.parts[2] === "races" ? stableRacesPage(r) : r.parts[2] === "financials" ? stableFinancePage(r) : r.parts[2] === "horse-money" ? stableHorseMoneyPage(r) : r.parts[2] === "awards" ? stableAwardsPage(r) : stablePage(r.parts[1])), people: peoplePage, "people-overview": peopleOverviewPage, jockeys: careersPage, person: Object.assign((r) => (r.parts[2] === "awards" ? entityAwardsPage("person", r) : r.parts[2] === "family" ? personFamilyPage(r) : r.parts[2] === "tree" ? personTreePage(r)
     : r.parts[2] === "dynasty" ? personDynastyPage(r) : personPage(r.parts[1])), { after: (r) => r.parts[2] === "tree" && tcInit() }),
   courses: coursesPage, course: Object.assign((r) => coursePage(r.parts[1]), { after: (r) => coursePage.after && coursePage.after(r) }), tables: tablesPage,
   pedigrees: pedigreesPage, pedigree: Object.assign((r) => pedigreePage(r.parts[1], r.q), { after: (r) => pedigreePage.after && pedigreePage.after(r) }), "horse-table": horseTablePage, "stable-table": stableTablePage,
@@ -3099,6 +3099,77 @@ async function peoplePage(route) {
       { h: "Fame", cls: "num", sort: "fame", f: (r) => fNum(r.fame, 0) },
     ],
   }, route);
+}
+
+// ------------------------------------------------------------------ People → Overview
+// Part 1: one section each for jockeys, trainers and managers, all drawn by roleSection().
+// Part 2: the latest awards and news as small compact panels (compactPanel()), collapsed by default.
+const PO_SECTIONS = {
+  jockeys: { title: "Jockeys", noun: "jockeys", races: "Rides", all: "#/jockeys?view=jockeys", rank: "career wins as a jockey" },
+  trainers: { title: "Trainers", noun: "trainers", races: "Runners", all: "#/jockeys?view=trainers", rank: "career wins as a trainer or head trainer" },
+  managers: { title: "Managers", noun: "managers", races: "Runners", all: "#/jockeys?view=managers", rank: "career prize money as a manager" },
+};
+const GL = { G1: "G1", G2: "G2", G3: "G3", listed: "listed" };
+
+// one people section; the three sections only differ in their wording (PO_SECTIONS)
+function roleSection(meta, sec) {
+  const people = sec.people || [];
+  const z = (v) => (v ? fNum(v) : '<span class="muted">0</span>');
+  const table_ = people.length ? table([
+    { h: "Name", cls: "nowrap", f: (r) => `${L.person(r.id, r.name)}${r.is_player ? ' <span class="badge good">You</span>' : ""}<div class="muted small">${esc(r.job || "")} · ${fNum(age(r.birth))}yo</div>` },
+    { h: "Stable", f: (r) => (r.stable_id ? L.stable(r.stable_id, r.stable) : '<span class="muted">—</span>') },
+    { h: meta.races, cls: "num", f: (r) => fNum(r.starts) },
+    { h: "Wins", cls: "num", f: (r) => `${fNum(r.wins)} <span class="muted small">${r.starts ? pct(r.wins, r.starts) : ""}</span>` },
+    { h: "Prize money", cls: "num", f: (r) => fMoneyShort(r.prize) },
+    { h: "Group", cls: "num po-g", f: (r) => (r.group ? `<b>${fNum(r.group)}</b> <span class="muted small">${[["G1", r.G1], ["G2", r.G2], ["G3", r.G3]].filter(([, n]) => n).map(([g, n]) => `${n}×${g}`).join(" ")}</span>` : z(0)) },
+    { h: "Listed", cls: "num po-l", f: (r) => z(r.listed) },
+    { h: "Group + Listed", cls: "num", f: (r) => (r.total_gl ? `<b>${fNum(r.total_gl)}</b>` : z(0)) },
+    { h: "Latest race", f: (r) => (r.last_race ? `${L.race(r.last_race.race_id, r.last_race.race)}
+        <div class="muted small">${fDate(r.last_race.date)}${r.last_race.rank ? " · " + ord(r.last_race.rank) : ""}</div>` : '<span class="muted">No races yet</span>') },
+  ], people) : `<div class="empty">No ${meta.noun} working at a stable right now.</div>`;
+  const t = sec.totals || {};
+  const wins = (sec.wins || []).length ? `<ul class="po-wins">${sec.wins.map((w) => `<li><span class="muted small">${fDate(w.date)}</span> ${grade(GL[w.type])}
+      ${L.race(w.race_id, w.race)} <span class="muted small">·</span> ${L.horse(w.horse_id, w.horse)} <span class="muted small">· ${esc(w.person || "")}</span></li>`).join("")}</ul>`
+    : `<div class="empty">No Group or Listed wins for these ${meta.noun} yet.</div>`;
+  return panel(meta.title, `${table_}
+    <div class="po-gl"><div class="po-gl-head"><b>Group &amp; Listed wins</b>
+      <span class="po-pill">Group ${fNum(t.group || 0)}</span><span class="po-pill l">Listed ${fNum(t.listed || 0)}</span><span class="po-pill t">Total ${fNum(t.total_gl || 0)}</span>
+      <span class="muted small">latest first</span></div>${wins}</div>`,
+    `Top ${people.length || ""} working now, by ${meta.rank} · <a href="${meta.all}">All ${meta.noun}</a>`, "po-sec");
+}
+
+// compact panel: the first few items, collapsed by default. Expanding shows the rest of what was loaded;
+// a fuller view can be added later by registering it in COMPACT_FULL (it then gets an "Open" link in the header).
+const COMPACT_FULL = { /* awards: "#/...", news: "#/..." */ };
+function compactPanel({ key, title, items, row, empty, shown = 4 }) {
+  const list = items || [];
+  const body = list.length ? `<ul class="cp-list">${list.map((it, i) => `<li class="${i >= shown ? "cp-more" : ""}">${row(it)}</li>`).join("")}</ul>` : `<div class="empty">${empty}</div>`;
+  const more = list.length > shown ? `<button class="cp-toggle" data-cp="${key}" aria-expanded="false">Show ${fNum(list.length - shown)} more ▾</button>` : "";
+  const full = COMPACT_FULL[key] ? `<a class="small" href="${COMPACT_FULL[key]}">Open</a>` : "";
+  return `<section class="panel cp collapsed" data-cp-panel="${key}"><div class="panel-head"><h2>${title}</h2><span class="note">${full}</span></div>${body}${more}</section>`;
+}
+document.addEventListener("click", (e) => {
+  const b = e.target.closest("[data-cp]");
+  if (!b) return;
+  const p = b.closest(".cp"), open = p.classList.toggle("collapsed") === false;
+  b.setAttribute("aria-expanded", open);
+  b.textContent = open ? "Show fewer ▴" : `Show ${fNum(p.querySelectorAll(".cp-more").length)} more ▾`;
+});
+
+async function peopleOverviewPage() {
+  const d = await api("people_overview");
+  let html = `<div class="page-head"><div><div class="crumb">People</div><h1>People overview</h1>
+    <div class="sub">The leading jockeys, trainers and managers working now, their races and their Group and Listed wins.</div></div>
+    <div><a class="btn" href="#/people">All people</a></div></div>`;
+  const secs = (d.sections || []).map((sec) => roleSection(PO_SECTIONS[sec.key], sec)).join("");
+  const awards = compactPanel({ key: "awards", title: "Latest awards", items: d.awards, empty: "No awards to people yet.",
+    row: (a) => `<div class="cp-d">${a.date ? fDate(a.date) : a.year || ""}</div><div><b>${esc(a.label || "")}</b>${a.rank > 1 ? ` <span class="muted small">${ord(a.rank)}</span>` : ""}
+      <div class="small">${a.pid ? L.person(a.pid, a.person) : esc(a.person || "")}</div></div>` });
+  const news = compactPanel({ key: "news", title: "Latest news", items: d.news, empty: "No news about people yet.",
+    row: (n) => `<div class="cp-d">${fDate(n.date)}</div><div class="small">${esc(n.text || n.type)}</div>` });
+  html += `<div class="po-layout"><div class="po-main">${secs || '<div class="empty">This save has no staff or race results to show.</div>'}</div>
+    <aside class="po-side">${awards}${news}</aside></div>`;
+  return html;
 }
 
 // People → Jockeys: each person's jockey, trainer and stable numbers side by side
