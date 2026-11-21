@@ -1,0 +1,1 @@
+macos-15: macOS 15.8.2 arm64 at Sat Nov 21 19:52:05 UTC 2026
