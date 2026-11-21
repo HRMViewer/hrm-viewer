@@ -29,6 +29,35 @@ shortcut to open it from anywhere else. It uses the Microsoft Edge WebView2
 Runtime, which comes with Windows 10 and 11; if it's missing, the viewer opens in
 your browser and tells you where to get it.
 
+ON A MAC
+--------
+1. Download HRM-Viewer-<version>-mac.zip and double-click it to unzip.
+2. Drag "HRM Viewer" into your Applications folder.
+3. Open it. The first time, the Mac says it "could not verify" HRM Viewer,
+   because the app isn't signed with a paid Apple developer account. Click
+   Done (or OK), then open System Settings > Privacy & Security, scroll down
+   and click "Open Anyway" next to HRM Viewer, and confirm. This is only
+   needed once.
+It works on Apple Silicon and Intel Macs (macOS 11 Big Sur or later) and opens
+in its own window. Your data is kept in your home folder under
+Library/Application Support/HRM Viewer, so it stays when you replace the app
+with a newer download. Files you download in the viewer (CSV, pictures) go to
+your Downloads folder. Quit with Cmd+Q or by closing the window.
+
+ON LINUX (INCLUDING STEAM DECK DESKTOP MODE)
+-------------------------------------------
+1. Download HRM-Viewer-<version>-linux.tar.gz and unpack it somewhere in your
+   home folder, e.g. ~/HRM Viewer.
+2. Open "HRM Viewer" in that folder (double-click it, or run "./HRM Viewer").
+   The first time, it offers to add itself to your applications menu (also in
+   Settings > Desktop app).
+It opens in its own window when WebKitGTK is installed (most desktops have it:
+the package is called libwebkit2gtk-4.1 or webkit2gtk-4.1). Without it, the
+viewer opens in your browser instead; stop it with Settings > Stop the viewer
+(or Ctrl+C if you started it from a terminal). Everything it needs, including
+its own Python, is in the folder, and your data is kept in its "data" folder,
+like on Windows. Files you download in the viewer go to your Downloads folder.
+
 LOADING A NEWER SAVE
 --------------------
 Save your game first, then any of these:

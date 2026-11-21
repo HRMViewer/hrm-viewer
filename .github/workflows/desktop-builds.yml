@@ -12,6 +12,11 @@ on:
 permissions:
   contents: write
 
+# a newer test push replaces a test build still running (release builds are never cancelled)
+concurrency:
+  group: desktop-builds-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref == 'refs/heads/desktop-test' }}
+
 env:
   GO_VERSION: "1.24.7"
   PBS_TAG: "20251202"      # python-build-standalone release with the portable Python that ships inside
@@ -19,6 +24,7 @@ env:
 
 jobs:
   linux:
+    timeout-minutes: 30
     # built on the oldest supported Ubuntu so it runs on as many Linux versions as possible
     runs-on: ubuntu-22.04
     steps:
@@ -54,6 +60,7 @@ jobs:
           python3 tools/ci_unix.py linux dist "$RUNNER_TEMP/HRM Viewer" "$RUNNER_TEMP/hrm-viewer-window" "$RUNNER_TEMP/py/python"
 
       - name: Try it
+        timeout-minutes: 8
         run: |
           exec > >(tee -a "$RUNNER_TEMP/log.txt") 2>&1
           bash tools/smoke_linux.sh "$PWD/dist"
@@ -81,6 +88,7 @@ jobs:
           if-no-files-found: error
 
   mac:
+    timeout-minutes: 40
     runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
@@ -125,6 +133,7 @@ jobs:
           ls -la dist
 
       - name: Try it
+        timeout-minutes: 8
         run: |
           exec > >(tee -a "$RUNNER_TEMP/log.txt") 2>&1
           bash tools/smoke_mac.sh "$PWD/dist/HRM Viewer.app" "$PWD/dist"

@@ -1,5 +1,19 @@
 [
   {
+    "version": "14.6",
+    "date": "2026-11-22",
+    "title": "HRM Viewer for Mac and Linux",
+    "changes": [
+      "New: HRM Viewer for Mac (Apple Silicon and Intel, macOS 11+). Download HRM-Viewer-<version>-mac.zip, drag HRM Viewer into Applications and open it. It opens in its own window with the usual Mac menus (copy and paste work), and keeps your data in Library/Application Support/HRM Viewer so it stays when you replace the app.",
+      "New: HRM Viewer for Linux and Steam Deck desktop mode. Download HRM-Viewer-<version>-linux.tar.gz, unpack it and open HRM Viewer. It opens in its own window when WebKitGTK is installed, otherwise in your browser, and offers to add itself to your applications menu.",
+      "Both come with their own Python, so there's nothing to install, and they take updates from inside the viewer just like the Windows app.",
+      "In the Mac and Linux window, downloads (CSV, chart pictures, the Quick Guide) are saved to your Downloads folder with a Show in Finder / Show in folder button, and outside links open in your browser.",
+      "The viewer now stops by itself if its window closes unexpectedly, instead of staying running in the background.",
+      "Security: the viewer now refuses requests to change things that come from other websites open in your browser.",
+      "The \"type a path\" boxes show an example path for your system (Windows, Mac or Linux)."
+    ]
+  },
+  {
     "version": "14.5",
     "date": "2026-11-21",
     "title": "Stable rankings",
