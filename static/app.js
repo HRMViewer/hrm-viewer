@@ -344,7 +344,8 @@ const PAGES = {
       b.textContent = open ? "Close all form" : "Open all form";
     }));
   } }),
-  stables: stablesPage, stable: (r) => (r.parts[2] === "races" ? stableRacesPage(r) : r.parts[2] === "financials" ? stableFinancePage(r) : r.parts[2] === "horse-money" ? stableHorseMoneyPage(r) : r.parts[2] === "awards" ? stableAwardsPage(r) : stablePage(r.parts[1])), people: peoplePage, jockeys: careersPage, person: (r) => (r.parts[2] === "awards" ? entityAwardsPage("person", r) : personPage(r.parts[1])),
+  stables: stablesPage, stable: (r) => (r.parts[2] === "races" ? stableRacesPage(r) : r.parts[2] === "financials" ? stableFinancePage(r) : r.parts[2] === "horse-money" ? stableHorseMoneyPage(r) : r.parts[2] === "awards" ? stableAwardsPage(r) : stablePage(r.parts[1])), people: peoplePage, jockeys: careersPage, person: (r) => (r.parts[2] === "awards" ? entityAwardsPage("person", r) : r.parts[2] === "family" ? personFamilyPage(r)
+    : r.parts[2] === "dynasty" ? personDynastyPage(r) : personPage(r.parts[1])),
   courses: coursesPage, course: Object.assign((r) => coursePage(r.parts[1]), { after: (r) => coursePage.after && coursePage.after(r) }), tables: tablesPage,
   pedigrees: pedigreesPage, pedigree: Object.assign((r) => pedigreePage(r.parts[1], r.q), { after: (r) => pedigreePage.after && pedigreePage.after(r) }), "horse-table": horseTablePage, "stable-table": stableTablePage,
   versions: versionsPage, meetings: meetingsPage, awards: (r) => awardsPage(r.q || {}), settings: Object.assign(() => settingsPage(), { after: () => settingsPage.after() }), databases: Object.assign(() => databasesPage(), { after: () => databasesPage.after() }),
@@ -2543,6 +2544,148 @@ document.addEventListener("input", (e) => {
   panel.querySelector(".fd-none").hidden = any;
 });
 
+// ------------------------------------------------------------------ people: Family tree tab and Dynasty tab
+const yrs = (r) => (r.birth ? yr(r.birth) : "?") + (r.died ? "–" + yr(r.died) : "");
+const pLink = (r) => (r && r.id ? `${L.person(r.id, r.name)}${r.died ? ' <span class="muted">†</span>' : ""}${r.is_player ? ' <span class="badge good">You</span>' : ""}` : '<span class="muted">—</span>');
+const GEN_WORDS = ["", "Parents", "Grandparents", "Great-grandparents", "Great-great-grandparents", "3× great-grandparents", "4× great-grandparents", "5× great-grandparents", "6× great-grandparents"];
+// what an ancestor is to you: Father, Grandmother, 3× great-grandfather...
+const ancWord = (gen, male) => {
+  const w = male ? ["father", "grandfather"] : ["mother", "grandmother"];
+  const g = gen === 1 ? w[0] : gen === 2 ? w[1] : gen === 3 ? "great-" + w[1] : gen === 4 ? "great-great-" + w[1] : `${gen - 2}× great-${w[1]}`;
+  return g.charAt(0).toUpperCase() + g.slice(1);
+};
+const treeLink = (id) => `<a class="tree-l" href="#/person/${id}/family" title="Their family tree">tree</a>`;
+const PATH_WORD = (path) => path.split("").map((c) => (c === "F" ? "father" : "mother")).join("'s ").replace(/^./, (x) => x.toUpperCase());
+
+async function personFamilyPage(route) {
+  const id = route.parts[1], q = route.q || {};
+  const [d, f] = await Promise.all([api("person/" + id), api("family/" + id)]);
+  let html = personHead(d, "family");
+  const me = f.person, T = f.tree, rel = f.relatives || [];
+  const known = Object.keys(T).length, living = rel.filter((r) => !r.died).length;
+  html += tiles([
+    ["Ancestors known", fNum(known), `of ${fNum(510)} places in 8 generations`],
+    ["Generations back", fNum(f.deepest), f.deepest < 8 ? "the save has no older records" : "as far as the tree goes"],
+    ["Blood relatives", fNum(rel.length), `${fNum(living)} alive`],
+    ["Spouses & partners", fNum((f.spouses || []).length), (f.spouses || []).filter((x) => !x.divorced && !x.ended).map((x) => esc(x.name || "")).join(", ") || ""],
+  ]);
+  // ancestors: four generations as a chart, then up to eight as an outline
+  const node = (path) => {
+    const r = T[path], gen = path.length, row = parseInt(path.replace(/F/g, "0").replace(/M/g, "1"), 2) * (16 >> gen);
+    const style = `grid-column:${gen};grid-row:${row + 1} / span ${16 >> gen};`;
+    const cls = path.endsWith("F") ? "m" : "f";
+    if (!r || !r.name) return `<div class="node g${gen} unk ${cls}" style="${style}" title="${esc(PATH_WORD(path))}">Not recorded</div>`;
+    return `<div class="node g${gen} ${cls}" style="${style}" title="${esc(PATH_WORD(path))}"><a class="go" href="#/person/${r.id}" title="Open their page">↗</a>
+      <div class="nm"><a href="#/person/${r.id}/family">${esc(r.name)}</a></div><div class="meta">${yrs(r)}${r.job ? " · " + esc(r.job) : ""}</div></div>`;
+  };
+  const paths = [];
+  for (let g = 1; g <= 4; g++) for (let i = 0; i < 1 << g; i++) paths.push(i.toString(2).padStart(g, "0").replace(/0/g, "F").replace(/1/g, "M"));
+  // the outline: one line per known ancestor, nested under their child, all eight generations
+  const outline = (path, depth) => {
+    const kids = ["F", "M"].map((c) => path + c).filter((k) => T[k] && T[k].name);
+    if (!kids.length) return "";
+    return `<ul class="fam-ol">${kids.map((k) => `<li><details ${depth < 2 ? "open" : ""}><summary><span class="fam-rel">${esc(ancWord(k.length, k.endsWith("F")))}</span>
+      ${pLink(T[k])} <span class="muted small">${yrs(T[k])} · ${esc(PATH_WORD(k))}</span></summary>${outline(k, depth + 1)}</details></li>`).join("")}</ul>`;
+  };
+  const deep = Object.keys(T).some((k) => k.length > 4);
+  html += panel("Ancestors", known ? `<div class="tree fam-tree">${paths.map(node).join("")}</div>
+      <div class="legend"><span><i style="background:#5b84ad"></i>Father's side of each person</span><span><i style="background:#c07a8f"></i>Mother's side</span>
+      <span>Click a name to see their family tree · ↗ opens their page</span></div>
+      <h3 class="fam-h">All ${f.gens} generations <button class="btn sm" data-fam-all="1">Open all</button> <button class="btn sm" data-fam-all="0">Close all</button></h3>
+      <div class="fam-outline"><div class="fam-root">${pLink(me)} <span class="muted small">${yrs(me)}</span></div>${outline("", 0)}</div>
+      ${deep ? "" : `<p class="help">Nobody further back than ${f.deepest} generation${f.deepest === 1 ? "" : "s"} is recorded yet: the game only links parents and children born since your career began.</p>`}`
+    : `<div class="empty">The save doesn't record ${esc(me.name)}'s parents. The game links parents and children for people born since your career began, so trees grow as generations pass.</div>`);
+  // relatives, nearest first, in groups
+  const reach = q.reach || "close";
+  const inReach = (r) => reach === "all" || (reach === "close" ? r.up + r.down <= 2 : r.up <= 3 && r.down <= 3);
+  const shown = rel.filter((r) => inReach(r) && (q.alive !== "1" || !r.died));
+  const GROUPS = [
+    ["Parents & grandparents", (r) => r.down === 0], ["Brothers & sisters", (r) => r.up === 1 && r.down === 1],
+    ["Children & grandchildren", (r) => r.up === 0], ["Aunts & uncles", (r) => r.down === 1 && r.up >= 2],
+    ["Nieces & nephews", (r) => r.up === 1 && r.down >= 2], ["Cousins", (r) => r.up >= 2 && r.down >= 2],
+  ];
+  const cols = [
+    { h: "Name", cls: "nowrap", f: (r) => `${pLink(r)} ${treeLink(r.id)}` },
+    { h: "Relation", f: (r) => `<b>${esc(r.relation)}</b>` },
+    { h: "Born", cls: "num", f: (r) => yr(r.birth) }, { h: "Age", cls: "num nowrap", f: (r) => ageCell(r.birth, r.died) },
+    { h: "Job now", f: (r) => (r.job ? esc(r.job) : '<span class="muted">—</span>') },
+    { h: "Stable", f: (r) => (r.stable_id ? L.stable(r.stable_id, r.stable) : r.owns_id ? `Owns ${L.stable(r.owns_id, r.owns)}` : '<span class="muted">—</span>') },
+    { h: "Married to", f: (r) => (r.spouses || []).map((x) => L.person(x.id, x.name)).join(", ") || '<span class="muted">—</span>' },
+  ];
+  const sp = (f.spouses || []);
+  let relHtml = `<div class="filters" style="margin-bottom:10px">${seg("reach", q, [["close", "Close family"], ["extended", "+ Aunts, uncles & cousins"], ["all", "Everyone"]], "close")}
+    ${seg("alive", q, [["", "Everyone"], ["1", "Alive only"]], "")}</div>`;
+  if (sp.length) relHtml += `<h3 class="fam-h">Spouses & partners</h3>` + table([
+    { h: "Name", f: (r) => pLink(r) }, { h: "", f: (r) => (r.partner ? "Partner" : r.divorced ? `Divorced ${yr(r.divorced)}` : r.ended ? `Ended ${yr(r.ended)}` : "Married") },
+    { h: "Married", cls: "num", f: (r) => (r.married ? fDate(r.married) : "—") }, { h: "Age", cls: "num", f: (r) => ageCell(r.birth, r.died) },
+    { h: "Job now", f: (r) => (r.job ? esc(r.job) : "—") }], sp);
+  let any = false;
+  for (const [title, test] of GROUPS) {
+    const list = shown.filter(test);
+    if (!list.length) continue;
+    any = true;
+    relHtml += `<h3 class="fam-h">${title} <span class="muted small">${list.length}</span></h3>` + table(cols, list);
+  }
+  if (!any) relHtml += `<div class="empty">${rel.length ? "No relatives in this range. Try Everyone." : "No blood relatives are recorded in the save yet."}</div>`;
+  html += panel("Relatives", relHtml, "Worked out from the parents and children the save records · nearest first");
+  return html;
+}
+document.addEventListener("click", (e) => {
+  const b = e.target.closest("[data-fam-all]");
+  if (!b) return;
+  b.closest(".panel").querySelectorAll(".fam-outline details").forEach((x) => (x.open = b.dataset.famAll === "1"));
+});
+
+async function personDynastyPage(route) {
+  const id = route.parts[1], q = route.q || {};
+  const [d, y] = await Promise.all([api("person/" + id), api("dynasty/" + id)]);
+  let html = personHead(d, "dynasty");
+  const M = y.members || [], byId = {};
+  M.forEach((r) => (byId[r.id] = r));
+  const members = M.filter((r) => r.kind === "member"), wed = M.filter((r) => r.kind === "married");
+  const sum = (k) => members.reduce((a, r) => a + (r[k] || 0), 0);
+  const name = esc(y.surname || "This");
+  html += `<div class="dyn-head"><h2>The ${name} dynasty</h2><div class="muted">${y.founders.length ? `From ${y.founders.map((x) => pLink(byId[x])).join(" &amp; ")}` : ""}
+    ${y.unlinked_same_name ? ` · <a href="#/people?q=${encodeURIComponent(y.surname)}">${fNum(y.unlinked_same_name)} other ${name}${y.unlinked_same_name === 1 ? "" : "s"}</a> in the world aren't linked to this family in the save` : ""}</div></div>`;
+  html += tiles([
+    ["Family members", fNum(y.total), `${fNum(y.living)} alive`], ["Generations", fNum(y.generations)], ["Married in", fNum(wed.length)],
+    ["Stables owned", fNum(y.stables.length), y.stables.slice(0, 3).map((s) => esc(s[1])).join(", ")],
+    ["Jockey wins", fNum(sum("j_wins"))], ["Trainer wins", fNum(sum("t_wins"))], ["Awards", fNum(sum("awards"))],
+  ]);
+  // the tree, from the earliest members down; spouses beside each member
+  const line = (r) => `${pLink(r)} <span class="muted small">${yrs(r)}${r.job ? " · " + esc(r.job) : ""}</span>${(r.spouses || []).length ? ` <span class="dyn-sp">♥ ${r.spouses.map((x) => `${L.person(x.id, x.name)}${x.divorced ? ' <span class="muted small">(divorced)</span>' : ""}`).join(", ")}</span>` : ""}`;
+  const branch = (x, depth, seen) => {
+    const r = byId[x];
+    if (!r || seen.has(x)) return "";
+    seen.add(x);
+    const kids = (r.children || []).map((k) => byId[k]).filter((k) => k && k.kind === "member").sort((a, b) => (a.birth || 0) - (b.birth || 0));
+    return kids.length ? `<li><details ${depth < 3 ? "open" : ""}><summary><span class="dyn-g">G${r.gen || "?"}</span>${line(r)}</summary><ul>${kids.map((k) => branch(k.id, depth + 1, seen)).join("")}</ul></details></li>`
+      : `<li class="leaf"><span class="dyn-g">G${r.gen || "?"}</span>${line(r)}</li>`;
+  };
+  const seen = new Set();
+  html += panel("Family tree", `<div class="fam-tools"><button class="btn sm" data-fam-all="1">Open all</button> <button class="btn sm" data-fam-all="0">Close all</button></div>
+    <ul class="dyn-tree fam-outline">${y.founders.map((x) => branch(x, 0, seen)).join("")}</ul>`, "Earliest known members at the top · ♥ = married to · G = generation");
+  // everyone in a table
+  const kind = q.who || "member";
+  const list = M.filter((r) => kind === "all" || r.kind === kind).filter((r) => q.alive !== "1" || !r.died);
+  html += panel("Members", `<div class="filters" style="margin-bottom:10px">${seg("who", q, [["member", `${name}s (${members.length})`], ["married", `Married in (${wed.length})`], ["all", "Everyone"]], "member")}
+      ${seg("alive", q, [["", "Alive and dead"], ["1", "Alive only"]], "")}</div>` + table([
+    { h: "Gen", cls: "num", f: (r) => (r.gen ? r.gen : "—") },
+    { h: "Name", cls: "nowrap", f: (r) => `${pLink(r)} ${treeLink(r.id)}` },
+    { h: "Born", cls: "num", f: (r) => yr(r.birth) }, { h: "Age", cls: "num nowrap", f: (r) => ageCell(r.birth, r.died) },
+    { h: "Job now", f: (r) => (r.job ? esc(r.job) : '<span class="muted">—</span>') },
+    { h: "Stable", f: (r) => (r.stable_id ? L.stable(r.stable_id, r.stable) : '<span class="muted">—</span>') },
+    { h: "Owns", f: (r) => (r.stables || []).map((s) => L.stable(s.id, s.name)).join(", ") || '<span class="muted">—</span>' },
+    { h: "Jockey wins", cls: "num", f: (r) => fNum(r.j_wins) }, { h: "Trainer wins", cls: "num", f: (r) => fNum(r.t_wins) }, { h: "Awards", cls: "num", f: (r) => fNum(r.awards) },
+    { h: "Married to", f: (r) => (r.spouses || []).map((x) => L.person(x.id, x.name)).join(", ") || '<span class="muted">—</span>' },
+  ], list, { empty: "Nobody here." }));
+  const EV = { born: "Born", died: "Died", married: "Married", divorced: "Divorced" };
+  html += panel("Family events", (y.events || []).length ? `<ul class="dyn-ev">${y.events.slice(0, 120).map((e) => `<li><span class="muted">${fDate(e.date)}</span>
+      <span class="ev-k ev-${e.kind}">${EV[e.kind]}</span> ${pLink(byId[e.who])}${e.with ? ` and ${pLink(byId[e.with])}` : ""}</li>`).join("")}</ul>` : '<div class="empty">No events recorded.</div>',
+    "Births, marriages, divorces and deaths, newest first");
+  return html;
+}
+
 // ------------------------------------------------------------------ horse / person awards tab
 // Every season award and Group/Listed race win of a horse, or of a person (their own awards, and the race wins they rode,
 // trained, managed or looked after).
@@ -2804,7 +2947,8 @@ function personHead(d, on) {
     <div class="sub">${fNum(age(p.person_birth_date, p.person_deceased_date))} years old · ${esc(p.person_sex || "")}${d.city ? ` · ${esc(d.city.city)}, ${esc(d.city.country)}` : ""}
     ${current.length ? " · " + current.map((j) => `${esc(j.role)} at ${L.stable(j.stable_id, j.stable)}`).join(", ") : ""}
     ${d.owns && d.owns.length ? " · Owns " + d.owns.map((s) => L.stable(s.id, s.name)).join(", ") : ""}</div>${removedNote(d)}</div></div>
-    <div class="subtabs"><a href="#/person/${id}" class="${on === "overview" ? "on" : ""}">Overview</a><a href="#/person/${id}/awards" class="${on === "awards" ? "on" : ""}">Awards</a></div>`;
+    <div class="subtabs"><a href="#/person/${id}" class="${on === "overview" ? "on" : ""}">Overview</a><a href="#/person/${id}/awards" class="${on === "awards" ? "on" : ""}">Awards</a>
+      <a href="#/person/${id}/family" class="${on === "family" ? "on" : ""}">Family tree</a><a href="#/person/${id}/dynasty" class="${on === "dynasty" ? "on" : ""}">${esc(p.person_last_name || "Family")} dynasty</a></div>`;
 }
 async function personPage(id) {
   const d = await api("person/" + id);

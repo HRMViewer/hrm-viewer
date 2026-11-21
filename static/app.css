@@ -918,3 +918,26 @@ table.mb-cat td { padding: 2px 6px; font-size: var(--fs-sm); }
 .subtabs .tab-n { display: inline-block; margin-left: 4px; padding: 0 6px; border-radius: 999px; background: #eef1f6; color: var(--muted); font-size: var(--fs-xs); font-weight: 700; }
 table.fin-detail.is-in .sbar.cat i { background: #2f7d5b; }
 table.fin-detail.is-in .sbar.type i { background: #9fcbb6; }
+/* draft: family tree & dynasty */
+.fam-h { font-size: var(--fs); margin: 18px 0 8px; display: flex; align-items: center; gap: 8px; }
+.fam-outline { font-size: var(--fs-sm); }
+.fam-outline ul { list-style: none; margin: 0; padding-left: 22px; border-left: 1px dashed var(--line); }
+.fam-outline > ul { border-left: 0; padding-left: 0; }
+.fam-outline li { margin: 3px 0; }
+.fam-outline summary { cursor: pointer; padding: 2px 0; }
+.fam-outline li.leaf { padding-left: 14px; }
+.fam-rel { display: inline-block; min-width: 150px; color: var(--muted); font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: .03em; }
+.fam-root { font-weight: 700; margin-bottom: 4px; }
+.fam-tools { margin-bottom: 8px; }
+.dyn-head h2 { margin: 0 0 2px; font-size: calc(var(--fs) + 6px); }
+.dyn-head { margin: 4px 0 12px; }
+.dyn-g { display: inline-block; min-width: 30px; font-size: var(--fs-xs); font-weight: 700; color: var(--blue); }
+.dyn-sp { color: #c0567a; margin-left: 4px; }
+.dyn-tree { list-style: none; padding-left: 0; }
+.dyn-ev { list-style: none; padding: 0; margin: 0; columns: 2; font-size: var(--fs-sm); }
+.dyn-ev li { break-inside: avoid; padding: 3px 0; }
+.ev-k { display: inline-block; min-width: 64px; font-weight: 700; font-size: var(--fs-xs); text-transform: uppercase; }
+.ev-born { color: #2f7d5b; } .ev-died { color: var(--muted); } .ev-married { color: #c0567a; } .ev-divorced { color: #b5872c; }
+@media (max-width: 900px) { .dyn-ev { columns: 1; } }
+.tree-l { font-size: var(--fs-xs); color: var(--muted); margin-left: 4px; border: 1px solid var(--line); border-radius: 999px; padding: 0 6px; text-decoration: none; }
+.tree-l:hover { color: var(--blue); border-color: var(--blue); }

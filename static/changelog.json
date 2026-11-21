@@ -1,5 +1,16 @@
 [
   {
+    "version": "13.7",
+    "date": "2026-11-21",
+    "title": "Family tree and Dynasty tabs for people",
+    "changes": [
+      "People's pages have a new Family tree tab: ancestors up to 8 generations back (four as a chart, all eight in a fold-out list that says who each one is, e.g. \u201cFather's mother's father\u201d), and every relative the save links to them, named precisely (half-sister, great-uncle, first cousin once removed...). Switch between Close family, + Aunts, uncles & cousins, and Everyone, or show only those alive.",
+      "New <surname> dynasty tab: the family that shares the person's last name, from its earliest known member down. Tree by generation with who each married, every member and those who married in, stables owned, total jockey and trainer wins and awards, and a list of births, marriages, divorces and deaths.",
+      "The game links parents and children born since your career began, so family trees and dynasties grow as generations pass.",
+      "Quick Guide updated."
+    ]
+  },
+  {
     "version": "13.6",
     "date": "2026-11-21",
     "title": "Horse finances: what each horse cost to buy",

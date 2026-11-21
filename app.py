@@ -2518,6 +2518,263 @@ def api_careers(con, q):
     return {"total": total, "page": page, "page_size": page_size(), "rows": data, "view": view}
 
 
+# ------------------------------------------------------------------ people: family tree and dynasty
+FAMILY_GENS = 8
+
+
+def family_graph(con):
+    """Parents, children and marriages for everyone the save records them for."""
+    par, kids = {}, {}
+    if has_table(con, "children"):
+        for k, a, b in con.execute("select child_person_id, child_parent_1_id, child_parent_2_id from children"):
+            ps = [x for x in (a, b) if x and x > 0]
+            if k and ps:
+                par[k] = ps
+                for x in ps:
+                    kids.setdefault(x, []).append(k)
+    mar = {}
+    if has_table(con, "marriages"):
+        for a, b, d, div, end in con.execute("""select marriage_person_1_id, marriage_person_2_id, marriage_date, marriage_divorce_date, marriage_end_date
+                from marriages order by marriage_date"""):
+            for x, y in ((a, b), (b, a)):
+                if x and y:
+                    mar.setdefault(x, []).append({"id": y, "date": d, "divorced": div, "ended": end})
+    for pid, sp, pa in con.execute("""select person_person_id, person_spouse_id, person_partner_id from persons
+            where coalesce(person_spouse_id,0) > 0 or coalesce(person_partner_id,0) > 0"""):
+        for other, kind in ((sp, "spouse"), (pa, "partner")):
+            if other and other > 0 and not any(m["id"] == other for m in mar.get(pid, [])):
+                mar.setdefault(pid, []).append({"id": other, "date": None, "divorced": None, "ended": None, "partner": kind == "partner"})
+    return par, kids, mar
+
+
+def ordinal_word(n):
+    return {1: "first", 2: "second", 3: "third", 4: "fourth", 5: "fifth", 6: "sixth", 7: "seventh", 8: "eighth"}.get(n, "%dth" % n)
+
+
+def relation_name(up, down, sex, half=False):
+    """What someone is to you, from how many generations up to your closest shared ancestor and back down to them."""
+    m, f = sex == "Male", sex == "Female"
+    g = lambda male, female, other: male if m else female if f else other
+    greats = lambda n: "" if n <= 0 else "great-" if n == 1 else "great-great-" if n == 2 else "%d× great-" % n
+    if up == 0 and down == 0:
+        return "Themselves"
+    if down == 0:
+        return {1: g("Father", "Mother", "Parent"), 2: g("Grandfather", "Grandmother", "Grandparent")}.get(up) or \
+            (greats(up - 2) + g("grandfather", "grandmother", "grandparent")).capitalize()
+    if up == 0:
+        return {1: g("Son", "Daughter", "Child"), 2: g("Grandson", "Granddaughter", "Grandchild")}.get(down) or \
+            (greats(down - 2) + g("grandson", "granddaughter", "grandchild")).capitalize()
+    if up == 1 and down == 1:
+        return ("Half-" if half else "") + (g("brother", "sister", "sibling") if half else g("Brother", "Sister", "Sibling"))
+    if down == 1:
+        return (greats(up - 2) + g("uncle", "aunt", "aunt or uncle")).capitalize()
+    if up == 1:
+        return (("grand" if down == 3 else greats(down - 3) + "grand" if down > 3 else "") + g("nephew", "niece", "niece or nephew")).capitalize()
+    degree, removed = min(up, down) - 1, abs(up - down)
+    name = "%s cousin" % ordinal_word(degree)
+    if removed:
+        name += " " + ({1: "once", 2: "twice", 3: "three times"}.get(removed) or "%d times" % removed) + " removed"
+    return name.capitalize()
+
+
+def person_cards(con, ids):
+    """Short facts for a list of people: name, sex, born, died, job now and stable."""
+    out = {}
+    ids = [i for i in dict.fromkeys(ids) if i]
+    for k in range(0, len(ids), 500):
+        chunk = ids[k:k + 500]
+        marks = ",".join("?" * len(chunk))
+        for r in rows(con, """select p.person_person_id as id, p.person_full_name as name, p.person_last_name as surname, p.person_sex as sex,
+                p.person_birth_date as birth, p.person_deceased_date as died, p.person_is_player as is_player,
+                p.person_jockey_wins as j_wins, coalesce(p.person_trainer_wins,0)+coalesce(p.person_head_trainer_wins,0) as t_wins,
+                p.person_owner_of_stable_id as owns_id,
+                (select f.staff_current_role from staff f where f.staff_person_id=p.person_person_id and f.staff_end_date is null order by f.staff_start_date limit 1) as job,
+                (select f.staff_stable_id from staff f where f.staff_person_id=p.person_person_id and f.staff_end_date is null order by f.staff_start_date limit 1) as stable_id
+                from persons p where p.person_person_id in (%s)""" % marks, chunk):
+            out[r["id"]] = r
+    sn = name_map(con, "stables", "stable_stable_id", "stable_name", [r["stable_id"] for r in out.values()] + [r["owns_id"] for r in out.values()])
+    for r in out.values():
+        r["stable"], r["owns"] = sn.get(r["stable_id"]), sn.get(r["owns_id"])
+        r["is_player"] = r["is_player"] in ("true", 1, "1", True)
+    return out
+
+
+def api_family(con, pid):
+    """Family tree tab: ancestors up to eight generations back, and every blood relative the save links to them
+    (siblings, aunts and uncles, cousins of any degree, nieces, nephews, children...) with what they are to this person."""
+    if not one(con, "select 1 as x from persons where person_person_id=?", (pid,)):
+        return None
+    par, kids, mar = family_graph(con)
+    # ancestors: "F"/"M" paths (father/mother first by sex when known), up to eight generations
+    sexes = dict(con.execute("select person_person_id, person_sex from persons where person_person_id in (%s)" % ",".join(
+        str(int(x)) for x in set(list(par) + [y for v in par.values() for y in v] + [pid]))).fetchall()) if par else {}
+
+    def ordered(ps):
+        ps = list(ps)
+        ps.sort(key=lambda x: 0 if sexes.get(x) == "Male" else 1)
+        return ps
+
+    tree, frontier = {"": pid}, {"": pid}
+    for gen in range(1, FAMILY_GENS + 1):
+        nxt = {}
+        for path, who in frontier.items():
+            for i, p in enumerate(ordered(par.get(who, []))[:2]):
+                nxt[path + ("F" if (sexes.get(p) == "Male" or (sexes.get(p) is None and i == 0)) else "M")] = p
+        tree.update(nxt)
+        frontier = nxt
+        if not nxt:
+            break
+    # relatives: from every ancestor (and yourself) down again
+    up = {pid: 0}
+    queue = [pid]
+    while queue:
+        x = queue.pop(0)
+        if up[x] >= FAMILY_GENS:
+            continue
+        for p in par.get(x, []):
+            if p not in up:
+                up[p] = up[x] + 1
+                queue.append(p)
+    rel = {}
+    for anc, i in sorted(up.items(), key=lambda kv: kv[1]):
+        level, seen = [anc], {anc}
+        for j in range(0, FAMILY_GENS + 1):
+            for x in level:
+                if x == pid or x in up and up[x] < i:
+                    continue
+                best = rel.get(x)
+                if best is None or (i + j) < (best["up"] + best["down"]):
+                    rel[x] = {"up": i, "down": j, "via": anc}
+            nxt = []
+            for x in level:
+                for k in kids.get(x, []):
+                    if k not in seen:
+                        seen.add(k)
+                        nxt.append(k)
+            level = nxt
+            if not level:
+                break
+    rel.pop(pid, None)
+    for a in up:      # ancestors themselves
+        if a != pid:
+            rel[a] = {"up": up[a], "down": 0, "via": a}
+    ids = list(rel) + list(tree.values()) + [m["id"] for m in mar.get(pid, [])]
+    cards = person_cards(con, ids)
+    my_parents = set(par.get(pid, []))
+    out_rel = []
+    for x, r in rel.items():
+        c = cards.get(x)
+        if not c:
+            continue
+        half = r["up"] == 1 and r["down"] == 1 and len(set(par.get(x, [])) & my_parents) < min(2, len(my_parents) or 2)
+        out_rel.append(dict(c, up=r["up"], down=r["down"], relation=relation_name(r["up"], r["down"], c["sex"], half),
+                            spouses=[m["id"] for m in mar.get(x, []) if not m.get("divorced") and not m.get("ended")]))
+    sp_cards = person_cards(con, [s for r in out_rel for s in r["spouses"]])
+    for r in out_rel:
+        r["spouses"] = [{"id": s, "name": (sp_cards.get(s) or {}).get("name")} for s in r["spouses"] if sp_cards.get(s)]
+    out_rel.sort(key=lambda r: (r["up"] + r["down"], r["up"], r["birth"] or 0))
+    spouses = [dict(cards.get(m["id"]) or {"id": m["id"]}, married=m["date"], divorced=m["divorced"], ended=m["ended"], partner=m.get("partner"))
+               for m in mar.get(pid, [])]
+    return {"person": cards.get(pid) or person_cards(con, [pid]).get(pid), "tree": {k: cards.get(v) or {"id": v} for k, v in tree.items() if k},
+            "relatives": out_rel, "spouses": spouses, "gens": FAMILY_GENS,
+            "deepest": max([len(k) for k in tree if k] or [0]), "recorded": len(par)}
+
+
+def api_dynasty(con, pid):
+    """Dynasty tab: the family that shares this person's last name, as far as the save links them by birth or marriage,
+    from its earliest known members down: every member, those who married in, its tree, records and events."""
+    me = one(con, "select person_person_id as id, person_last_name as surname from persons where person_person_id=?", (pid,))
+    if not me:
+        return None
+    surname = (me["surname"] or "").strip()
+    par, kids, mar = family_graph(con)
+    # everyone linked to this person by birth or marriage
+    comp, queue = {pid}, [pid]
+    while queue and len(comp) < 5000:
+        x = queue.pop()
+        for y in par.get(x, []) + kids.get(x, []) + [m["id"] for m in mar.get(x, [])]:
+            if y not in comp:
+                comp.add(y)
+                queue.append(y)
+    cards = person_cards(con, list(comp))
+    members = {i for i, c in cards.items() if surname and (c["surname"] or "").strip().lower() == surname.lower()}
+    members.add(pid)
+    # Someone with the name but no parents in the family who married into it took the name on marriage: they count as married in.
+    # Between two such people married to each other (the earliest couple), the husband carries the line.
+    has_line = {x for x in members if set(par.get(x, [])) & members}
+    took_name = set()
+    for x in members - has_line:
+        for m in mar.get(x, []):
+            y = m["id"]
+            if y in has_line or (y in members and y not in has_line and cards.get(x, {}).get("sex") == "Female" and cards.get(y, {}).get("sex") == "Male"):
+                took_name.add(x)
+                break
+    took_name.discard(pid) if pid in has_line else None
+    line = members - took_name
+    married_in = took_name | {m["id"] for x in line for m in mar.get(x, []) if m["id"] not in members and m["id"] in cards}
+    # generations: the earliest members of the line are generation 1, their children 2, and so on
+    founders = sorted((x for x in line if not (set(par.get(x, [])) & line)), key=lambda x: cards.get(x, {}).get("birth") or 0)
+    gen = {}
+
+    def gen_of(x, depth=0):
+        if x not in gen:
+            ps = [p for p in par.get(x, []) if p in line]
+            gen[x] = 1 + max((gen_of(p, depth + 1) for p in ps), default=0) if depth < 60 else 1
+        return gen[x]
+    for x in line:
+        gen_of(x)
+    for x in took_name:      # married in: the generation of the one they married
+        gen[x] = max((gen.get(m["id"], 0) for m in mar.get(x, []) if m["id"] in line), default=0) or None
+    # what the dynasty has done
+    ids = list(members)
+    aw = {}
+    if has_table(con, "awards") and ids:
+        for k in range(0, len(ids), 500):
+            chunk = ids[k:k + 500]
+            for r in rows(con, "select award_entity_id as id, count(*) as n from awards where award_entity_type='person' and award_entity_id in (%s) group by 1"
+                          % ",".join("?" * len(chunk)), chunk):
+                aw[r["id"]] = r["n"]
+    owned = {}
+    for k in range(0, len(ids), 500):
+        chunk = ids[k:k + 500]
+        for r in rows(con, "select stable_stable_id as id, stable_name as name, stable_owner_id as owner, stable_liquidated as gone from stables where stable_owner_id in (%s)"
+                      % ",".join("?" * len(chunk)), chunk):
+            owned.setdefault(r["owner"], []).append(r)
+    def member(x, kind):
+        c = dict(cards[x])
+        c.update(kind=kind, gen=gen.get(x), awards=aw.get(x, 0), stables=owned.get(x, []),
+                 parents=[p for p in par.get(x, []) if p in cards], children=[k for k in kids.get(x, []) if k in cards],
+                 spouses=[{"id": m["id"], "name": cards[m["id"]]["name"], "divorced": m["divorced"], "ended": m["ended"]}
+                          for m in mar.get(x, []) if m["id"] in cards])
+        return c
+    mem = [member(x, "member") for x in line if x in cards] + [member(x, "married") for x in married_in]
+    mem.sort(key=lambda r: (r["gen"] or 99, r["birth"] or 0))
+    # events: births, marriages and deaths of members
+    ev = []
+    members = line
+    for r in mem:
+        if r["kind"] == "member" and r["birth"]:
+            ev.append({"date": r["birth"], "kind": "born", "who": r["id"]})
+        if r["died"]:
+            ev.append({"date": r["died"], "kind": "died", "who": r["id"]})
+    seen = set()
+    for x in members:
+        for m in mar.get(x, []):
+            key = tuple(sorted((x, m["id"])))
+            if m["date"] and key not in seen and m["id"] in cards:
+                seen.add(key)
+                ev.append({"date": m["date"], "kind": "married", "who": x, "with": m["id"]})
+                if m["divorced"]:
+                    ev.append({"date": m["divorced"], "kind": "divorced", "who": x, "with": m["id"]})
+    ev.sort(key=lambda e: e["date"], reverse=True)
+    others = one(con, "select count(*) as n from persons where lower(trim(person_last_name))=lower(?)", (surname,))["n"] - len(members) if surname else 0
+    live = [r for r in mem if r["kind"] == "member" and not r["died"]]
+    return {"surname": surname, "person_id": pid, "members": mem, "founders": [x for x in founders if x in cards],
+            "generations": max(gen.values() or [1]), "events": ev[:300], "unlinked_same_name": max(0, others),
+            "living": len(live), "total": len([r for r in mem if r["kind"] == "member"]),
+            "stables": sorted({(s["id"], s["name"], bool(s["gone"])) for r in mem for s in r["stables"]}, key=lambda t: t[1] or "")}
+
+
 def api_person(con, pid):
     p = one(con, "select * from persons where person_person_id=?", (pid,))
     if not p:
@@ -3647,6 +3904,8 @@ ROUTES = [
     (re.compile(r"^/api/stable_horse_money/(-?\d+)$"), lambda con, m, q: api_stable_horse_money(con, int(m.group(1)), q)),
     (re.compile(r"^/api/stable_awards/(-?\d+)$"), lambda con, m, q: api_stable_awards(con, int(m.group(1)), q)),
     (re.compile(r"^/api/awards_of/(horse|person)/(-?\d+)$"), lambda con, m, q: api_awards_of(con, m.group(1), int(m.group(2)))),
+    (re.compile(r"^/api/family/(-?\d+)$"), lambda con, m, q: api_family(con, int(m.group(1)))),
+    (re.compile(r"^/api/dynasty/(-?\d+)$"), lambda con, m, q: api_dynasty(con, int(m.group(1)))),
     (re.compile(r"^/api/people$"), lambda con, m, q: api_people(con, q)),
     (re.compile(r"^/api/careers$"), lambda con, m, q: api_careers(con, q)),
     (re.compile(r"^/api/person/(-?\d+)$"), lambda con, m, q: api_person(con, int(m.group(1)))),
@@ -4290,7 +4549,7 @@ class Handler(BaseHTTPRequestHandler):
 
 # --------------------------------------------------------------------------- in-app updates
 
-VERSION = "13.6"
+VERSION = "13.7"
 BACKUP_DIR = os.path.join(APP_DIR, "backups")
 UPDATE_PENDING = os.path.join(DATA_DIR, "update_pending.json")
 UPDATE_RESULT = os.path.join(DATA_DIR, "update_result.json")
