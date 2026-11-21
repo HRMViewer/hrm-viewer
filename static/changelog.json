@@ -1,5 +1,14 @@
 [
   {
+    "version": "13.4",
+    "date": "2026-11-21",
+    "title": "Stable awards: Worst Horse of the Year",
+    "changes": [
+      "On a stable's Awards tab, Worst Horse of the Year is now shown as \u201cWorst of the year\u201d instead of a win: it isn't highlighted, isn't counted in the \u201cwon\u201d totals and doesn't appear under Wins only.",
+      "The Quick Guide now covers the stable Awards tab added in 13.3."
+    ]
+  },
+  {
     "version": "13.3",
     "date": "2026-11-20",
     "title": "Awards tab on the stable page",

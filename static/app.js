@@ -2501,7 +2501,8 @@ async function stableAwardsPage(route) {
   // what the filter calls each row: the stable itself, a horse's season award, a horse's Group/Listed race win, or an employee
   const group = (a) => (a.etype === "stable" ? "stable" : a.etype === "person" ? "staff" : a.kind === "race" ? "race" : "horse");
   // a race win, a first place, or no place at all (a Hall of Fame induction) is a win; 2nd and 3rd are the runners-up the game lists
-  const result = (a) => (a.kind === "race" ? "won" : a.cat === "hall_of_fame_nominee" ? "nominee" : (a.rank || 1) === 1 ? "won" : "placed");
+  // Worst Horse of the Year is an award nobody wants: shown as such, never counted as a win
+  const result = (a) => (a.kind === "race" ? "won" : a.cat === "hall_of_fame_nominee" ? "nominee" : a.cat === "worst_overall" ? "worst" : (a.rank || 1) === 1 ? "won" : "placed");
   const count = (list) => list.length;
   const wins = (list) => list.filter((a) => result(a) === "won").length;
   const by = { stable: all.filter((a) => group(a) === "stable"), horse: all.filter((a) => group(a) === "horse"), race: all.filter((a) => group(a) === "race"), staff: all.filter((a) => group(a) === "staff") };
@@ -2526,7 +2527,8 @@ async function stableAwardsPage(route) {
   const who = (a) => (a.etype === "horse" ? `${L.horse(a.eid, a.who)} <span class="small muted">horse</span>` : a.etype === "person" ? `${L.person(a.eid, a.who)} <span class="small muted">employee</span>`
     : `${esc(d.stable.stable_name)} <span class="small muted">stable</span>`);
   const badge = (a) => ({ won: `<span class="badge good">${a.kind === "race" ? "Won" : a.cat === "hall_of_fame" ? "Inducted" : "Winner"}</span>`,
-    placed: `<span class="badge">Runner-up · ${ord(a.rank)}</span>`, nominee: `<span class="badge">Nominated</span>` }[result(a)]);
+    placed: `<span class="badge">Runner-up · ${ord(a.rank)}</span>`, nominee: `<span class="badge">Nominated</span>`,
+    worst: `<span class="badge dead">Worst of the year</span>` }[result(a)]);
   const gradeOf = { g1_race: "G1", g2_race: "G2", g3_race: "G3", listed_race: "listed" };
   html += `<section class="panel">${tabs}${table([
     { h: "Year", cls: "nowrap", f: (a) => (a.year ? `<b>${a.year}</b>` : "—") },
