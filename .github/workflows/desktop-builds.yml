@@ -101,7 +101,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest, macos-15, macos-14, macos-13]
+        os: [macos-15-intel]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 10
     steps:
@@ -116,7 +116,7 @@ jobs:
     # (written this way because GitHub treats an empty input as equal to false: test pushes have no inputs)
     if: ${{ format('{0}', inputs.mac) != 'false' }}
     timeout-minutes: 40
-    runs-on: macos-14
+    runs-on: macos-15   # Apple Silicon, macOS 15 (macos-14 and macos-13 machines are no longer handed out)
     steps:
       - name: Say the Mac build has started (test builds only)
         if: github.ref == 'refs/heads/desktop-test'
