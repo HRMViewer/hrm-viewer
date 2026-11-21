@@ -3032,6 +3032,109 @@ def api_family(con, pid):
             "deepest": max([len(k) for k in tree if k] or [0]), "recorded": len(par)}
 
 
+def life_facts(con, ids):
+    """What each of these people did, for the Lifespans tab and the Dynasty views: jobs over time, stables they own,
+    jockey and trainer wins (with Group 1s, first win, first Group 1 and wins per year), season awards they won and prize money.
+    {id: {...}}, worked out in a handful of grouped queries however many people there are."""
+    ids = [i for i in dict.fromkeys(ids) if i]
+    out = {i: {"careers": [], "owned": [], "j_wins": 0, "t_wins": 0, "g1": 0, "first_win": None, "first_g1": None,
+               "by_year": {}, "awards": [], "prize": 0} for i in ids}
+    if not ids:
+        return out
+    def chunks():
+        for k in range(0, len(ids), 400):
+            c = ids[k:k + 400]
+            yield c, ",".join("?" * len(c))
+    if has_table(con, "staff"):
+        for c, mk in chunks():
+            for r in rows(con, """select f.staff_person_id as id, f.staff_current_role as role, f.staff_start_date as start, f.staff_end_date as end,
+                    f.staff_stable_id as stable_id, s.stable_name as stable from staff f left join stables s on s.stable_stable_id=f.staff_stable_id
+                    where f.staff_person_id in (%s) and f.staff_current_role is not null order by f.staff_start_date""" % mk, c):
+                out[r.pop("id")]["careers"].append(r)
+    for c, mk in chunks():
+        for r in rows(con, """select stable_owner_id as id, stable_stable_id as stable_id, stable_name as name, stable_founded_date as founded,
+                stable_liquidated as gone from stables where stable_owner_id in (%s) order by stable_founded_date""" % mk, c):
+            out[r.pop("id")]["owned"].append(r)
+    pcols = set(columns(con, "persons"))
+    money = [x for x in ("person_jockey_winnings", "person_trainer_winnings", "person_head_trainer_career_winnings", "person_management_career_winnings") if x in pcols]
+    if money:
+        for c, mk in chunks():
+            for r in con.execute("select person_person_id, %s from persons where person_person_id in (%s)" % (" + ".join("coalesce(%s,0)" % x for x in money), mk), c):
+                out[r[0]]["prize"] = r[1] or 0
+    if has_table(con, "race_results"):
+        rcols = set(columns(con, "race_results"))
+        roles = [("j", "race_result_person_jockey_id"), ("t", "race_result_trainer_id"), ("t", "race_result_stable_head_trainer_id")]
+        roles = [(k, c) for k, c in roles if c in rcols]
+        # every win as jockey or trainer; a race they both rode and trained counts once in their total
+        won = {}
+        for c, mk in chunks():
+            sub = " union all ".join("""select '%s' as k, %s as pid, race_result_id as rid, race_result_race_id as race, race_result_date as d, race_result_horse_id as horse
+                from race_results where race_result_rank=1 and %s in (%s)""" % (k, col, col, mk) for k, col in roles)
+            for k, who, rid, race, d, horse, typ, rname, hname in con.execute("""select w.*, x.races_type_of_race, x.races_race_name, h.horse_name from (%s) w
+                    left join races x on x.races_race_id=w.race and w.race>0 left join horses h on h.horse_horse_id=w.horse""" % sub, c * len(roles)):
+                won.setdefault(who, {}).setdefault(rid, [set(), d, typ, race, rname, horse, hname])[0].add(k)
+        for who, races in won.items():
+            f = out[who]
+            for rid, (ks, d, typ, race, rname, horse, hname) in races.items():
+                f["j_wins"] += "j" in ks
+                f["t_wins"] += "t" in ks
+                y = utc_year(d)
+                if y is not None:
+                    f["by_year"][y] = f["by_year"].get(y, 0) + 1
+                if d is not None and (f["first_win"] is None or d < f["first_win"]):
+                    f["first_win"] = d
+                if typ == "G1":
+                    f["g1"] += 1
+                    if d is not None and (not f["first_g1"] or d < f["first_g1"]["date"]):
+                        f["first_g1"] = {"date": d, "race_id": race, "race": rname, "horse_id": horse, "horse": hname}
+    if has_table(con, "awards"):
+        concepts = dict(con.execute("select concept_id, concept_name from concepts").fetchall()) if has_table(con, "concepts") else {}
+        for c, mk in chunks():
+            for r in rows(con, """select award_entity_id as id, award_category as cat, award_year as year, award_date as date, award_rank as rank
+                    from awards where award_entity_type='person' and award_entity_id in (%s) order by award_year""" % mk, c):
+                won = r["cat"] not in ("worst_overall", "hall_of_fame_nominee") and (r["rank"] in (None, 0, 1))
+                if won:
+                    out[r["id"]]["awards"].append({"year": r["year"], "date": r["date"], "label": award_label(r["cat"], concepts), "cat": r["cat"]})
+    for f in out.values():
+        f["wins"] = sum(f["by_year"].values())      # different races won, in any role
+    return out
+
+
+def api_lifespans(con, pid):
+    """Lifespans tab: the person and their ancestors (and, if wanted, brothers, sisters and children) on one time line,
+    with what each of them did: jobs, stables owned, first win, awards, marriages and children."""
+    fam = api_family(con, pid)
+    if not fam:
+        return None
+    par, kids, mar = family_graph(con)
+    tree = fam["tree"]
+    people = [{"id": pid, "path": "", "gen": 0}]
+    people += [{"id": r["id"], "path": path, "gen": len(path)} for path, r in tree.items() if r and r.get("id")]
+    for r in fam.get("siblings") or []:
+        people.append({"id": r["id"], "path": "S", "gen": 0, "half": r.get("half")})
+    for k in kids.get(pid, []):
+        people.append({"id": k, "path": "C", "gen": -1})
+    seen, plist = set(), []
+    for x in people:
+        if x["id"] not in seen:
+            seen.add(x["id"])
+            plist.append(x)
+    ids = [x["id"] for x in plist]
+    cards = person_cards(con, ids)
+    facts = life_facts(con, ids)
+    for x in plist:
+        c = cards.get(x["id"]) or {}
+        x.update({k: c.get(k) for k in ("name", "sex", "birth", "died", "job", "stable_id", "stable", "is_player")})
+        x.update(facts.get(x["id"], {}))
+        x["marriages"] = [{"id": m["id"], "date": m["date"], "divorced": m["divorced"], "ended": m["ended"]} for m in mar.get(x["id"], [])]
+    kid_ids = sorted({int(k) for x in plist for k in kids.get(x["id"], [])})
+    births = dict(con.execute("select person_person_id, person_birth_date from persons where person_person_id in (%s)" % ",".join(map(str, kid_ids))).fetchall()) if kid_ids else {}
+    for x in plist:
+        x["children"] = sorted(births[k] for k in kids.get(x["id"], []) if births.get(k) is not None)
+        x["kids_n"] = len(kids.get(x["id"], []))
+    return {"person": fam["person"], "people": plist, "game_date": META.get("game_date"), "deepest": fam.get("deepest")}
+
+
 def api_dynasty(con, pid):
     """Dynasty tab: the family that shares this person's last name, as far as the save links them by birth or marriage,
     from its earliest known members down: every member, those who married in, its tree, records and events."""
@@ -3075,17 +3178,11 @@ def api_dynasty(con, pid):
         return gen[x]
     for x in line:
         gen_of(x)
-    for x in took_name:      # married in: the generation of the one they married
+    for x in took_name | married_in:      # married in: the generation of the one they married
         gen[x] = max((gen.get(m["id"], 0) for m in mar.get(x, []) if m["id"] in line), default=0) or None
     # what the dynasty has done
     ids = list(members)
-    aw = {}
-    if has_table(con, "awards") and ids:
-        for k in range(0, len(ids), 500):
-            chunk = ids[k:k + 500]
-            for r in rows(con, "select award_entity_id as id, count(*) as n from awards where award_entity_type='person' and award_entity_id in (%s) group by 1"
-                          % ",".join("?" * len(chunk)), chunk):
-                aw[r["id"]] = r["n"]
+    facts = life_facts(con, [x for x in line | married_in if x in cards])
     owned = {}
     for k in range(0, len(ids), 500):
         chunk = ids[k:k + 500]
@@ -3094,7 +3191,10 @@ def api_dynasty(con, pid):
             owned.setdefault(r["owner"], []).append(r)
     def member(x, kind):
         c = dict(cards[x])
-        c.update(kind=kind, gen=gen.get(x), awards=aw.get(x, 0), stables=owned.get(x, []),
+        f = facts.get(x) or {}
+        c.update(kind=kind, gen=gen.get(x), awards=len(f.get("awards") or []), award_list=f.get("awards") or [], stables=owned.get(x, []),
+                 g1=f.get("g1", 0), wins=f.get("wins", 0), prize=f.get("prize", 0), first_win=f.get("first_win"), first_g1=f.get("first_g1"),
+                 by_year=f.get("by_year") or {}, careers=f.get("careers") or [], owned=f.get("owned") or [],
                  parents=[p for p in par.get(x, []) if p in cards], children=[k for k in kids.get(x, []) if k in cards],
                  spouses=[{"id": m["id"], "name": cards[m["id"]]["name"], "divorced": m["divorced"], "ended": m["ended"]}
                           for m in mar.get(x, []) if m["id"] in cards])
@@ -3121,12 +3221,58 @@ def api_dynasty(con, pid):
                 ev.append({"date": m["date"], "kind": "married", "who": x, "with": m["id"]})
                 if m["divorced"]:
                     ev.append({"date": m["divorced"], "kind": "divorced", "who": x, "with": m["id"]})
+    # racing: first win, first Group 1, season awards won, stables founded (family members, not those who married in)
+    for r in mem:
+        if r["kind"] != "member":
+            continue
+        if r["first_win"]:
+            ev.append({"date": r["first_win"], "kind": "first_win", "who": r["id"]})
+        if r["first_g1"]:
+            ev.append({"date": r["first_g1"]["date"], "kind": "first_g1", "who": r["id"], "race": r["first_g1"]})
+        for a in r["award_list"]:
+            d = a["date"] or (calendar.timegm((a["year"], 12, 31, 0, 0, 0)) if a["year"] else None)
+            if d is not None:
+                ev.append({"date": d, "kind": "award", "who": r["id"], "label": a["label"], "year": a["year"]})
+        for o in r["owned"]:
+            if o["founded"]:
+                ev.append({"date": o["founded"], "kind": "stable", "who": r["id"], "stable_id": o["stable_id"], "stable": o["name"]})
     ev.sort(key=lambda e: e["date"], reverse=True)
+    # the family's stables: owned by a member or by someone who married in
+    st_ids = sorted({o["stable_id"] for r in mem for o in r["owned"]})
+    stables = []
+    if st_ids:
+        mk = ",".join("?" * len(st_ids))
+        rem = "and h.horse_horse_id not in (select pk from hrmv_removed where tbl='horses')" if has_table(con, "hrmv_removed") else ""
+        for r in rows(con, """select s.stable_stable_id as id, s.stable_name as name, s.stable_owner_id as owner, s.stable_founded_date as founded, s.stable_liquidated as gone,
+                (select count(*) from horses h where h.horse_stable_id=s.stable_stable_id and h.horse_deceased_date is null %s) as horses
+                from stables s where s.stable_stable_id in (%s)""" % (rem, mk), st_ids):
+            stables.append(r)
+        if has_table(con, "race_results"):
+            wins = {r[0]: (r[1], r[2] or 0) for r in con.execute("""select r.race_result_stable_id, count(*), sum(x.races_type_of_race='G1') from race_results r
+                    left join races x on x.races_race_id=r.race_result_race_id and r.race_result_race_id>0
+                    where r.race_result_rank=1 and r.race_result_stable_id in (%s) group by 1""" % mk, st_ids)}
+            for r in stables:
+                r["wins"], r["g1"] = wins.get(r["id"], (0, 0))
+        staff_at = {}
+        for r in mem:
+            if r.get("stable_id") and not r.get("died"):
+                staff_at.setdefault(r["stable_id"], []).append(r["id"])
+        for r in stables:
+            r["family_staff"] = staff_at.get(r["id"], [])
+    # head of the family: the eldest living member of the earliest generation still alive
+    alive = [r for r in mem if r["kind"] == "member" and not r["died"]]
+    head = min(alive, key=lambda r: (r["gen"] or 99, r["birth"] or 0))["id"] if alive else None
+    by_year = {}
+    for r in mem:
+        if r["kind"] == "member":
+            for y, n in r["by_year"].items():
+                by_year[y] = by_year.get(y, 0) + n
     others = one(con, "select count(*) as n from persons where lower(trim(person_last_name))=lower(?)", (surname,))["n"] - len(members) if surname else 0
     live = [r for r in mem if r["kind"] == "member" and not r["died"]]
     return {"surname": surname, "person_id": pid, "members": mem, "founders": [x for x in founders if x in cards],
             "generations": max(gen.values() or [1]), "events": ev[:300], "unlinked_same_name": max(0, others),
-            "living": len(live), "total": len([r for r in mem if r["kind"] == "member"]),
+            "living": len(live), "total": len([r for r in mem if r["kind"] == "member"]), "head": head, "family_stables": stables,
+            "wins_by_year": by_year, "game_date": META.get("game_date"),
             "stables": sorted({(s["id"], s["name"], bool(s["gone"])) for r in mem for s in r["stables"]}, key=lambda t: t[1] or "")}
 
 
@@ -4511,6 +4657,7 @@ ROUTES = [
     (re.compile(r"^/api/awards_of/(horse|person)/(-?\d+)$"), lambda con, m, q: api_awards_of(con, m.group(1), int(m.group(2)))),
     (re.compile(r"^/api/family/(-?\d+)$"), lambda con, m, q: api_family(con, int(m.group(1)))),
     (re.compile(r"^/api/dynasty/(-?\d+)$"), lambda con, m, q: api_dynasty(con, int(m.group(1)))),
+    (re.compile(r"^/api/lifespans/(-?\d+)$"), lambda con, m, q: api_lifespans(con, int(m.group(1)))),
     (re.compile(r"^/api/people_overview$"), lambda con, m, q: api_people_overview(con, q)),
     (re.compile(r"^/api/people$"), lambda con, m, q: api_people(con, q)),
     (re.compile(r"^/api/careers$"), lambda con, m, q: api_careers(con, q)),
@@ -5258,7 +5405,7 @@ class Handler(BaseHTTPRequestHandler):
 
 # --------------------------------------------------------------------------- in-app updates
 
-VERSION = "15.4"
+VERSION = "15.5"
 BACKUP_DIR = os.path.join(APP_DIR, "backups")
 UPDATE_PENDING = os.path.join(DATA_DIR, "update_pending.json")
 UPDATE_RESULT = os.path.join(DATA_DIR, "update_result.json")

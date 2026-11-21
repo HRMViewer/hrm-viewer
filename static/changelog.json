@@ -1,5 +1,20 @@
 [
   {
+    "version": "15.5",
+    "date": "2026-11-22",
+    "title": "Lifespans tab and a new Dynasty tab",
+    "changes": [
+      "New Lifespans tab on every person, next to Tree chart: the person and their ancestors on one time line. Each life is a bar and the darker part is their racing career (point at it for the job, stable and years). Dots mark season awards, their first win, their first Group 1, marriages and children, and a dashed line shows the game date.",
+      "Lifespans lets you choose how far back to go (parents, grandparents, great-grandparents or everyone) and add brothers and sisters, children or both. Underneath: the average age at a first child, the youngest first win, the longest career, how long the person and their oldest ancestor overlapped, the jobs in the family, and the wins, Group 1s and awards between them.",
+      "The Dynasty tab now has three views: Overview, Family tree and Chronicle.",
+      "Overview: the family's crest and founders, the head of the family (the eldest living member of the earliest generation), totals for jockey and trainer wins, Group 1s, season awards, prize money and stables, the most decorated members, the family's stables (with their wins, Group 1s and horses) and the other stables where family members work, every generation, and the members table, which now also has Group 1s, awards and prize money.",
+      "Family tree: drawn from the founders down, with partners beside each member (a dashed line for a divorce), crowns for the head of the family, and buttons to highlight jockeys, trainers, award and Group 1 winners or who's working now. Zoom with − Fit +, drag to move around, and click a name to see the tree from them. Outline gives the old list for big families. Branches sums up each of the founders' children's lines.",
+      "Chronicle: the family's story decade by decade (births, marriages, divorces, deaths, stables founded, first wins, first Group 1s with the horse and race, and season awards), newest or oldest first, family or racing only. Beside it: living family members year by year, wins per decade and milestones.",
+      "Season awards on the dynasty pages now count wins only (runners-up and Hall of Fame nominations aren't counted).",
+      "Yearly charts with many years show fewer year labels so they don't overlap."
+    ]
+  },
+  {
     "version": "15.4",
     "date": "2026-11-22",
     "title": "A clearer yearly income chart",
