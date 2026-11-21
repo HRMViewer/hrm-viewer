@@ -941,3 +941,25 @@ table.fin-detail.is-in .sbar.type i { background: #9fcbb6; }
 @media (max-width: 900px) { .dyn-ev { columns: 1; } }
 .tree-l { font-size: var(--fs-xs); color: var(--muted); margin-left: 4px; border: 1px solid var(--line); border-radius: 999px; padding: 0 6px; text-decoration: none; }
 .tree-l:hover { color: var(--blue); border-color: var(--blue); }
+.dyn-div, .dyn-div a { color: var(--muted); }
+/* 13.8: tree chart */
+.tc-tools { margin-bottom: 10px; align-items: center; }
+.tc-wrap { overflow: auto; max-height: 72vh; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); cursor: grab; position: relative; }
+.tc-wrap.dragging { cursor: grabbing; user-select: none; }
+.tc { position: relative; transform-origin: 0 0; }
+.tc-size { position: relative; overflow: hidden; margin: 0 auto; }
+.tc svg { position: absolute; left: 0; top: 0; overflow: visible; }
+.tc svg path { fill: none; stroke: #8a94a6; stroke-width: 1.5; }
+.tc svg path.wed { stroke: #c0567a; stroke-width: 2; }
+.tc svg path.div { stroke: #c0567a; stroke-width: 1.5; stroke-dasharray: 5 4; opacity: .7; }
+.tc-box { position: absolute; width: 168px; height: 54px; box-sizing: border-box; padding: 6px 22px 6px 9px; border: 1px solid #d9dfe9; border-left: 4px solid #a6aaa7;
+  border-radius: 8px; background: var(--panel); box-shadow: 0 1px 2px rgba(16,24,40,.06); overflow: hidden; }
+.tc-box.m { border-left-color: #5b84ad; } .tc-box.f { border-left-color: #c07a8f; }
+.tc-box.dead { background: #f1f2f4; } .tc-box.dead .tc-nm { color: #5f6b7a; }
+.tc-box.focus { box-shadow: 0 0 0 3px rgba(37,99,235,.35); border-color: #2563eb; }
+.tc-box.divorced { opacity: .75; border-style: dashed; border-left-style: solid; }
+.tc-nm { display: block; font-weight: 600; font-size: var(--fs-sm); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tc-box .badge { position: absolute; right: 20px; top: 5px; }
+.tc-meta { font-size: var(--fs-xs); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tc-go { position: absolute; right: 6px; top: 4px; font-size: var(--fs-xs); }
+.tc-tag { margin-left: 4px; font-weight: 700; color: #b5872c; }

@@ -1,5 +1,16 @@
 [
   {
+    "version": "13.8",
+    "date": "2026-11-21",
+    "title": "Tree chart; divorces on the Dynasty tab",
+    "changes": [
+      "New Tree chart tab on people's pages: the family drawn as a proper tree with connecting lines. Ancestors above (up to 8 generations), the person in the middle with brothers and sisters beside them and partners next to them, children and grandchildren below. Zoom in and out, Fit, drag to move around, and click any name to put them in the centre.",
+      "Former partners stand on the person's left with a dashed line; the current partner on the right with a solid one.",
+      "Dynasty tab: people who married into the family and later divorced are now listed as Divorced (with their own filter and a Divorced tag), not as married in. Married to shows \u201cdivorced <year>\u201d, and the family tree greys out former partners.",
+      "Quick Guide updated."
+    ]
+  },
+  {
     "version": "13.7",
     "date": "2026-11-21",
     "title": "Family tree and Dynasty tabs for people",

@@ -344,8 +344,8 @@ const PAGES = {
       b.textContent = open ? "Close all form" : "Open all form";
     }));
   } }),
-  stables: stablesPage, stable: (r) => (r.parts[2] === "races" ? stableRacesPage(r) : r.parts[2] === "financials" ? stableFinancePage(r) : r.parts[2] === "horse-money" ? stableHorseMoneyPage(r) : r.parts[2] === "awards" ? stableAwardsPage(r) : stablePage(r.parts[1])), people: peoplePage, jockeys: careersPage, person: (r) => (r.parts[2] === "awards" ? entityAwardsPage("person", r) : r.parts[2] === "family" ? personFamilyPage(r)
-    : r.parts[2] === "dynasty" ? personDynastyPage(r) : personPage(r.parts[1])),
+  stables: stablesPage, stable: (r) => (r.parts[2] === "races" ? stableRacesPage(r) : r.parts[2] === "financials" ? stableFinancePage(r) : r.parts[2] === "horse-money" ? stableHorseMoneyPage(r) : r.parts[2] === "awards" ? stableAwardsPage(r) : stablePage(r.parts[1])), people: peoplePage, jockeys: careersPage, person: Object.assign((r) => (r.parts[2] === "awards" ? entityAwardsPage("person", r) : r.parts[2] === "family" ? personFamilyPage(r) : r.parts[2] === "tree" ? personTreePage(r)
+    : r.parts[2] === "dynasty" ? personDynastyPage(r) : personPage(r.parts[1])), { after: (r) => r.parts[2] === "tree" && tcInit() }),
   courses: coursesPage, course: Object.assign((r) => coursePage(r.parts[1]), { after: (r) => coursePage.after && coursePage.after(r) }), tables: tablesPage,
   pedigrees: pedigreesPage, pedigree: Object.assign((r) => pedigreePage(r.parts[1], r.q), { after: (r) => pedigreePage.after && pedigreePage.after(r) }), "horse-table": horseTablePage, "stable-table": stableTablePage,
   versions: versionsPage, meetings: meetingsPage, awards: (r) => awardsPage(r.q || {}), settings: Object.assign(() => settingsPage(), { after: () => settingsPage.after() }), databases: Object.assign(() => databasesPage(), { after: () => databasesPage.after() }),
@@ -2630,6 +2630,208 @@ async function personFamilyPage(route) {
   html += panel("Relatives", relHtml, "Worked out from the parents and children the save records · nearest first");
   return html;
 }
+// ------------------------------------------------------------------ Tree chart tab: a drawn family tree
+// Ancestors above (each couple side by side, their parents above them), the person in the middle with brothers and sisters
+// beside them and partners next to them, and children and grandchildren below, joined by lines.
+const TC = { W: 168, H: 54, GX: 14, GY: 46, CG: 10 };
+async function personTreePage(route) {
+  const id = route.parts[1], q = route.q || {};
+  const up = Math.max(1, Math.min(8, +q.up || 4)), down = Math.max(0, Math.min(4, q.down === undefined ? 3 : +q.down));
+  const sibs = q.sibs !== "0";
+  const [d, f] = await Promise.all([api("person/" + id), api("family/" + id)]);
+  let html = personHead(d, "tree");
+  const T = f.tree, C = f.cards || {}, me = f.person;
+  const boxes = [], lines = [];
+  const box = (r, x, y, extra) => boxes.push({ r, x, y, extra: extra || "" });
+  const card = (pid) => C[pid] || C[String(pid)] || null;
+  // --- ancestors: widths first (only known people take room), then positions
+  const has = (p) => T[p] && T[p].name;
+  const wUp = (path) => {
+    if (path.length >= up) return TC.W;
+    const ps = ["F", "M"].filter((c) => has(path + c));
+    if (!ps.length) return TC.W;
+    const w = ps.map((c) => wUp(path + c)).reduce((a, b) => a + b, 0) + TC.GX * (ps.length - 1);
+    return Math.max(TC.W, w);
+  };
+  const depthUp = (path) => (path.length >= up ? path.length : Math.max(path.length, ...["F", "M"].filter((c) => has(path + c)).map((c) => depthUp(path + c))));
+  const maxUp = depthUp("");
+  const rowY = (gen) => (maxUp - gen) * (TC.H + TC.GY);   // gen 0 = the person's row
+  // place a person's parents centred over them; returns nothing, draws boxes and lines
+  const placeUp = (path, cx) => {
+    if (path.length >= up) return;
+    const ps = ["F", "M"].filter((c) => has(path + c));
+    if (!ps.length) return;
+    const ws = ps.map((c) => wUp(path + c));
+    let x = cx - (ws.reduce((a, b) => a + b, 0) + TC.GX * (ps.length - 1)) / 2;
+    const y = rowY(path.length + 1), mids = [];
+    ps.forEach((c, i) => {
+      const mx = x + ws[i] / 2;
+      box(T[path + c], mx - TC.W / 2, y);
+      mids.push(mx);
+      placeUp(path + c, mx);
+      x += ws[i] + TC.GX;
+    });
+    // couple line, then down to the child
+    const yMid = y + TC.H / 2, from = mids.length === 2 ? (mids[0] + mids[1]) / 2 : mids[0];
+    if (mids.length === 2) lines.push(`M${mids[0] + TC.W / 2},${yMid} H${mids[1] - TC.W / 2}`);
+    lines.push(`M${from},${mids.length === 2 ? yMid : y + TC.H} V${rowY(path.length) - TC.GY / 2} H${cx} V${rowY(path.length)}`);
+  };
+  // --- descendants: a person with their partners beside them and each partner's children below that couple
+  const fams = (pid, root) => (root ? f.descendants : (card(pid) && card(pid)._f) || []);
+  const famList = (node, level) => (level >= down ? [] : (node.families || []));
+  const wFam = (fam, level) => {
+    const kids = level < down ? fam.children : [];
+    const kw = kids.map((k) => wDown(k, level + 1)).reduce((a, b) => a + b, 0) + TC.GX * Math.max(0, kids.length - 1);
+    return Math.max(TC.W, kw);
+  };
+  const wDown = (node, level) => {
+    const fs = (node.families || []).filter((x) => x.partner || (level < down && x.children.length));
+    const own = TC.W + fs.filter((x) => x.partner).length * (TC.W + TC.CG);
+    const fw = fs.map((x) => wFam(x, level)).reduce((a, b) => a + b, 0) + TC.GX * Math.max(0, fs.length - 1);
+    return Math.max(own, fw);
+  };
+  // a person's row: former partners on the left, the person, current partners on the right (so no line crosses a box)
+  const rowOf = (fs) => {
+    const ps = fs.filter((x) => x.partner);
+    const left = ps.filter((x) => x.divorced || x.ended), right = ps.filter((x) => !x.divorced && !x.ended);
+    return { left, right, rowW: TC.W + ps.length * (TC.W + TC.CG), meOff: left.length * (TC.W + TC.CG) };
+  };
+  const placeDown = (node, cx, y, level, isMe) => {
+    const fs = (node.families || []).filter((x) => x.partner || (level < down && x.children.length));
+    const row = rowOf(fs);
+    const meX = cx - row.rowW / 2 + row.meOff;
+    if (!isMe) box(card(node.id), meX, y);
+    const pos = {};
+    row.left.forEach((fam, i) => {
+      const px = meX - (row.left.length - i) * (TC.W + TC.CG);
+      box(card(fam.partner), px, y, "divorced");
+      pos[fam.partner] = px;
+      lines.push({ d: `M${px + TC.W},${y + TC.H / 2} H${i === row.left.length - 1 ? meX : px + TC.W + TC.CG}`, cls: "div" });
+    });
+    row.right.forEach((fam, i) => {
+      const px = meX + (i + 1) * (TC.W + TC.CG);
+      box(card(fam.partner), px, y, "partner");
+      pos[fam.partner] = px;
+      if (i === 0) lines.push({ d: `M${meX + TC.W},${y + TC.H / 2} H${px}`, cls: "wed" });
+    });
+    if (level >= down) return;
+    // children under each couple (or under the person for children with an unknown other parent)
+    const ws = fs.map((x) => wFam(x, level));
+    let x = cx - (ws.reduce((a, b) => a + b, 0) + TC.GX * Math.max(0, fs.length - 1)) / 2;
+    const cy = y + TC.H + TC.GY;
+    fs.forEach((fam, i) => {
+      const kids = fam.children;
+      const px = fam.partner ? pos[fam.partner] : null;
+      const from = px === null ? meX + TC.W / 2 : px > meX ? (meX + TC.W + px) / 2 : (px + TC.W + meX) / 2;
+      if (kids.length) {
+        const kws = kids.map((k) => wDown(k, level + 1));
+        let kx = x + (ws[i] - (kws.reduce((a, b) => a + b, 0) + TC.GX * (kids.length - 1))) / 2;
+        const tops = [];
+        kids.forEach((k, j) => {
+          const kcx = kx + kws[j] / 2;
+          tops.push(kcx);
+          // a child's own row puts them first, then their partners: the child's box sits at the left of their own row
+          const kr = rowOf((k.families || []).filter((z) => z.partner || (level + 1 < down && z.children.length)));
+          placeDown(k, kcx, cy, level + 1, false);
+          tops[j] = kcx - kr.rowW / 2 + kr.meOff + TC.W / 2;
+          kx += kws[j] + TC.GX;
+        });
+        const bar = cy - TC.GY / 2;
+        // from the middle of the couple's line (adjacent partners) or the bottom of the person's box
+        const adjacent = px !== null && Math.abs(px - meX) <= TC.W + TC.CG + 1;
+        lines.push(`M${from},${adjacent ? y + TC.H / 2 : y + TC.H} V${bar}`);
+        lines.push(`M${Math.min(from, ...tops)},${bar} H${Math.max(from, ...tops)}`);
+        tops.forEach((t) => lines.push(`M${t},${bar} V${cy}`));
+      }
+      x += ws[i] + TC.GX;
+    });
+  };
+  // --- the person's row: older brothers and sisters, the person (with partners), younger ones
+  const sib = sibs ? (f.siblings || []) : [];
+  const older = sib.filter((r) => (r.birth || 0) <= (me.birth || 0)), younger = sib.filter((r) => (r.birth || 0) > (me.birth || 0));
+  const meNode = { id: me.id, families: f.descendants || [] };
+  const meW = wDown(meNode, 0);
+  const leftW = older.length * (TC.W + TC.GX), rightW = younger.length * (TC.W + TC.GX);
+  const ancW = wUp("");
+  const total = Math.max(ancW, leftW + meW + rightW) + 40;
+  const rMe = rowOf((meNode.families || []).filter((x) => x.partner || (0 < down && x.children.length)));
+  const meRow = rMe.rowW;
+  const cx = 20 + leftW + meW / 2 + Math.max(0, (total - 40 - (leftW + meW + rightW)) / 2);
+  const meX = cx - meRow / 2 + rMe.meOff;
+  const y0 = rowY(0);
+  box(me, meX, y0, "focus");
+  placeDown(meNode, cx, y0, 0, true);
+  const meMid = meX + TC.W / 2;
+  // the parents sit over the person (not the whole row), siblings hang off the same bar
+  placeUp("", meMid);
+  const sibX = [];
+  const rowStart = meX - rMe.meOff, rowEnd = rowStart + meRow;
+  older.forEach((r, i) => { const x = rowStart - (older.length - i) * (TC.W + TC.GX); box(r, x, y0, r.half ? "half" : ""); sibX.push(x + TC.W / 2); });
+  younger.forEach((r, i) => { const x = rowEnd + TC.GX + i * (TC.W + TC.GX); box(r, x, y0, r.half ? "half" : ""); sibX.push(x + TC.W / 2); });
+  if (sibX.length && (has("F") || has("M"))) {
+    const bar = y0 - TC.GY / 2;
+    lines.push(`M${Math.min(meMid, ...sibX)},${bar} H${Math.max(meMid, ...sibX)}`);
+    sibX.forEach((sx) => lines.push(`M${sx},${bar} V${y0}`));
+  }
+  // --- size, then shift everything so nothing is cut off
+  const xs = boxes.map((b) => b.x), ys = boxes.map((b) => b.y);
+  const minX = Math.min(...xs) - 20, minY = Math.min(...ys) - 20;
+  const width = Math.max(...xs) - minX + TC.W + 20, height = Math.max(...ys) - minY + TC.H + 20;
+  const shift = (dd) => dd.replace(/([MLHV])(-?[\d.]+)(?:,(-?[\d.]+))?/g, (m0, c, a, b) =>
+    c === "H" ? `H${+a - minX}` : c === "V" ? `V${+a - minY}` : `${c}${+a - minX},${+b - minY}`);
+  const svg = lines.map((l) => (typeof l === "string" ? `<path d="${shift(l)}"/>` : `<path class="${l.cls}" d="${shift(l.d)}"/>`)).join("");
+  const B = boxes.map((b) => {
+    const r = b.r || {};
+    const sex = r.sex === "Male" ? "m" : r.sex === "Female" ? "f" : "";
+    const tag = b.extra === "divorced" ? ' <span class="tc-tag">· divorced</span>' : b.extra === "half" ? ' <span class="tc-tag">· half-sibling</span>' : "";
+    return `<div class="tc-box ${sex} ${b.extra} ${r.died ? "dead" : ""}" style="left:${b.x - minX}px;top:${b.y - minY}px">
+      ${r.id ? `<a class="tc-nm" href="#/person/${r.id}/tree" title="Make ${esc(r.name || "")} the centre of the tree">${esc(r.name || "")}</a>` : "Not recorded"}${r.is_player ? ' <span class="badge good">You</span>' : ""}
+      <div class="tc-meta">${r.birth ? yrs(r) : ""}${r.job ? " · " + esc(r.job) : ""}${tag}</div>
+      ${r.id ? `<a class="tc-go" href="#/person/${r.id}" title="Open their page">↗</a>` : ""}</div>`;
+  }).join("");
+  const tools = `<div class="filters tc-tools">
+    <span class="small muted">Ancestors</span>${seg("up", { up: String(up) }, [["1", "1"], ["2", "2"], ["3", "3"], ["4", "4"], ["6", "6"], ["8", "8"]].map(([v, t]) => [v, t + (v === "1" ? " gen" : "")]), "4")}
+    <span class="small muted">Descendants</span>${seg("down", { down: String(down) }, [["0", "None"], ["1", "1"], ["2", "2"], ["3", "3"], ["4", "4"]], "3")}
+    ${seg("sibs", q, [["", "Brothers & sisters"], ["0", "Hide them"]], "")}
+    <span class="grow"></span><button class="btn sm" data-tc-zoom="-1" title="Zoom out">−</button><button class="btn sm" data-tc-zoom="0">Fit</button><button class="btn sm" data-tc-zoom="1" title="Zoom in">+</button></div>`;
+  html += panel("Family tree chart", boxes.length > 1 ? tools + `<div class="tc-wrap" id="tc-wrap"><div class="tc-size" id="tc-size"><div class="tc" id="tc" style="width:${width}px;height:${height}px">
+      <svg width="${width}" height="${height}">${svg}</svg>${B}</div></div></div>
+      <div class="legend"><span><i style="background:#5b84ad"></i>Male</span><span><i style="background:#c07a8f"></i>Female</span><span>— married · - - divorced</span>
+      <span>Click a name to put them in the centre · ↗ opens their page · drag to move around</span></div>`
+    : `<div class="empty">The save doesn't link ${esc(me.name)} to any parents, children, brothers, sisters or partners yet, so there's no tree to draw. The game links families for people born since your career began.</div>`,
+    "Ancestors above, children below · grey boxes = died");
+  return html;
+}
+personTreePage.after = () => tcInit();
+function tcInit() {
+  const wrap = $("#tc-wrap"), tc = $("#tc");
+  if (!wrap || !tc) return;
+  let z = 1;
+  try { z = +sessionStorage.getItem("hrm.tcZoom") || 1; } catch (e) { /* default */ }
+  const size = $("#tc-size");
+  const setZ = (v) => {
+    z = Math.max(0.3, Math.min(1.6, v));
+    tc.style.transform = `scale(${z})`;
+    size.style.width = tc.offsetWidth * z + "px"; size.style.height = tc.offsetHeight * z + "px";
+    try { sessionStorage.setItem("hrm.tcZoom", z); } catch (e) { /* this view */ }
+  };
+  setZ(z);
+  // centre on the person
+  const focus = $(".tc-box.focus", tc);
+  if (focus) { wrap.scrollLeft = (focus.offsetLeft + TC.W / 2) * z - wrap.clientWidth / 2; wrap.scrollTop = Math.max(0, (focus.offsetTop + TC.H / 2) * z - wrap.clientHeight / 2); }
+  wrap.closest(".panel").addEventListener("click", (e) => {
+    const b = e.target.closest("[data-tc-zoom]");
+    if (!b) return;
+    const v = +b.dataset.tcZoom;
+    setZ(v === 0 ? Math.min(1, wrap.clientWidth / tc.offsetWidth) : z * (v > 0 ? 1.2 : 1 / 1.2));
+  });
+  // drag to pan
+  let drag = null;
+  wrap.addEventListener("pointerdown", (e) => { if (e.target.closest("a, button")) return; drag = { x: e.clientX, y: e.clientY, l: wrap.scrollLeft, t: wrap.scrollTop }; wrap.classList.add("dragging"); });
+  window.addEventListener("pointermove", (e) => { if (!drag) return; wrap.scrollLeft = drag.l - (e.clientX - drag.x); wrap.scrollTop = drag.t - (e.clientY - drag.y); });
+  window.addEventListener("pointerup", () => { drag = null; wrap.classList.remove("dragging"); });
+}
+
 document.addEventListener("click", (e) => {
   const b = e.target.closest("[data-fam-all]");
   if (!b) return;
@@ -2642,18 +2844,18 @@ async function personDynastyPage(route) {
   let html = personHead(d, "dynasty");
   const M = y.members || [], byId = {};
   M.forEach((r) => (byId[r.id] = r));
-  const members = M.filter((r) => r.kind === "member"), wed = M.filter((r) => r.kind === "married");
+  const members = M.filter((r) => r.kind === "member"), wed = M.filter((r) => r.kind === "married"), divd = M.filter((r) => r.kind === "divorced");
   const sum = (k) => members.reduce((a, r) => a + (r[k] || 0), 0);
   const name = esc(y.surname || "This");
   html += `<div class="dyn-head"><h2>The ${name} dynasty</h2><div class="muted">${y.founders.length ? `From ${y.founders.map((x) => pLink(byId[x])).join(" &amp; ")}` : ""}
     ${y.unlinked_same_name ? ` · <a href="#/people?q=${encodeURIComponent(y.surname)}">${fNum(y.unlinked_same_name)} other ${name}${y.unlinked_same_name === 1 ? "" : "s"}</a> in the world aren't linked to this family in the save` : ""}</div></div>`;
   html += tiles([
-    ["Family members", fNum(y.total), `${fNum(y.living)} alive`], ["Generations", fNum(y.generations)], ["Married in", fNum(wed.length)],
+    ["Family members", fNum(y.total), `${fNum(y.living)} alive`], ["Generations", fNum(y.generations)], ["Married in", fNum(wed.length), divd.length ? `+ ${fNum(divd.length)} divorced` : ""],
     ["Stables owned", fNum(y.stables.length), y.stables.slice(0, 3).map((s) => esc(s[1])).join(", ")],
     ["Jockey wins", fNum(sum("j_wins"))], ["Trainer wins", fNum(sum("t_wins"))], ["Awards", fNum(sum("awards"))],
   ]);
   // the tree, from the earliest members down; spouses beside each member
-  const line = (r) => `${pLink(r)} <span class="muted small">${yrs(r)}${r.job ? " · " + esc(r.job) : ""}</span>${(r.spouses || []).length ? ` <span class="dyn-sp">♥ ${r.spouses.map((x) => `${L.person(x.id, x.name)}${x.divorced ? ' <span class="muted small">(divorced)</span>' : ""}`).join(", ")}</span>` : ""}`;
+  const line = (r) => `${pLink(r)} <span class="muted small">${yrs(r)}${r.job ? " · " + esc(r.job) : ""}</span>${(r.spouses || []).length ? ` <span class="dyn-sp">♥ ${r.spouses.map((x) => x.divorced ? `<span class="dyn-div">${L.person(x.id, x.name)} <span class="small">(divorced ${yr(x.divorced)})</span></span>` : L.person(x.id, x.name)).join(", ")}</span>` : ""}`;
   const branch = (x, depth, seen) => {
     const r = byId[x];
     if (!r || seen.has(x)) return "";
@@ -2668,16 +2870,16 @@ async function personDynastyPage(route) {
   // everyone in a table
   const kind = q.who || "member";
   const list = M.filter((r) => kind === "all" || r.kind === kind).filter((r) => q.alive !== "1" || !r.died);
-  html += panel("Members", `<div class="filters" style="margin-bottom:10px">${seg("who", q, [["member", `${name}s (${members.length})`], ["married", `Married in (${wed.length})`], ["all", "Everyone"]], "member")}
+  html += panel("Members", `<div class="filters" style="margin-bottom:10px">${seg("who", q, [["member", `${name}s (${members.length})`], ["married", `Married in (${wed.length})`]].concat(divd.length ? [["divorced", `Divorced (${divd.length})`]] : []).concat([["all", "Everyone"]]), "member")}
       ${seg("alive", q, [["", "Alive and dead"], ["1", "Alive only"]], "")}</div>` + table([
     { h: "Gen", cls: "num", f: (r) => (r.gen ? r.gen : "—") },
-    { h: "Name", cls: "nowrap", f: (r) => `${pLink(r)} ${treeLink(r.id)}` },
+    { h: "Name", cls: "nowrap", f: (r) => `${pLink(r)} ${treeLink(r.id)}${r.kind === "divorced" ? ' <span class="badge">Divorced</span>' : r.kind === "married" ? ' <span class="badge">Married in</span>' : ""}` },
     { h: "Born", cls: "num", f: (r) => yr(r.birth) }, { h: "Age", cls: "num nowrap", f: (r) => ageCell(r.birth, r.died) },
     { h: "Job now", f: (r) => (r.job ? esc(r.job) : '<span class="muted">—</span>') },
     { h: "Stable", f: (r) => (r.stable_id ? L.stable(r.stable_id, r.stable) : '<span class="muted">—</span>') },
     { h: "Owns", f: (r) => (r.stables || []).map((s) => L.stable(s.id, s.name)).join(", ") || '<span class="muted">—</span>' },
     { h: "Jockey wins", cls: "num", f: (r) => fNum(r.j_wins) }, { h: "Trainer wins", cls: "num", f: (r) => fNum(r.t_wins) }, { h: "Awards", cls: "num", f: (r) => fNum(r.awards) },
-    { h: "Married to", f: (r) => (r.spouses || []).map((x) => L.person(x.id, x.name)).join(", ") || '<span class="muted">—</span>' },
+    { h: "Married to", f: (r) => (r.spouses || []).map((x) => `${L.person(x.id, x.name)}${x.divorced ? ` <span class="muted small">(divorced ${yr(x.divorced)})</span>` : ""}`).join(", ") || '<span class="muted">—</span>' },
   ], list, { empty: "Nobody here." }));
   const EV = { born: "Born", died: "Died", married: "Married", divorced: "Divorced" };
   html += panel("Family events", (y.events || []).length ? `<ul class="dyn-ev">${y.events.slice(0, 120).map((e) => `<li><span class="muted">${fDate(e.date)}</span>
@@ -2948,7 +3150,7 @@ function personHead(d, on) {
     ${current.length ? " · " + current.map((j) => `${esc(j.role)} at ${L.stable(j.stable_id, j.stable)}`).join(", ") : ""}
     ${d.owns && d.owns.length ? " · Owns " + d.owns.map((s) => L.stable(s.id, s.name)).join(", ") : ""}</div>${removedNote(d)}</div></div>
     <div class="subtabs"><a href="#/person/${id}" class="${on === "overview" ? "on" : ""}">Overview</a><a href="#/person/${id}/awards" class="${on === "awards" ? "on" : ""}">Awards</a>
-      <a href="#/person/${id}/family" class="${on === "family" ? "on" : ""}">Family tree</a><a href="#/person/${id}/dynasty" class="${on === "dynasty" ? "on" : ""}">${esc(p.person_last_name || "Family")} dynasty</a></div>`;
+      <a href="#/person/${id}/family" class="${on === "family" ? "on" : ""}">Family tree</a><a href="#/person/${id}/tree" class="${on === "tree" ? "on" : ""}">Tree chart</a><a href="#/person/${id}/dynasty" class="${on === "dynasty" ? "on" : ""}">${esc(p.person_last_name || "Family")} dynasty</a></div>`;
 }
 async function personPage(id) {
   const d = await api("person/" + id);

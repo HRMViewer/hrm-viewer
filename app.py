@@ -2658,7 +2658,48 @@ def api_family(con, pid):
     for a in up:      # ancestors themselves
         if a != pid:
             rel[a] = {"up": up[a], "down": 0, "via": a}
-    ids = list(rel) + list(tree.values()) + [m["id"] for m in mar.get(pid, [])]
+    # descendants for the tree chart: each person's children grouped by the other parent, four generations down
+    def families(x, depth, seen):
+        out = {}
+        for k in kids.get(x, []):
+            if k in seen:
+                continue
+            other = next((p for p in par.get(k, []) if p != x), None)
+            out.setdefault(other, []).append(k)
+        fams = []
+        for other, ks in out.items():
+            ks.sort(key=lambda k: cards_birth.get(k) or 0)
+            fams.append({"partner": other, "children": [{"id": k, "families": families(k, depth + 1, seen | {k}) if depth < 4 else []} for k in ks]})
+        # partners with no children recorded still stand beside them
+        for m in mar.get(x, []):
+            if m["id"] not in out:
+                fams.append({"partner": m["id"], "children": [], "divorced": m["divorced"], "ended": m["ended"]})
+        for f in fams:
+            mm = next((m for m in mar.get(x, []) if m["id"] == f["partner"]), None)
+            if mm:
+                f["divorced"], f["ended"], f["married"] = mm["divorced"], mm["ended"], mm["date"]
+        return fams
+    desc_ids = set()
+
+    def walk(x, depth):
+        for k in kids.get(x, []):
+            if k not in desc_ids and depth < 5:
+                desc_ids.add(k)
+                walk(k, depth + 1)
+    walk(pid, 1)
+    cards_birth = dict(con.execute("select person_person_id, person_birth_date from persons where person_person_id in (%s)" % ",".join(
+        str(int(i)) for i in desc_ids | {pid})).fetchall()) if desc_ids else {}
+    fam_tree = families(pid, 1, {pid})
+
+    def fam_ids(fams):
+        for f in fams:
+            if f["partner"]:
+                yield f["partner"]
+            for c in f["children"]:
+                yield c["id"]
+                yield from fam_ids(c["families"])
+    siblings = [k for p in par.get(pid, []) for k in kids.get(p, []) if k != pid]
+    ids = list(rel) + list(tree.values()) + [m["id"] for m in mar.get(pid, [])] + list(fam_ids(fam_tree)) + siblings
     cards = person_cards(con, ids)
     my_parents = set(par.get(pid, []))
     out_rel = []
@@ -2675,7 +2716,14 @@ def api_family(con, pid):
     out_rel.sort(key=lambda r: (r["up"] + r["down"], r["up"], r["birth"] or 0))
     spouses = [dict(cards.get(m["id"]) or {"id": m["id"]}, married=m["date"], divorced=m["divorced"], ended=m["ended"], partner=m.get("partner"))
                for m in mar.get(pid, [])]
+    sib = []
+    for k in dict.fromkeys(siblings):
+        if k in cards:
+            shared = len(set(par.get(k, [])) & my_parents)
+            sib.append(dict(cards[k], half=shared < len(my_parents), parents=par.get(k, [])))
+    sib.sort(key=lambda r: r["birth"] or 0)
     return {"person": cards.get(pid) or person_cards(con, [pid]).get(pid), "tree": {k: cards.get(v) or {"id": v} for k, v in tree.items() if k},
+            "descendants": fam_tree, "siblings": sib, "cards": {i: c for i, c in cards.items() if i in set(fam_ids(fam_tree))},
             "relatives": out_rel, "spouses": spouses, "gens": FAMILY_GENS,
             "deepest": max([len(k) for k in tree if k] or [0]), "recorded": len(par)}
 
@@ -2747,7 +2795,10 @@ def api_dynasty(con, pid):
                  spouses=[{"id": m["id"], "name": cards[m["id"]]["name"], "divorced": m["divorced"], "ended": m["ended"]}
                           for m in mar.get(x, []) if m["id"] in cards])
         return c
-    mem = [member(x, "member") for x in line if x in cards] + [member(x, "married") for x in married_in]
+    def wed_kind(x):     # married in, or divorced from everyone they married in the family
+        ties = [m for m in mar.get(x, []) if m["id"] in line]
+        return "divorced" if ties and all(m["divorced"] for m in ties) else "married"
+    mem = [member(x, "member") for x in line if x in cards] + [member(x, wed_kind(x)) for x in married_in]
     mem.sort(key=lambda r: (r["gen"] or 99, r["birth"] or 0))
     # events: births, marriages and deaths of members
     ev = []
@@ -4549,7 +4600,7 @@ class Handler(BaseHTTPRequestHandler):
 
 # --------------------------------------------------------------------------- in-app updates
 
-VERSION = "13.7"
+VERSION = "13.8"
 BACKUP_DIR = os.path.join(APP_DIR, "backups")
 UPDATE_PENDING = os.path.join(DATA_DIR, "update_pending.json")
 UPDATE_RESULT = os.path.join(DATA_DIR, "update_result.json")
