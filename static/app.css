@@ -902,3 +902,6 @@ table.careers td.g-j:first-of-type, table.careers th.g-j:first-of-type { border-
 table.careers tr > .g-j + .g-t, table.careers tr > .g-t + .g-s { border-left: 1px solid var(--line); }
 table.careers tr > :nth-child(3) + .g-j { border-left: 1px solid var(--line); }
 table.careers tr.me td { background: color-mix(in srgb, var(--blue) 7%, transparent); }
+/* 13.0 */
+.gh-auto { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-sm); cursor: pointer; }
+.db-acts .btn.sm { padding: 3px 10px; font-size: var(--fs-xs); }

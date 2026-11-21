@@ -562,14 +562,25 @@ def process_incoming(source_label, source_path, decision=None, validated=False):
         old = stored_save_info()
         same = bool(old.get("save_id")) and old.get("save_id") == new.get("save_id")
         older = same and new["game_date"] is not None and old["game_date"] is not None and new["game_date"] < old["game_date"]
+        # each database follows one player: a different player name (or a different save) means asking first
+        player_changed = bool(old.get("player")) and bool(new.get("player")) and old["player"] != new["player"]
         if decision is None:
             if not same:
                 set_job(state="confirm", step="Waiting for your choice", pending={"label": source_label, "path": source_path}, confirm={
                     "kind": "different",
-                    "message": "This file is from a different save (%s, %s) than the one stored (%s, %s)." % (
+                    "message": "This file is from a different save (%s, %s) than this database (%s, %s). Is it the same world?" % (
                         new.get("player") or "unknown player", fdate(new["game_date"]), old.get("player") or "unknown player", fdate(old["game_date"])),
-                    "options": [["newdb", "Keep both: load it as a separate database (recommended)"],
-                                ["replace", "Replace the stored save with this one"], ["cancel", "Cancel"]]})
+                    "options": [["newdb", "No, a different world: load it as a new database (recommended)"],
+                                ["merge", "Yes, the same world: keep using this database and update it"],
+                                ["replace", "Replace this database with this file"], ["cancel", "Cancel"]]})
+                return False
+            if player_changed:
+                set_job(state="confirm", step="Waiting for your choice", pending={"label": source_label, "path": source_path}, confirm={
+                    "kind": "player",
+                    "message": "The player in this save is %s, but this database has been following %s. Is it the same world "
+                               "(for example %s's heir carrying on), or a new player?" % (new["player"], old["player"], old["player"]),
+                    "options": [["merge", "Same world: keep using this database for %s" % new["player"]],
+                                ["newdb", "New player: create a new database for %s" % new["player"]], ["cancel", "Cancel"]]})
                 return False
             if older:
                 set_job(state="confirm", step="Waiting for your choice", pending={"label": source_label, "path": source_path}, confirm={
@@ -636,6 +647,8 @@ def process_incoming(source_label, source_path, decision=None, validated=False):
         "game_date": final["game_date"],
         "save_id": final["save_id"],
         "player_name": final["player"],
+        "players": list(dict.fromkeys([p for p in (META.get("players") or []) + [META.get("player_name"), final["player"]] if p]))
+        if mode != "fresh" else [p for p in [final["player"]] if p],
         "player_id": player_id,
         "player_stable_id": player_stable_id,
         "counts": counts,
@@ -713,7 +726,7 @@ def slot_summary(sid):
     except OSError:
         size = 0
     return {"id": sid, "name": slot_name(sid), "legacy": sid == LEGACY_ID, "active": sid == ACTIVE["id"], "loaded": bool(size),
-            "size": size, "player": meta.get("player_name"), "game_date": meta.get("game_date"), "loaded_at": meta.get("loaded_at"),
+            "size": size, "player": meta.get("player_name"), "players": meta.get("players") or [], "game_date": meta.get("game_date"), "loaded_at": meta.get("loaded_at"),
             "created": slot.get("created"), "source_path": meta.get("source_path"), "loads": len(meta.get("history") or []),
             "save_id": meta.get("save_id")}
 
@@ -1025,7 +1038,8 @@ def auto_status():
         a = dict(AUTO)
     a.pop("seen_sig", None)
     return dict(a, settings=st, path=path, exists=exists, file_mtime=mtime, loaded_at=META.get("loaded_at"),
-                game_date=META.get("game_date"), db=ACTIVE["id"], job=job_snapshot().get("state"))
+                game_date=META.get("game_date"), db=ACTIVE["id"], job=job_snapshot().get("state"),
+                job_auto=bool(job_snapshot().get("auto")), job_started=job_snapshot().get("started"))
 
 
 def auto_set(**kw):
@@ -1081,12 +1095,18 @@ def auto_tick(force=False):
         auto_set(state="waiting", message="The save file is busy — trying again shortly.")
         return
     stored = stored_save_info()
-    if stored.get("save_id") and info.get("save_id") != stored.get("save_id"):
+    other_save = stored.get("save_id") and info.get("save_id") != stored.get("save_id")
+    other_player = stored.get("player") and info.get("player") and info["player"] != stored["player"]
+    if other_save or other_player:
+        # remember this file version so the question is asked once, then ask what to do
         meta = read_json(META_FILE, {})
         meta["source_sig"] = list(sig)
         write_json(META_FILE, meta)
         load_meta_keep_cache()
-        auto_set(state="skipped", message="The save file now holds a different save, so it wasn't loaded automatically. Use Load database to choose what to do.")
+        auto_set(state="skipped", message=("The save file now holds a different save" if other_save else
+                                           "The player in the save file is now %s (this database follows %s)" % (info["player"], stored["player"]))
+                 + ", so the viewer is asking what to do.")
+        start_import("path", path, None, auto=True)
         return
     if info.get("game_date") and stored.get("game_date") and info["game_date"] < stored["game_date"]:
         meta = read_json(META_FILE, {})
@@ -4019,6 +4039,16 @@ class Handler(BaseHTTPRequestHandler):
             return
         if path == "/api/update":
             return self.handle_update(parse_qs(urlparse(self.path).query).get("check") == ["1"])
+        if path == "/api/github/auto":
+            length = to_int(self.headers.get("Content-Length"), 0)
+            try:
+                on = bool((json.loads(self.rfile.read(length) or b"{}") if length else {}).get("on"))
+            except ValueError:
+                return self.send_json({"error": "Bad request."}, 400)
+            cfg = read_json(CONFIG_FILE, {})
+            cfg["github_auto"] = on
+            write_json(CONFIG_FILE, cfg)
+            return self.send_json(github_check(force=False))
         if path == "/api/github/install":
             length = to_int(self.headers.get("Content-Length"), 0)
             try:
@@ -4087,7 +4117,7 @@ class Handler(BaseHTTPRequestHandler):
 
 # --------------------------------------------------------------------------- in-app updates
 
-VERSION = "12.9"
+VERSION = "13.0"
 BACKUP_DIR = os.path.join(APP_DIR, "backups")
 UPDATE_PENDING = os.path.join(DATA_DIR, "update_pending.json")
 UPDATE_RESULT = os.path.join(DATA_DIR, "update_result.json")
@@ -4250,13 +4280,22 @@ def github_get(url, binary=False, limit=60 * 1024 * 1024):
     return data if binary else json.loads(data.decode("utf-8"))
 
 
+def github_auto():
+    """Whether the viewer looks for new versions by itself (Settings → Updates). On unless switched off."""
+    return read_json(CONFIG_FILE, {}).get("github_auto", True) is not False
+
+
 def github_check(force=False):
-    """The newest release on GitHub, and whether it's newer than this viewer. Asked at most every 6 hours unless forced."""
+    """The newest release on GitHub, and whether it's newer than this viewer. Asked at most every 6 hours unless forced.
+    With automatic checks switched off, GitHub is only asked when you press Check now."""
     repo = github_repo()
     if not repo:
-        return {"configured": False, "current": VERSION}
+        return {"configured": False, "current": VERSION, "auto": github_auto()}
+    if not force and not github_auto():
+        last = GH_CACHE["data"] if GH_CACHE["repo"] == repo and GH_CACHE["data"] else {}
+        return dict(last, configured=True, repo=repo, current=VERSION, page="https://github.com/%s/releases" % repo, auto=False)
     if not force and GH_CACHE["repo"] == repo and GH_CACHE["data"] and time.time() - GH_CACHE["at"] < 6 * 3600:
-        return GH_CACHE["data"]
+        return dict(GH_CACHE["data"], auto=True)
     out = {"configured": True, "repo": repo, "current": VERSION, "page": "https://github.com/%s/releases" % repo}
     try:
         rel = github_get("%s/repos/%s/releases/latest" % (GITHUB_API, repo))
@@ -4275,7 +4314,7 @@ def github_check(force=False):
         else:
             out.update({"error": "Couldn't reach GitHub (%s)." % (getattr(e, "reason", None) or getattr(e, "code", None) or e)})
     GH_CACHE.update({"at": time.time(), "repo": repo, "data": out})
-    return out
+    return dict(out, auto=github_auto())
 
 
 def github_releases(force=False):

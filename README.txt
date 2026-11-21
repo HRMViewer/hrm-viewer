@@ -61,6 +61,8 @@ installs and restarts by itself. "Skip this version" stops it asking about that
 one. Settings > Viewer > Updates has "Check now" and "All versions": every
 published version, so you can go back to an earlier one if you don't like a
 new one (and update again later).
+Untick "Check for updates automatically" there to stop the viewer looking for
+new versions by itself ("Check now" still works).
 Download page: https://github.com/HRMViewer/hrm-viewer/releases
 
 Updates also come as a file called HRM-Viewer-update-<version>.zip. Don't unzip it.

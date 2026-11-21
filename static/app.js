@@ -1060,13 +1060,13 @@ let GH_PROMPTED = false;  // the pop-up is shown once each time the viewer opens
 async function githubCheck(force) {
   try { GH = await (await fetch("/api/github" + (force ? "?force=1" : ""), { cache: "no-store" })).json(); } catch (e) { GH = null; }
   githubBanner();
-  if (GH && GH.newer && ghSkipped() !== GH.latest && !GH_PROMPTED && !document.querySelector(".overlay")) { GH_PROMPTED = true; githubPrompt(); }
+  if (GH && GH.auto !== false && GH.newer && ghSkipped() !== GH.latest && !GH_PROMPTED && !document.querySelector(".overlay")) { GH_PROMPTED = true; githubPrompt(); }
   return GH;
 }
 function githubBanner() {
   const box = $("#gh-banner");
   if (!box) return;
-  box.innerHTML = GH && GH.newer && !GH_HIDE && ghSkipped() !== GH.latest ? `<div class="banner gh-ban"><span>⬆ <b>HRM Viewer ${esc(GH.latest)}</b> is available (you have ${esc(GH.current)}).</span>
+  box.innerHTML = GH && GH.auto !== false && GH.newer && !GH_HIDE && ghSkipped() !== GH.latest ? `<div class="banner gh-ban"><span>⬆ <b>HRM Viewer ${esc(GH.latest)}</b> is available (you have ${esc(GH.current)}).</span>
     <span><button class="btn primary" data-gh-install>Install now</button> <button class="btn" data-gh-notes>What's new</button> <button class="btn" data-gh-hide title="Hide until the viewer is opened again">Later</button></span></div>` : "";
 }
 // release notes are short Markdown: headings, "- " lists and **bold**
@@ -1106,8 +1106,12 @@ async function drawGithubBox() {
   const box = $("#gh-box");
   if (!box) return;
   const g = GH || (await githubCheck(false)) || {};
-  box.innerHTML = `<div class="gh-status">${g.error ? `<span class="err-inline">${esc(g.error)}</span>`
+  const auto = g.auto !== false;
+  box.innerHTML = `<label class="gh-auto"><input type="checkbox" data-gh-auto ${auto ? "checked" : ""}> Check for updates automatically</label>
+    <div class="gh-status">${g.error ? `<span class="err-inline">${esc(g.error)}</span>`
       : g.newer ? `<b>Version ${esc(g.latest)} is available.</b> <button class="btn primary sm" data-gh-install>Install now</button>`
+      : g.latest ? `✓ You have the latest version (${esc(g.current || "")}).`
+      : !auto ? `<span class="muted">Automatic checks are off. Press Check now to look for a new version.</span>`
       : `✓ You have the latest version (${esc(g.current || "")}).`}</div>
     <div class="gh-links"><button class="btn sm" data-gh-check>Check now</button> <button class="btn sm" data-gh-versions>All versions</button></div>
     <div class="gh-links small">From <a href="https://github.com/${esc(g.repo || "")}" target="_blank" rel="noopener">github.com/${esc(g.repo || "")}</a></div>`;
@@ -1160,6 +1164,14 @@ function githubNotesModal() {
     <div class="gh-acts"><a class="btn" href="${esc(GH.release_page || GH.page)}" target="_blank" rel="noopener">Open on GitHub</a><span></span><button class="btn" data-gh-close>Close</button> <button class="btn primary" data-gh-install>Install now</button></div>`)
     .addEventListener("click", (e) => { if (e.target.closest("[data-gh-install]")) e.currentTarget.remove(); });
 }
+document.addEventListener("change", async (e) => {
+  const cb = e.target.closest("[data-gh-auto]");
+  if (!cb) return;
+  try {
+    GH = await (await fetch("/api/github/auto", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ on: cb.checked }) })).json();
+  } catch (er) { cb.checked = !cb.checked; return; }
+  githubBanner(); drawGithubBox();
+});
 document.addEventListener("click", async (e) => {
   const inst = e.target.closest("[data-gh-install]");
   if (inst) { e.preventDefault(); return githubInstall(inst.dataset.ver || ""); }
@@ -3290,7 +3302,8 @@ document.addEventListener("click", (e) => {
 });
 
 // ------------------------------------------------------------------ load new database
-function openLoad() {
+function openLoad(resume) {
+  if ($("#load-ov")) return;
   const last = STATUS && STATUS.last_path;
   const ov = document.createElement("div");
   ov.className = "overlay"; ov.id = "load-ov";
@@ -3344,6 +3357,7 @@ function openLoad() {
         const decision = b.dataset.decision;
         const r = await fetch("/api/import/confirm", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ decision }) });
         box.style.display = "none"; box.innerHTML = "";
+        if (decision === "cancel" && resume === true) { ov.remove(); return; }   // asked after an automatic load: nothing else to do here
         if (decision === "cancel" || !r.ok) { busy(false); if (!r.ok) showErr((await r.json()).error); return; }
         $("#load-progress").style.display = ""; setP(0, "Continuing…"); poll();
       }));
@@ -3388,9 +3402,10 @@ function openLoad() {
     xhr.onerror = () => { busy(false); showErr("The upload failed. Is the viewer window still open?"); };
     xhr.send(f);
   };
+  if (resume === true) { busy(true); setP(0, "Your save needs a decision"); poll(); }
 }
 window.openLoad = openLoad;
-$("#load-btn").addEventListener("click", openLoad);
+$("#load-btn").addEventListener("click", () => openLoad());
 
 // ------------------------------------------------------------------ table text size
 const TS_SIZES = [8, 9, 10, 11, 12, 13, 14, 15, 16, 18, 20];
@@ -3556,6 +3571,7 @@ function cmpVer(a, b) { for (let i = 0; i < Math.max(a.length, b.length); i++) {
 
 // ------------------------------------------------------------------ automatic updates: watch for new data
 let AUTO_LAST = null, AUTO_TIMER = null;
+let LOAD_ASKED = null;   // the automatic load whose question was already shown (closing it doesn't bring it back)
 async function autoPoll(soon) {
   clearTimeout(AUTO_TIMER);
   let a = null;
@@ -3578,6 +3594,8 @@ async function autoPoll(soon) {
       if ($("#auto-box")) drawAutoBox();
     }
     AUTO_LAST = a;
+    // an automatic load found a different player or save: show the question
+    if (a.job === "confirm" && a.job_auto && !$("#load-ov") && LOAD_ASKED !== a.job_started) { LOAD_ASKED = a.job_started; openLoad(true); }
   }
   const fast = a && (a.state === "updating" || a.state === "waiting" || a.running);
   AUTO_TIMER = setTimeout(autoPoll, soon || fast ? 2500 : 10000);
@@ -4005,7 +4023,7 @@ function settingsPage() {
       : STATUS && STATUS.has_exe
         ? row("Desktop app", "HRM Viewer can open in its own window instead of the browser: close this, then double-click <b>HRM Viewer.exe</b> in the viewer's folder.", "")
         : "",
-    row("Updates", "New versions come from GitHub. The viewer checks for them, offers to install them, and can go back to an earlier one.", `<div id="gh-box" class="gh-box"><span class="muted small">Checking…</span></div>`),
+    row("Updates", "New versions come from GitHub. The viewer checks for them, offers to install them, and can go back to an earlier one. Untick “Check for updates automatically” to only check when you press Check now.", `<div id="gh-box" class="gh-box"><span class="muted small">Checking…</span></div>`),
     row("Install an update", "Or choose an HRM-Viewer-update zip file you've downloaded. Your data isn't touched.", `<button class="btn primary" data-open-update>Install an update</button>`),
     row("Quick Guide", "How to use the main features, as a PDF. It's updated with every version (also in your HRM Viewer folder).",
       `<span style="display:inline-flex;gap:8px"><button class="btn" data-guide>Open the guide</button><a class="btn" href="/quick-guide.pdf" download="HRM Viewer - Quick Guide.pdf">Download PDF</a></span>`),
@@ -4098,29 +4116,29 @@ async function databasesPage() {
     html += panel("Move your stored data into the new structure", `<p>Your data from earlier versions is still stored the old way (<code>data\\current.db</code>).
       Moving it gives it its own folder and name, next to any other databases. It's moved, not copied, so it's instant and uses no extra space. Nothing in it changes.</p>
       <div class="row-f"><label>Name <input type="text" id="mig-name" value="${esc(suggest)}" style="width:260px"></label>
-      <button class="btn primary" id="mig-go">Move it into the new structure</button><span id="mig-msg" class="small"></span></div>`, "", "hl-panel");
+      <button class="btn sm primary" id="mig-go">Move it into the new structure</button><span id="mig-msg" class="small"></span></div>`, "", "hl-panel");
     html += `<div style="height:16px"></div>`;
   }
   const rows = d.list.map((x) => `<tr class="${x.active ? "me" : ""}">
       <td><b class="dbname" data-id="${x.id}">${esc(x.name)}</b> ${x.active ? '<span class="badge good">Open now</span>' : ""}${x.legacy ? ' <span class="badge">Old layout</span>' : ""}
         ${x.loaded ? "" : '<span class="badge">Empty</span>'}</td>
-      <td>${esc(x.player || "—")}</td><td class="nowrap">${x.game_date ? fDate(x.game_date) : "—"}</td>
+      <td>${esc(x.player || "—")}${(x.players || []).filter((p) => p !== x.player).length ? `<div class="muted small">before: ${(x.players || []).filter((p) => p !== x.player).map(esc).join(", ")}</div>` : ""}</td><td class="nowrap">${x.game_date ? fDate(x.game_date) : "—"}</td>
       <td class="num">${mb(x.size)}</td><td class="nowrap">${x.loaded_at ? fDate(x.loaded_at) : "—"}</td><td class="num">${fNum(x.loads)}</td>
-      <td class="nowrap db-acts">${x.active ? "" : `<button class="btn primary" data-dbopen="${x.id}">Open</button>`}
-        ${x.legacy ? "" : `<button class="btn" data-dbrename="${x.id}">Rename</button>`}
-        ${x.active ? "" : `<button class="btn danger" data-dbdel="${x.id}">Delete</button>`}</td></tr>`).join("");
+      <td class="nowrap db-acts">${x.active ? "" : `<button class="btn sm primary" data-dbopen="${x.id}">Open</button>`}
+        ${x.legacy ? "" : `<button class="btn sm" data-dbrename="${x.id}">Rename</button>`}
+        ${x.active ? "" : `<button class="btn sm danger" data-dbdel="${x.id}">Delete</button>`}</td></tr>`).join("");
   html += panel("Your databases", `<div class="tbl-wrap"><table class="data"><thead><tr><th>Name</th><th>Player</th><th>Game date</th><th class="num">Size</th>
       <th>Last loaded</th><th class="num">Loads</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
       <div id="db-msg" class="small" style="margin-top:8px"></div>`,
     `Stored in <code>${esc(d.folder)}${d.folder.includes("\\") ? "\\" : "/"}databases</code>`);
   html += `<div class="grid cols-2" style="margin-top:16px">
     ${panel("Add a new database", `<p class="muted">Load a game save as a separate database, e.g. another career. Your other databases aren't touched.</p>
-      <p><button class="btn primary" onclick="openLoad(); setTimeout(() => { const r = document.querySelector('input[name=load-into][value=new]'); if (r) { r.checked = true; document.getElementById('load-newname').focus(); } }, 50)">Load a save as a new database</button></p>`)}
+      <p><button class="btn sm primary" onclick="openLoad(); setTimeout(() => { const r = document.querySelector('input[name=load-into][value=new]'); if (r) { r.checked = true; document.getElementById('load-newname').focus(); } }, 50)">Load a save as a new database</button></p>`)}
     ${panel("Bring in databases from another HRM Viewer folder", `<p class="muted">If you kept an older copy of the viewer (for example a folder you unzipped before), you can bring its stored data in here as a separate database.</p>
       <div class="row-f"><input type="text" id="imp-path" placeholder="C:\\Users\\you\\Downloads\\HRM Viewer" style="flex:1;min-width:260px"></div>
       <div class="row-f"><label>Name <input type="text" id="imp-name" placeholder="optional — uses the player's name" style="width:240px"></label>
         <label><input type="checkbox" id="imp-move"> Move instead of copy (frees the space in the old folder)</label></div>
-      <div class="row-f"><button class="btn primary" id="imp-go">Bring it in</button><span id="imp-msg" class="small"></span></div>
+      <div class="row-f"><button class="btn sm primary" id="imp-go">Bring it in</button><span id="imp-msg" class="small"></span></div>
       <p class="help">Paste the path of the other viewer's folder (the one with HRM Viewer.exe), its <code>data</code> folder, or a <code>current.db</code> file. A game <code>database.db</code> works too — it's loaded as a new database.</p>`)}</div>`;
   html += `<div id="db-progress" class="overlay" hidden><div class="modal"><h2 id="dbp-title">Working…</h2><div class="progress"><div id="dbp-bar"></div></div><div id="dbp-step" class="muted"></div><div id="dbp-err"></div>
     <div style="text-align:right;margin-top:12px"><button class="btn" id="dbp-close" hidden>Close</button></div></div></div>`;
