@@ -984,3 +984,18 @@ table.fin-detail.is-in .sbar.type i { background: #9fcbb6; }
 .cp.collapsed .cp-more { display: none; }
 .cp-toggle { margin-top: 6px; background: none; border: 0; color: var(--blue); cursor: pointer; font: inherit; font-size: var(--fs-sm); padding: 2px 0; }
 .po-side > .panel { margin: 0; }
+/* 14.0: person Overview — role sections */
+.rr-stats { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 8px; margin-bottom: 12px; }
+@media (max-width: 1300px) { .rr-stats { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+@media (max-width: 700px) { .rr-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.rr-stat { border: 1px solid var(--line); border-radius: 8px; padding: 6px 9px; display: flex; flex-direction: column; min-width: 0; }
+.rr-stat .lbl { font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+.rr-stat b { font-size: calc(var(--fs) + 2px); }
+.rr-stat .sub { font-size: var(--fs-xs); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rr-grid { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 16px; }
+@media (max-width: 1200px) { .rr-grid { grid-template-columns: 1fr; } }
+.rr-h { font-size: var(--fs); margin: 0 0 8px; }
+.rr-seg { margin-bottom: 8px; }
+.rr-seg button { padding: 2px 10px; font-size: var(--fs-xs); }
+.rr-wins { columns: 1; max-height: 320px; overflow: auto; }
+.rr-empty .empty { padding: 8px 0; }

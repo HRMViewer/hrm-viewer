@@ -1,5 +1,17 @@
 [
   {
+    "version": "14.0",
+    "date": "2026-11-21",
+    "title": "New Overview for each person",
+    "changes": [
+      "A person's Overview tab now has a section for each role: As a jockey, As a trainer and As a manager, all laid out the same way.",
+      "Each shows their current job and stable in that role, their races, wins and strike rate, places, prize money, Group wins (with the G1/G2/G3 split), Listed wins and the two together; their latest races (Show all for up to 50); and their Group & Listed wins with a switch between All, Group and Listed.",
+      "Roles someone has never had show a short line instead of an empty section.",
+      "Latest awards and Latest news are now small panels beside the roles, newest first, opening with Show more. The tiles at the top show their job now, Group and Listed wins in any role, awards, reputation and fame.",
+      "Quick Guide updated."
+    ]
+  },
+  {
     "version": "13.9",
     "date": "2026-11-21",
     "title": "People overview",

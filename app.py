@@ -2928,6 +2928,58 @@ def api_dynasty(con, pid):
             "stables": sorted({(s["id"], s["name"], bool(s["gone"])) for r in mem for s in r["stables"]}, key=lambda t: t[1] or "")}
 
 
+# A person's record in each role, for their Overview tab (the same race attribution as the People overview).
+PERSON_ROLES = [
+    ("jockey", ("race_result_person_jockey_id",), ("Jockey",), "person_jockey_ranking", "person_jockey_experience", ("person_jockey_winnings",)),
+    ("trainer", ("race_result_trainer_id", "race_result_stable_head_trainer_id"), ("Trainer", "Head trainer"), "person_head_trainer_ranking",
+     "person_trainer_experience", ("person_trainer_winnings", "person_head_trainer_career_winnings")),
+    ("manager", ("race_result_stable_manager_id",), ("Manager",), "person_management_rankings", "person_management_experience",
+     ("person_management_career_winnings",)),
+]
+ROLE_RACES = 50     # latest races sent per role (the page shows a few and expands)
+
+
+def person_roles(con, pid, p):
+    out = {}
+    rcols_all = columns(con, "race_results") if has_table(con, "race_results") else []
+    for key, rcols, jobs, rank_col, exp_col, money_cols in PERSON_ROLES:
+        rcols = [c for c in rcols if c in rcols_all]
+        rec = {"key": key, "ranking": p.get(rank_col), "experience": p.get(exp_col),
+               "career_prize": sum((p.get(c) or 0) for c in money_cols),
+               "jobs_now": rows(con, """select f.staff_current_role as role, f.staff_stable_id as stable_id, s.stable_name as stable, f.staff_start_date as since
+                    from staff f left join stables s on s.stable_stable_id=f.staff_stable_id
+                    where f.staff_person_id=? and f.staff_end_date is null and f.staff_current_role in (%s)""" % ",".join("?" * len(jobs)), (pid,) + jobs)
+               if has_table(con, "staff") else [],
+               "starts": 0, "wins": 0, "places": 0, "prize": 0, "races": [], "big_wins": []}
+        if rcols:
+            who = " or ".join("r.%s=?" % c for c in rcols)
+            args = [pid] * len(rcols)
+            st = one(con, """select count(*) as starts, sum(r.race_result_rank=1) as wins, sum(r.race_result_rank between 1 and 3) as places,
+                    sum(r.race_result_cash_received) as prize from race_results r where %s""" % who, args) or {}
+            rec.update(starts=st.get("starts") or 0, wins=st.get("wins") or 0, places=st.get("places") or 0, prize=st.get("prize") or 0)
+            if rec["starts"]:
+                sel = """select r.race_result_date as date, r.race_result_rank as rank, r.race_result_cash_received as prize,
+                    r.race_result_race_id as race_id, x.races_race_name as race, x.races_type_of_race as type, x.races_distance as distance,
+                    r.race_result_horse_id as horse_id, h.horse_name as horse, c.racecourse_racecourse_id as course_id, c.racecourse_name as course,
+                    r.race_result_stable_id as stable_id
+                    from race_results r left join races x on x.races_race_id=r.race_result_race_id and r.race_result_race_id>0
+                    left join horses h on h.horse_horse_id=r.race_result_horse_id
+                    left join race_days d on d.raceday_race_day_id=x.races_race_day_id
+                    left join racecourses c on c.racecourse_racecourse_id=d.raceday_racecourse_id"""
+                rec["races"] = rows(con, sel + " where %s order by r.race_result_date desc limit %d" % (who, ROLE_RACES), args)
+                # every Group (G1/G2/G3) and Listed win, newest first
+                rec["big_wins"] = rows(con, sel + " where (%s) and r.race_result_rank=1 and x.races_type_of_race in ('G1','G2','G3','listed') order by r.race_result_date desc" % who, args)
+                sn = name_map(con, "stables", "stable_stable_id", "stable_name", [r["stable_id"] for r in rec["races"] + rec["big_wins"]])
+                for r in rec["races"] + rec["big_wins"]:
+                    r["stable"] = sn.get(r["stable_id"])
+        bw = rec["big_wins"]
+        rec.update(G1=sum(w["type"] == "G1" for w in bw), G2=sum(w["type"] == "G2" for w in bw), G3=sum(w["type"] == "G3" for w in bw),
+                   listed=sum(w["type"] == "listed" for w in bw))
+        rec["group"] = rec["G1"] + rec["G2"] + rec["G3"]
+        out[key] = rec
+    return out
+
+
 def api_person(con, pid):
     p = one(con, "select * from persons where person_person_id=?", (pid,))
     if not p:
@@ -2969,8 +3021,13 @@ def api_person(con, pid):
                         out["parents"].append(r)
     out["traits"] = entity_traits(con, pid, "person")
     out["events"] = entity_events(con, pid, "person")
-    out["awards"] = rows(con, """select award_category as category, award_year as year, award_rank as rank, award_value as value, award_description as description
-        from awards where award_entity_id=? and award_entity_type='person' order by award_date desc""", (pid,)) if has_table(con, "awards") else []
+    out["awards"] = rows(con, """select award_category as category, award_year as year, award_date as date, award_rank as rank, award_value as value,
+        award_description as description from awards where award_entity_id=? and award_entity_type='person' order by award_date desc""", (pid,)) if has_table(con, "awards") else []
+    if out["awards"]:
+        concepts = dict(con.execute("select concept_id, concept_name from concepts").fetchall()) if has_table(con, "concepts") else {}
+        for a in out["awards"]:
+            a["label"] = award_label(a["category"], concepts)
+    out["roles"] = person_roles(con, pid, p)
     return out
 
 
@@ -4703,7 +4760,7 @@ class Handler(BaseHTTPRequestHandler):
 
 # --------------------------------------------------------------------------- in-app updates
 
-VERSION = "13.9"
+VERSION = "14.0"
 BACKUP_DIR = os.path.join(APP_DIR, "backups")
 UPDATE_PENDING = os.path.join(DATA_DIR, "update_pending.json")
 UPDATE_RESULT = os.path.join(DATA_DIR, "update_result.json")

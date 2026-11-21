@@ -3223,13 +3223,75 @@ function personHead(d, on) {
     <div class="subtabs"><a href="#/person/${id}" class="${on === "overview" ? "on" : ""}">Overview</a><a href="#/person/${id}/awards" class="${on === "awards" ? "on" : ""}">Awards</a>
       <a href="#/person/${id}/family" class="${on === "family" ? "on" : ""}">Family tree</a><a href="#/person/${id}/tree" class="${on === "tree" ? "on" : ""}">Tree chart</a><a href="#/person/${id}/dynasty" class="${on === "dynasty" ? "on" : ""}">${esc(p.person_last_name || "Family")} dynasty</a></div>`;
 }
+// ------------------------------------------------------------------ a person's Overview tab
+// Part 1: one section per role (jockey, trainer, manager), all drawn by roleRecordSection().
+// Part 2: their latest awards and news as compact panels (compactPanel(), shared with People → Overview).
+const ROLE_META = {
+  jockey: { title: "As a jockey", noun: "jockey", races: "rides", none: "No rides recorded." },
+  trainer: { title: "As a trainer", noun: "trainer or head trainer", races: "runners trained", none: "No runners trained." },
+  manager: { title: "As a manager", noun: "manager", races: "runners for stables they managed", none: "No runners while managing a stable." },
+};
+const ROLE_SHOW = 6;     // races shown before "Show all"
+function roleRecordSection(key, rec, person) {
+  const m = ROLE_META[key];
+  const jobs = (rec.jobs_now || []).map((j) => `${esc(j.role)} at ${L.stable(j.stable_id, j.stable)}${j.since ? ` <span class="muted small">since ${yr(j.since)}</span>` : ""}`).join(" · ");
+  const note = [jobs || `<span class="muted">Not working as a ${m.noun} now</span>`, rec.ranking > 0 ? `Ranked ${fNum(rec.ranking)}` : ""].filter(Boolean).join(" · ");
+  if (!rec.starts && !(rec.jobs_now || []).length) {
+    return `<section class="panel rr rr-empty"><div class="panel-head"><h2>${m.title}</h2><span class="note">${note}</span></div>
+      <div class="empty">${m.none}</div></section>`;
+  }
+  const stat = (lbl, val, sub) => `<div class="rr-stat"><span class="lbl">${lbl}</span><b>${val}</b>${sub ? `<span class="sub">${sub}</span>` : ""}</div>`;
+  const split = [["G1", rec.G1], ["G2", rec.G2], ["G3", rec.G3]].filter(([, n]) => n).map(([g, n]) => `${n}×${g}`).join(" ");
+  const stats = `<div class="rr-stats">${stat("Races", fNum(rec.starts), m.races)}${stat("Wins", fNum(rec.wins), rec.starts ? pct(rec.wins, rec.starts) + " strike rate" : "")}
+    ${stat("Placed (top 3)", fNum(rec.places), rec.starts ? pct(rec.places, rec.starts) : "")}${stat("Prize money", fMoneyShort(rec.prize), "from these races")}
+    ${stat("Group wins", fNum(rec.group), split)}${stat("Listed wins", fNum(rec.listed))}${stat("Group + Listed", fNum(rec.group + rec.listed), "")}</div>`;
+  const races = rec.races || [];
+  const racesHtml = races.length ? expandable(table([
+    { h: "Date", cls: "nowrap", f: (r) => fDate(r.date) },
+    { h: "Race", f: (r) => `${L.race(r.race_id, r.race, '<span class="muted">Historic race</span>')} ${grade(r.type)}` },
+    { h: "Horse", f: (r) => L.horse(r.horse_id, r.horse) },
+    key === "manager" ? { h: "Stable", f: (r) => L.stable(r.stable_id, r.stable) } : { h: "Course", f: (r) => L.course(r.course_id, r.course) },
+    { h: "Pos", cls: "num", f: (r) => (r.rank ? ord(r.rank) : "—") }, { h: "Prize", cls: "num", f: (r) => fMoneyShort(r.prize) },
+  ], races.map((r, i) => Object.assign({ _i: i }, r)), { rowClass: (r) => `${r.rank === 1 ? "win" : ""} ${r._i >= ROLE_SHOW ? "more-row" : ""}` }), races.length, ROLE_SHOW)
+    : `<div class="empty">${m.none}</div>`;
+  // Group and Listed wins: separately, or all together
+  const bw = rec.big_wins || [];
+  const grp = bw.filter((w) => w.type !== "listed"), lst = bw.filter((w) => w.type === "listed");
+  const winRow = (w) => `<li data-k="${w.type === "listed" ? "listed" : "group"}"><span class="muted small">${fDate(w.date)}</span> ${grade(w.type)} ${L.race(w.race_id, w.race)}
+    <span class="muted small">·</span> ${L.horse(w.horse_id, w.horse)}</li>`;
+  const winsHtml = bw.length ? `<div class="seg rr-seg" role="tablist">
+      <button data-rr="all" class="on">All ${fNum(bw.length)}</button><button data-rr="group">Group ${fNum(grp.length)}</button><button data-rr="listed">Listed ${fNum(lst.length)}</button></div>
+      <ul class="po-wins rr-wins" data-show="all">${bw.map(winRow).join("")}</ul>
+      <div class="empty rr-none" data-none="group" hidden>No Group wins.</div><div class="empty rr-none" data-none="listed" hidden>No Listed wins.</div>`
+    : `<div class="empty">No Group or Listed wins as a ${m.noun} yet.</div>`;
+  return `<section class="panel rr"><div class="panel-head"><h2>${m.title}</h2><span class="note">${note}</span></div>${stats}
+    <div class="rr-grid"><div><h3 class="rr-h">Latest races <span class="muted small">${fNum(rec.starts)} in all</span></h3>${racesHtml}</div>
+      <div><h3 class="rr-h">Group &amp; Listed wins</h3>${winsHtml}</div></div></section>`;
+}
+document.addEventListener("click", (e) => {
+  const b = e.target.closest("[data-rr]");
+  if (!b) return;
+  const sec = b.closest(".rr"), k = b.dataset.rr, list = sec.querySelector(".rr-wins");
+  sec.querySelectorAll("[data-rr]").forEach((x) => x.classList.toggle("on", x === b));
+  list.dataset.show = k;
+  let any = false;
+  list.querySelectorAll("li").forEach((li) => { const on = k === "all" || li.dataset.k === k; li.hidden = !on; any = any || on; });
+  sec.querySelectorAll(".rr-none").forEach((n) => (n.hidden = any || n.dataset.none !== k));
+});
+
 async function personPage(id) {
   const d = await api("person/" + id);
-  const p = d.person, rs = d.ride_summary || {};
+  const p = d.person, R = d.roles || {};
   let html = personHead(d, "overview");
+  // Group and Listed races won in any role (a race counts once even if they rode and trained the winner)
+  const allBig = new Map();
+  Object.values(R).forEach((r) => (r.big_wins || []).forEach((w) => allBig.set(w.race_id, w)));
+  const bigs = [...allBig.values()];
+  const now = (d.jobs || []).filter((j) => !j.end);
   html += tiles([
-    ["Rides", fNum(rs.rides)], ["Wins", fNum(rs.wins), `Strike rate ${pct(rs.wins, rs.rides)}`], ["Placed (top 3)", fNum(rs.places), pct(rs.places, rs.rides)],
-    ["Prize money as jockey", fMoneyShort(rs.prize)], ["Reputation", fNum(p.person_reputation, 1)], ["Fame", fNum(p.person_fame_calculated, 0)],
+    ["Job now", now.length ? esc([...new Set(now.map((j) => j.role))].join(", ")) : "—", now.length ? now.map((j) => esc(j.stable || "")).join(", ") : "Not working at a stable"],
+    ["Group wins", fNum(bigs.filter((w) => w.type !== "listed").length), "in any role"], ["Listed wins", fNum(bigs.filter((w) => w.type === "listed").length), "in any role"],
+    ["Awards", fNum((d.awards || []).length)], ["Reputation", fNum(p.person_reputation, 1)], ["Fame", fNum(p.person_fame_calculated, 0)],
   ]);
   const skill = (l, k) => ({ label: l, cur: p["person_" + k + "_skill"], max: p["person_max_" + k + "_skill"] });
   const skills = bars([skill("Jockey", "jockey"), skill("Trainer", "trainer"), skill("Head trainer", "head_trainer"), skill("Manager", "manager"),
@@ -3245,19 +3307,20 @@ async function personPage(id) {
     ["Children", (d.children || []).length ? d.children.map((x) => L.person(x.id, x.name)).join(", ") : "—"],
   ]);
   html += `<div class="grid cols-3">${panel("Skills", skills)}${panel("Personality", persona)}${panel("Family", family)}</div>`;
-  html += `<div style="margin-top:16px">${panel("Rides", table([
-    { h: "Date", cls: "nowrap", f: (r) => fDate(r.date) },
-    { h: "Race", f: (r) => `${L.race(r.race_id, r.race_name, '<span class="muted">Historic race</span>')} ${grade(r.race_type)}` },
-    { h: "Horse", f: (r) => L.horse(r.horse_id, r.horse) }, { h: "Course", f: (r) => L.course(r.course_id, r.course) },
-    { h: "Distance", cls: "num", f: (r) => fDist(r.distance) }, { h: "Pos", f: (r) => pos(r.rank, r.runners) }, { h: "Prize", cls: "num", f: (r) => fMoney(r.prize) },
-  ], d.rides, { rowClass: (r) => (r.rank === 1 ? "win" : ""), empty: "No rides." }), rs.rides > (d.rides || []).length ? `Latest ${d.rides.length} of ${fNum(rs.rides)}` : `${fNum(rs.rides)} rides`, "tall")}</div>`;
+  // the two parts: roles (wide) and awards & news (narrow)
+  const roles = ["jockey", "trainer", "manager"].map((k) => roleRecordSection(k, R[k] || {}, p)).join("");
+  const awards = compactPanel({ key: "awards", title: "Latest awards", items: d.awards, empty: "No awards yet.",
+    row: (a) => `<div class="cp-d">${a.date ? fDate(a.date) : esc(a.year || "")}</div><div><b>${esc(a.label || (a.category || "").replace(/_/g, " "))}</b>${a.rank > 1 ? ` <span class="muted small">${ord(a.rank)}</span>` : ""}
+      ${a.description ? `<div class="muted small">${esc(a.description)}</div>` : ""}</div>` });
+  const news = compactPanel({ key: "news", title: "Latest news", items: d.events, empty: "No news yet.",
+    row: (n) => `<div class="cp-d">${fDate(n.date)}</div><div class="small">${esc(n.text || n.type)}</div>` });
+  html += `<div class="po-layout" style="margin-top:16px"><div class="po-main">${roles}</div><aside class="po-side">${awards}${news}
+    <div class="small"><a href="#/person/${p.person_person_id}/awards">Awards tab · every award and race win</a></div></aside></div>`;
   html += `<div class="grid cols-2" style="margin-top:16px">${panel("Jobs", table([
     { h: "Role", f: (r) => esc(r.role) }, { h: "Stable", f: (r) => L.stable(r.stable_id, r.stable) },
     { h: "From", cls: "nowrap", f: (r) => fDate(r.start) }, { h: "To", cls: "nowrap", f: (r) => (r.end ? fDate(r.end) : "Now") }, { h: "Salary", cls: "num", f: (r) => fMoney(r.salary) },
   ], d.jobs, { empty: "No jobs on record." }))}
-    ${panel("Traits", chips(d.traits))}
-    ${panel("Awards", table([{ h: "Year", f: (r) => esc(r.year) }, { h: "Award", f: (r) => esc((r.category || "").replace(/_/g, " ")) }, { h: "For", f: (r) => esc(r.description || "") }], d.awards, { empty: "No awards of their own." }), `<a href="#/person/${p.person_person_id}/awards">Awards tab · with race wins</a>`)}
-    ${panel("News", events(d.events))}</div>`;
+    ${panel("Traits", chips(d.traits))}</div>`;
   html += `<div style="margin-top:16px">${allFields(p)}</div>`;
   return html;
 }
