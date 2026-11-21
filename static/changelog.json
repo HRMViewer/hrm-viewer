@@ -1,5 +1,13 @@
 [
   {
+    "version": "14.7",
+    "date": "2026-11-22",
+    "title": "Fix: Linux app when it can't open a window",
+    "changes": [
+      "Linux: if HRM Viewer can't open its own window (for example the screen isn't reachable, or the window part fails to start), it now opens in your browser instead of closing straight away."
+    ]
+  },
+  {
     "version": "14.6",
     "date": "2026-11-22",
     "title": "HRM Viewer for Linux (Mac coming soon)",

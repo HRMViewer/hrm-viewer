@@ -7,6 +7,9 @@ package main
 #include <gtk/gtk.h>
 #include <stdlib.h>
 
+// can GTK reach a screen? (DISPLAY can be set while the screen behind it is gone)
+static int hrmvCanShow(void) { return gtk_init_check(NULL, NULL) ? 1 : 0; }
+
 static void hrmvSetup(void *w, const char *icon) {
 	GtkWindow *win = GTK_WINDOW(w);
 	if (icon) gtk_window_set_icon_from_file(win, icon, NULL);
@@ -22,6 +25,8 @@ import (
 
 	webview "github.com/webview/webview_go"
 )
+
+func canShowWindow() bool { return C.hrmvCanShow() == 1 }
 
 func setupWindow(w webview.WebView) {
 	p := w.Window()

@@ -60,6 +60,8 @@ import "C"
 
 import webview "github.com/webview/webview_go"
 
+func canShowWindow() bool { return true }
+
 func setupWindow(w webview.WebView) {
 	C.hrmvMenu()
 	if p := w.Window(); p != nil {

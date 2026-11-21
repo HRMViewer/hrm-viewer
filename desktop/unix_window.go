@@ -19,6 +19,9 @@ func main() {
 	if runtime.GOOS == "linux" && os.Getenv("DISPLAY") == "" && os.Getenv("WAYLAND_DISPLAY") == "" {
 		os.Exit(exitNoWindow)
 	}
+	if !canShowWindow() {
+		os.Exit(exitNoWindow)
+	}
 	windowed = true
 	w := webview.New(false)
 	if w == nil || w.Window() == nil {

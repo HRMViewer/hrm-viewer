@@ -12,6 +12,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"syscall"
+	"time"
 )
 
 func main() {
@@ -24,6 +25,7 @@ func main() {
 		cmd := exec.Command(helper, os.Args[1:]...)
 		cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
 		cmd.Env = append(os.Environ(), "HRMV_LAUNCHER="+self)
+		began := time.Now()
 		err := cmd.Run()
 		code := 0
 		if ee, ok := err.(*exec.ExitError); ok {
@@ -31,9 +33,12 @@ func main() {
 		} else if err != nil {
 			code = 127
 		}
-		// 127/126: the window app couldn't load (WebKitGTK isn't installed); exitNoWindow: no screen to show it on
-		if code != 127 && code != 126 && code != exitNoWindow {
-			os.Exit(code)
+		// carry on in the browser only when the window couldn't open: 127/126 (WebKitGTK isn't installed),
+		// exitNoWindow (no screen to show it on), or an error straight after starting. A window that was closed,
+		// or ended later (killed, logged out), is simply done.
+		failedToOpen := code == 127 || code == 126 || code == exitNoWindow || (code > 0 && time.Since(began) < 15*time.Second)
+		if !failedToOpen {
+			os.Exit(max(code, 0))
 		}
 		if code == exitNoWindow {
 			os.Stderr.WriteString("HRM Viewer can't open its own window here, so it's opening in your browser.\n")
