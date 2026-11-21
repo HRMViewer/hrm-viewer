@@ -1481,16 +1481,16 @@ def api_status(con, q):
 
 def home_leaders(con):
     """Leader boards for the whole save, shown on the home page."""
-    alive = "h.horse_deceased_date is null and h.horse_horse_id not in (select pk from hrmv_removed where tbl='horses')"
     hsel = """select h.horse_horse_id as id, h.horse_name as name, h.horse_gender as gender, h.horse_birth_date as birth, h.horse_deceased_date as died,
         h.horse_stable_id as stable_id, st.stable_name as stable, h.horse_international_rating as rating, h.horse_peak_rating as peak,
         h.horse_career_earnings as earnings, coalesce(s.starts,0) as starts, coalesce(s.wins,0) as wins, %s as g1
         from horses h left join hrmv_horse_stats s on s.horse_id=h.horse_horse_id left join stables st on st.stable_stable_id=h.horse_stable_id """ % gwins("h", "s", "g1")
+    # every horse board comes as {all, alive, dead}; the home page switches between them
     out = {
-        "rated": rows(con, hsel + "where %s order by h.horse_international_rating desc limit 10" % alive),
-        "wins": rows(con, hsel + "where h.horse_horse_id in (select horse_id from hrmv_horse_stats order by wins desc limit 10) order by wins desc, starts"),
-        "earners": rows(con, hsel + "order by h.horse_career_earnings desc limit 10"),
-        "g1": rows(con, hsel + "order by g1 desc, h.horse_career_earnings desc limit 10"),
+        "rated": horse_status_lists(lambda w: rows(con, hsel + "where %s order by h.horse_international_rating desc limit 10" % w)),
+        "wins": horse_status_lists(lambda w: rows(con, hsel + "where h.horse_horse_id in (select s2.horse_id from hrmv_horse_stats s2 join horses h on h.horse_horse_id=s2.horse_id where %s order by s2.wins desc limit 10) order by wins desc, starts" % w)),
+        "earners": horse_status_lists(lambda w: rows(con, hsel + "where %s order by h.horse_career_earnings desc limit 10" % w)),
+        "g1": horse_status_lists(lambda w: rows(con, hsel + "where %s order by g1 desc, h.horse_career_earnings desc limit 10" % w)),
     }
     pc = columns(con, "persons")
     if "person_jockey_wins" in pc:
@@ -1501,21 +1501,34 @@ def home_leaders(con):
             person_trainer_winnings as prize from persons order by person_trainer_wins desc limit 10""")
     out["stables"] = rows(con, """select s.stable_stable_id as id, s.stable_name as name, t.starts, t.wins, t.prize, t.g1, t.horses
         from hrmv_stable_stats t join stables s on s.stable_stable_id=t.stable_id order by t.wins desc limit 10""")
-    out["sires"] = rows(con, """select g.sid as id, p.horse_name as name, g.foals, g.winners, g.earnings from (
+    sires = rows(con, """select g.sid as id, p.horse_name as name, g.foals, g.winners, g.earnings, p.horse_deceased_date as died,
+            (g.sid in (select pk from hrmv_removed where tbl='horses')) as removed from (
             select h.horse_breeding_parent_stallion_id as sid, count(*) as foals, sum(coalesce(s.wins,0) > 0) as winners,
                 sum(coalesce(h.horse_career_earnings,0)) as earnings
             from horses h left join hrmv_horse_stats s on s.horse_id=h.horse_horse_id where h.horse_breeding_parent_stallion_id > 0 group by 1
-            order by earnings desc limit 10) g left join horses p on p.horse_horse_id=g.sid order by g.earnings desc""")
+            order by earnings desc limit 400) g left join horses p on p.horse_horse_id=g.sid order by g.earnings desc""")
+    out["sires"] = {"all": sires[:10], "alive": [r for r in sires if r["died"] is None and not r["removed"]][:10],
+                    "dead": [r for r in sires if r["died"] is not None][:10]}
     return out
+
+
+HORSE_STATUS_SQL = {"all": "1=1",
+                    "alive": "h.horse_deceased_date is null and h.horse_horse_id not in (select pk from hrmv_removed where tbl='horses')",
+                    "dead": "h.horse_deceased_date is not null"}
+
+
+def horse_status_lists(fetch):
+    """The same horse list three ways: every horse, horses still alive, and horses that have died."""
+    return {k: fetch(w) for k, w in HORSE_STATUS_SQL.items()}
 
 
 def api_home(con, q):
     gd = META.get("game_date") or time.time()
-    top_horses = rows(con, """select h.horse_horse_id as id, h.horse_name as name, h.horse_sex as sex, h.horse_gender as gender,
-        h.horse_birth_date as birth, h.horse_career_earnings as earnings, h.horse_international_rating as rating,
+    top_horses = horse_status_lists(lambda w: rows(con, """select h.horse_horse_id as id, h.horse_name as name, h.horse_sex as sex, h.horse_gender as gender,
+        h.horse_birth_date as birth, h.horse_deceased_date as died, h.horse_career_earnings as earnings, h.horse_international_rating as rating,
         h.horse_stable_id as stable_id, s.stable_name as stable_name, h.horse_form as form
         from horses h left join stables s on s.stable_stable_id=h.horse_stable_id
-        where h.horse_deceased_date is null and h.horse_horse_id not in (select pk from hrmv_removed where tbl='horses') order by h.horse_career_earnings desc limit 10""")
+        where %s order by h.horse_career_earnings desc limit 10""" % w))
     recent_big = rows(con, """select %s, c.racecourse_name as course, c.racecourse_racecourse_id as course_id,
         (select r.race_result_horse_id from race_results r where r.race_result_race_id=x.races_race_id and r.race_result_rank=1 limit 1) as winner_id
         from races x join race_days d on d.raceday_race_day_id=x.races_race_day_id
@@ -1537,9 +1550,9 @@ def api_home(con, q):
         where x.races_race_date_time>? order by x.races_race_date_time limit 10""" % RACE_COLS, (gd,))
     sid = META.get("player_stable_id")
     if sid:
-        out["my_horses"] = rows(con, """select horse_horse_id as id, horse_name as name, horse_sex as sex, horse_gender as gender,
-            horse_birth_date as birth, horse_career_earnings as earnings, horse_international_rating as rating, horse_form as form
-            from horses where horse_stable_id=? and horse_deceased_date is null and horse_horse_id not in (select pk from hrmv_removed where tbl='horses') order by horse_career_earnings desc""", (sid,))
+        out["my_horses"] = horse_status_lists(lambda w: rows(con, """select h.horse_horse_id as id, h.horse_name as name, h.horse_sex as sex, h.horse_gender as gender,
+            h.horse_birth_date as birth, h.horse_deceased_date as died, h.horse_career_earnings as earnings, h.horse_international_rating as rating, h.horse_form as form
+            from horses h where h.horse_stable_id=? and %s order by h.horse_career_earnings desc""" % w, (sid,)))
     pid = META.get("player_id")
     if pid:
         out["me"] = one(con, """select person_person_id as id, person_full_name as name, person_jockey_starts as jockey_starts,
@@ -3990,7 +4003,7 @@ class Handler(BaseHTTPRequestHandler):
 
 # --------------------------------------------------------------------------- in-app updates
 
-VERSION = "12.4"
+VERSION = "12.5"
 BACKUP_DIR = os.path.join(APP_DIR, "backups")
 UPDATE_PENDING = os.path.join(DATA_DIR, "update_pending.json")
 UPDATE_RESULT = os.path.join(DATA_DIR, "update_result.json")

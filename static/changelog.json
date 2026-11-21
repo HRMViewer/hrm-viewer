@@ -1,5 +1,15 @@
 [
   {
+    "version": "12.5",
+    "date": "2026-11-21",
+    "title": "All, alive or deceased on the home page",
+    "changes": [
+      "Every horse table on the home page has All, Alive and Deceased buttons: your stable's horses, Top earners, Highest rated, Most wins, Top earners of all time, Most Group 1 wins and Leading sires.",
+      "Each table remembers its own choice. They start as before: your horses, Top earners and Highest rated show horses that are alive; the all-time boards show every horse.",
+      "Horses that have died are marked Dead, and their age is the age they reached."
+    ]
+  },
+  {
     "version": "12.4",
     "date": "2026-11-21",
     "title": "Just download and open",

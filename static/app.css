@@ -890,3 +890,6 @@ html.hdr-light .topbar { border-bottom: 1px solid var(--line); }
 .gh-v .gh-notes { margin-top: 8px; }
 .gh-v .btn.confirm { background: var(--bad); border-color: var(--bad); color: #fff; }
 .gh-box .gh-links { display: flex; gap: 6px; justify-content: flex-end; align-items: center; }
+/* 12.5: All / Alive / Deceased on the home page's horse tables */
+.hz-note { display: inline-flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.seg.hz-seg button { padding: 2px 9px; font-size: var(--fs-xs); }

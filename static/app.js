@@ -1318,6 +1318,37 @@ function welcome() {
     <p><button class="btn primary" onclick="openLoad()">Load database</button>${STATUS && STATUS.db_count > 1 ? ` <a class="btn" href="#/databases">Open another database</a>` : ""}</p></div>`;
 }
 
+// home page horse tables: each one switches between all horses, those alive and those that have died
+const HOME_HZ = {};
+const HZ_LABELS = [["all", "All"], ["alive", "Alive"], ["dead", "Deceased"]];
+const hzPick = (key, def) => { try { return localStorage.getItem("hrm.hz." + key) || def; } catch (e) { return def; } };
+function hzPanel(key, title, cols, lists, opts = {}) {
+  lists = lists && !Array.isArray(lists) ? lists : { all: lists || [], alive: lists || [], dead: [] };
+  const cur = hzPick(key, opts.def || "all");
+  HOME_HZ[key] = { cols, lists, opts };
+  const seg = `<div class="seg hz-seg" role="group" aria-label="Which horses">${HZ_LABELS.map(([v, t]) =>
+    `<button data-hz="${key}" data-v="${v}" class="${cur === v ? "on" : ""}">${t}</button>`).join("")}</div>`;
+  return `<section class="panel ${opts.cls || ""}" data-hz-panel="${key}"><div class="panel-head"><h2>${title}</h2><span class="note hz-note">${seg}${opts.link ? `<span>${opts.link}</span>` : ""}</span></div>
+    <div class="hz-body">${hzTable(key, cur)}</div></section>`;
+}
+function hzTable(key, which) {
+  const { cols, lists, opts } = HOME_HZ[key];
+  const list = (lists[which] || []).map((r, i) => ({ ...r, _i: i + 1 }));
+  const empty = { all: "No horses.", alive: "No horses alive.", dead: "No horses have died." }[which];
+  return table(cols, list, { empty, rowClass: opts.rowClass });
+}
+document.addEventListener("click", (e) => {
+  const b = e.target.closest("[data-hz]");
+  if (!b || !HOME_HZ[b.dataset.hz]) return;
+  const key = b.dataset.hz, v = b.dataset.v;
+  try { localStorage.setItem("hrm.hz." + key, v); } catch (er) { /* this visit only */ }
+  const p = b.closest("[data-hz-panel]");
+  p.querySelectorAll("[data-hz]").forEach((x) => x.classList.toggle("on", x === b));
+  // the CSV button belongs to the old table: take it away so a fresh one is made for the new table
+  p.querySelectorAll(":scope > .panel-head .tbl-tools, :scope > .panel-head .btn-csv").forEach((x) => x.remove());
+  p.querySelector(".hz-body").innerHTML = hzTable(key, v);
+});
+
 async function homePage() {
   const d = await api("home");
   const m = STATUS.meta || {};
@@ -1331,7 +1362,7 @@ async function homePage() {
       ["Wins", fNum(me.jockey_wins), `Strike rate ${pct(me.jockey_wins, me.jockey_starts)}`],
       ["Jockey prize money", fMoneyShort(me.jockey_winnings)],
       ["Reputation", fNum(me.reputation, 1)],
-      d.my_horses ? ["Horses in your stable", fNum(d.my_horses.length)] : null,
+      d.my_horses ? ["Horses in your stable", fNum((d.my_horses.alive || []).length)] : null,
     ]);
   }
   const rideCols = [
@@ -1353,14 +1384,14 @@ async function homePage() {
   }
   html += `<div class="grid cols-2">`;
   if (d.my_horses && st) {
-    html += panel(`${esc(st.name)} horses`, table([
-      { h: "Horse", f: (r) => L.horse(r.id, r.name) },
-      { h: "Age", cls: "num", f: (r) => fNum(age(r.birth)) },
+    html += hzPanel("mine", `${esc(st.name)} horses`, [
+      { h: "Horse", f: (r) => `${L.horse(r.id, r.name)}${isNum(r.died) ? ' <span class="badge dead">Dead</span>' : ""}` },
+      { h: "Age", cls: "num", f: (r) => fNum(age(r.birth, r.died)) },
       { h: "Sex", f: (r) => esc(r.gender) },
       { h: "Rating", cls: "num", f: (r) => fNum(r.rating) },
       { h: "Form", f: (r) => esc(r.form || "") },
       { h: "Earnings", cls: "num", f: (r) => fMoney(r.earnings) },
-    ], d.my_horses, { empty: "No horses." }), "", "span-2");
+    ], d.my_horses, { def: "alive", cls: "span-2" });
   }
   html += panel("Latest Group 1 & 2 results", table([
     { h: "Date", cls: "nowrap", f: (r) => fDate(r.race_time) },
@@ -1375,13 +1406,13 @@ async function homePage() {
     { h: "Purse", cls: "num", f: (r) => fMoneyShort(r.purse) },
     { h: "Entries", cls: "num", f: (r) => fNum(r.entries) },
   ], d.upcoming_big), `<a href="#/races?when=upcoming&type=G1">More</a>`);
-  html += panel("Top earners still alive", table([
-    { h: "Horse", f: (r) => L.horse(r.id, r.name) },
-    { h: "Age", cls: "num", f: (r) => fNum(age(r.birth)) },
+  html += hzPanel("top", "Top earners", [
+    { h: "Horse", f: (r) => `${L.horse(r.id, r.name)}${isNum(r.died) ? ' <span class="badge dead">Dead</span>' : ""}` },
+    { h: "Age", cls: "num", f: (r) => fNum(age(r.birth, r.died)) },
     { h: "Sex", f: (r) => esc(r.gender) },
     { h: "Stable", f: (r) => L.stable(r.stable_id, r.stable_name) },
     { h: "Earnings", cls: "num", f: (r) => fMoneyShort(r.earnings) },
-  ], d.top_horses), `<a href="#/horses">All horses</a>`, "span-2");
+  ], d.top_horses, { def: "alive", cls: "span-2", link: `<a href="#/horses">All horses</a>` });
   html += `</div>`;
   // leader boards for the whole save
   const ld = d.leaders || {};
@@ -1390,11 +1421,12 @@ async function homePage() {
   const hName = { h: "Horse", f: (r) => `${L.horse(r.id, r.name)}${isNum(r.died) ? ' <span class="badge dead">Dead</span>' : ""}` };
   const hStable = { h: "Stable", f: (r) => L.stable(r.stable_id, r.stable) };
   const board = (title, cols, list, link) => panel(title, table([nCol].concat(cols), num(list || []), { empty: "Nothing yet." }), link || "");
+  const hboard = (key, title, cols, lists, link, def) => hzPanel(key, title, [nCol].concat(cols), lists, { link, def });
   html += `<div class="panel-head" style="margin-top:20px"><h2>Leaders across the whole save</h2><span class="note">Every horse, person and stable in this database</span></div>`;
   html += `<div class="grid cols-2 leaders">`;
-  html += board("Highest rated horses", [hName, { h: "Age", cls: "num", f: (r) => fNum(age(r.birth, r.died)) }, hStable,
-    { h: "Rating", cls: "num", f: (r) => `<b>${fNum(r.rating)}</b>` }, { h: "Peak", cls: "num", f: (r) => fNum(r.peak) }], ld.rated, `<a href="#/horse-table?sort=rating">Horse table</a>`);
-  html += board("Most wins (horses)", [hName, hStable, { h: "Starts", cls: "num", f: (r) => fNum(r.starts) },
+  html += hboard("rated", "Highest rated horses", [hName, { h: "Age", cls: "num", f: (r) => fNum(age(r.birth, r.died)) }, hStable,
+    { h: "Rating", cls: "num", f: (r) => `<b>${fNum(r.rating)}</b>` }, { h: "Peak", cls: "num", f: (r) => fNum(r.peak) }], ld.rated, `<a href="#/horse-table?sort=rating">Horse table</a>`, "alive");
+  html += hboard("wins", "Most wins (horses)", [hName, hStable, { h: "Starts", cls: "num", f: (r) => fNum(r.starts) },
     { h: "Wins", cls: "num", f: (r) => `<b>${fNum(r.wins)}</b>` }, { h: "Strike", cls: "num", f: (r) => pct(r.wins, r.starts) }], ld.wins, `<a href="#/horse-table?sort=wins&status=all">More</a>`);
   html += board("Most jockey wins", [{ h: "Jockey", f: (r) => L.person(r.id, r.name) }, { h: "Rides", cls: "num", f: (r) => fNum(r.starts) },
     { h: "Wins", cls: "num", f: (r) => `<b>${fNum(r.wins)}</b>` }, { h: "Strike", cls: "num", f: (r) => pct(r.wins, r.starts) },
@@ -1402,14 +1434,14 @@ async function homePage() {
   html += board("Most trainer wins", [{ h: "Trainer", f: (r) => L.person(r.id, r.name) }, { h: "Starts", cls: "num", f: (r) => fNum(r.starts) },
     { h: "Wins", cls: "num", f: (r) => `<b>${fNum(r.wins)}</b>` }, { h: "Strike", cls: "num", f: (r) => pct(r.wins, r.starts) },
     { h: "Prize money", cls: "num", f: (r) => fMoneyShort(r.prize) }], ld.trainers);
-  html += board("Top earners of all time", [hName, hStable, { h: "Record", cls: "num", f: (r) => `${fNum(r.starts)}: ${fNum(r.wins)} wins` },
+  html += hboard("earners", "Top earners of all time", [hName, hStable, { h: "Record", cls: "num", f: (r) => `${fNum(r.starts)}: ${fNum(r.wins)} wins` },
     { h: "Earnings", cls: "num", f: (r) => `<b>${fMoneyShort(r.earnings)}</b>` }], ld.earners, `<a href="#/horse-table?sort=earnings&status=all">More</a>`);
-  html += board("Most Group 1 wins", [hName, hStable, { h: "G1 wins", cls: "num", f: (r) => `<b>${fNum(r.g1)}</b>` },
+  html += hboard("g1", "Most Group 1 wins", [hName, hStable, { h: "G1 wins", cls: "num", f: (r) => `<b>${fNum(r.g1)}</b>` },
     { h: "Earnings", cls: "num", f: (r) => fMoneyShort(r.earnings) }], ld.g1, `<a href="#/horse-table?sort=g1&status=all">More</a>`);
   html += board("Most successful stables", [{ h: "Stable", f: (r) => L.stable(r.id, r.name) }, { h: "Starts", cls: "num", f: (r) => fNum(r.starts) },
     { h: "Wins", cls: "num", f: (r) => `<b>${fNum(r.wins)}</b>` }, { h: "G1", cls: "num", f: (r) => fNum(r.g1) },
     { h: "Prize money", cls: "num", f: (r) => fMoneyShort(r.prize) }], ld.stables, `<a href="#/stable-table">Stable table</a>`);
-  html += board("Leading sires (progeny earnings)", [{ h: "Sire", f: (r) => `${L.horse(r.id, r.name)} <a class="small" href="#/pedigree/${r.id}">tree</a>` },
+  html += hboard("sires", "Leading sires (progeny earnings)", [{ h: "Sire", f: (r) => `${L.horse(r.id, r.name)}${isNum(r.died) ? ' <span class="badge dead">Dead</span>' : ""} <a class="small" href="#/pedigree/${r.id}">tree</a>` },
     { h: "Foals", cls: "num", f: (r) => fNum(r.foals) }, { h: "Winners", cls: "num", f: (r) => fNum(r.winners) },
     { h: "Progeny earnings", cls: "num", f: (r) => `<b>${fMoneyShort(r.earnings)}</b>` }], ld.sires, `<a href="#/pedigrees">Top sires</a>`);
   html += `</div>`;
