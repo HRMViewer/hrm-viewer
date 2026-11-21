@@ -1,5 +1,14 @@
 [
   {
+    "version": "13.2",
+    "date": "2026-11-21",
+    "title": "Refresh button; dark mode table headings",
+    "changes": [
+      "New \u21bb Refresh button next to back and forward: it loads the page you're on again with the latest data and keeps your place. F5 does the same.",
+      "Dark mode: the first heading of wide tables (such as Award on the Awards pages) no longer shows up highlighted in a brown colour. All table headings now use the same colour."
+    ]
+  },
+  {
     "version": "13.1",
     "date": "2026-11-21",
     "title": "Never stuck on a busy port",

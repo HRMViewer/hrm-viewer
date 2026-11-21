@@ -150,6 +150,7 @@ function renderNav() {
   $("#nav").innerHTML = `<button class="sb-toggle" id="sb-toggle" title="Hide or show the side menu" aria-label="Hide or show the side menu">☰</button>` +
     `<button class="sb-toggle nav-hist" id="nav-back" data-tip="Back (Alt + ←)" aria-label="Back">${chev("M10 3 5 8l5 5")}</button>` +
     `<button class="sb-toggle nav-hist" id="nav-fwd" data-tip="Forward (Alt + →)" aria-label="Forward">${chev("M6 3l5 5-5 5")}</button>` +
+    `<button class="sb-toggle nav-hist" id="nav-reload" data-tip="Refresh this page (F5)" aria-label="Refresh this page">${chev("M13 8a5 5 0 1 1-1.5-3.6M13 2.5V5h-2.5")}</button>` +
     SECTIONS.filter((x) => !x.right).map(item).join("") + `<span class="grow"></span>` + SECTIONS.filter((x) => x.right).map(item).join("");
 }
 renderNav();
@@ -176,6 +177,29 @@ window.addEventListener("popstate", histSync);
 document.addEventListener("click", (e) => {
   if (e.target.closest("#nav-back")) history.back();
   else if (e.target.closest("#nav-fwd")) history.forward();
+  else if (e.target.closest("#nav-reload")) refreshPage();
+});
+// refresh: fetch the page's data again and redraw it, keeping your place
+let REFRESHING = false;
+async function refreshPage() {
+  if (REFRESHING) return;
+  REFRESHING = true;
+  const b = $("#nav-reload"), y = window.scrollY;
+  if (b) b.classList.add("spinning");
+  try {
+    CARD_CACHE.clear(); TABLES_CACHE = null;
+    await refreshStatus();
+    await loadHorsePics(true);
+    await render();
+    window.scrollTo(0, y);
+  } finally {
+    REFRESHING = false;
+    if (b) b.classList.remove("spinning");
+  }
+}
+// F5 does the same (Ctrl + F5 still reloads the whole viewer)
+document.addEventListener("keydown", (e) => {
+  if (e.key === "F5" && !e.ctrlKey && !e.shiftKey && !e.altKey) { e.preventDefault(); refreshPage(); }
 });
 // (Alt + ← / → and the mouse's back / forward buttons are handled by the window itself, as in a web browser)
 // side menu: full, or a narrow strip of icons
