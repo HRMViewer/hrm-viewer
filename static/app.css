@@ -1313,3 +1313,29 @@ table.data.wide .tgs { flex-wrap: nowrap; }
 .tc-pick { display: inline-flex; gap: 3px; align-items: center; }
 .hn-new .tc-pick .nt-c { width: 18px; height: 18px; }
 .nt-add .tc-pick { margin: 0 4px; }
+/* 15.7 Fans, sponsors & notes tab: your tags and notes log on the right */
+.hf-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(340px, 420px); gap: 16px; margin-top: 16px; align-items: start; }
+.hf-side { display: flex; flex-direction: column; gap: 16px; position: sticky; top: 12px; }
+.hf-side .hn-panel { margin: 0; }
+.hlog-panel { display: flex; flex-direction: column; }
+.hl-new, .hl-edit { width: 100%; box-sizing: border-box; resize: vertical; min-height: 64px; padding: 8px 10px; border: 1px solid var(--ctl-line, var(--line)); border-radius: 8px; font: inherit; background: var(--panel); color: inherit; }
+.hl-new:focus, .hl-edit:focus { outline: none; border-color: var(--blue); box-shadow: 0 0 0 3px color-mix(in srgb, var(--blue) 18%, transparent); }
+.hl-bar { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin: 6px 0 10px; }
+.hl-log { list-style: none; margin: 0; padding: 0 4px 0 0; max-height: min(560px, calc(100vh - 330px)); min-height: 120px; overflow-y: auto; border-top: 1px solid var(--line); }
+.hl-item { padding: 10px 2px; border-bottom: 1px solid var(--line); }
+.hl-item:last-child { border-bottom: 0; }
+.hl-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; font-size: var(--fs-xs); color: #6b7385; }
+.hl-gd { color: #7a560c; font-weight: 600; }
+.hl-ed { font-style: italic; }
+.hl-acts { margin-left: auto; display: inline-flex; gap: 10px; }
+.hl-acts .lnk, .lnk { background: none; border: 0; padding: 0; font: inherit; font-size: var(--fs-xs); color: var(--blue); cursor: pointer; }
+.hl-acts .lnk:hover { text-decoration: underline; }
+.hl-acts .danger-t { color: #b3322a; }
+.hl-text { margin-top: 4px; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.45; }
+.hl-editbox { margin-top: 6px; }
+.hl-empty { padding: 14px 2px; list-style: none; }
+.nt-sum { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 16px; }
+.nt-sum .tg { text-decoration: none; }
+.nt-sum .tg b { margin-left: 4px; }
+.nt-cnt { min-width: 70px; }
+@media (max-width: 1100px) { .hf-layout { grid-template-columns: 1fr; } .hf-side { position: static; } .hl-log { max-height: 420px; } }

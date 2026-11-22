@@ -1,5 +1,18 @@
 [
   {
+    "version": "15.8",
+    "date": "2026-11-22",
+    "title": "Tags in Settings and a log of notes on horses",
+    "changes": [
+      "Tags are now made in Settings → Tags (also in the Settings side menu): type a name, pick one of ten colours and click Create tag (or press Enter). Rename, recolour and delete them on the same page; deleting a tag takes it off every horse (it asks first).",
+      "On a horse's Fans, sponsors & notes tab you just tick your tags: Your tags lists them all, and clicking one puts it on that horse or takes it off. It shows beside the horse's name straight away.",
+      "Notes are now a log. Your notes sits on the right of the tab: write a note and press Enter to save it (Shift+Enter starts a new line). Each note shows when you wrote it and the game date at the time, newest first.",
+      "Edit or delete any note: Edit opens it in place (Enter saves, Esc cancels) and Delete asks once before it goes. When there are more notes than fit, the list scrolls inside its box.",
+      "Your existing note on each horse is kept as the first entry in its log.",
+      "Horses → Notes & tags shows each horse's tags, latest note and how many notes it has, and searches every note. Your tags are listed at the top with how many horses have each."
+    ]
+  },
+  {
     "version": "15.7",
     "date": "2026-11-22",
     "title": "Fans, sponsors and notes on horses",

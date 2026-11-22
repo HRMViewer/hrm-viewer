@@ -4921,7 +4921,7 @@ TAG_COLORS = ("blue", "rose", "amber", "green", "purple", "teal", "red", "orange
 TAG_PRESETS = [{"id": "website", "name": "Website", "color": "blue", "icon": "globe"},
                {"id": "fanclub", "name": "Fan club", "color": "rose", "icon": "users"},
                {"id": "merch", "name": "Merchandise", "color": "amber", "icon": "bag"}]
-NOTE_MAX, TAG_MAX, TAGS_MAX = 20000, 40, 60
+NOTE_MAX, TAG_MAX, TAGS_MAX, LOG_MAX = 20000, 40, 60, 2000
 NOTES_REV = [0]
 
 
@@ -4938,8 +4938,20 @@ def notes_load():
         d["tags"] = [dict(t) for t in TAG_PRESETS]
     if not isinstance(d.get("items"), dict):
         d["items"] = {}
-    d["v"] = 1
+    # each horse keeps a log of notes; the single note box of the first 15.7 becomes its first entry
+    for it in d["items"].values():
+        if not isinstance(it, dict):
+            continue
+        if not isinstance(it.get("log"), list):
+            old = str(it.get("note") or "").strip()
+            it["log"] = [{"id": "n1", "text": old, "at": it.get("updated") or time.time(), "gd": None}] if old else []
+        it.pop("note", None)
+    d["v"] = 2
     return d
+
+
+def notes_has(it):
+    return bool(it.get("log")) or bool(it.get("tags"))
 
 
 def notes_ids(kind, tag):
@@ -4949,7 +4961,7 @@ def notes_ids(kind, tag):
         kk, _, i = k.partition(":")
         if kk != kind or not isinstance(it, dict):
             continue
-        ok = bool((it.get("note") or "").strip()) if tag == "_notes" else bool(it.get("tags")) if tag == "_any" else tag in (it.get("tags") or [])
+        ok = bool(it.get("log")) if tag == "_notes" else bool(it.get("tags")) if tag == "_any" else tag in (it.get("tags") or [])
         if ok and re.match(r"^-?\d+$", i):
             out.append(int(i))
     return out
@@ -4999,13 +5011,36 @@ def notes_post(path, data):
                 return {"error": "Which horse?"}, 400
             key = "%s:%d" % (kind, int(data["id"]))
             it = dict(d["items"].get(key) or {})
-            if "note" in data:
-                it["note"] = str(data.get("note") or "")[:NOTE_MAX]
+            log = [dict(x) for x in (it.get("log") or [])]
+            if "add" in data:            # a new note in the log
+                text = str(data.get("add") or "").strip()[:NOTE_MAX]
+                if not text:
+                    return {"error": "Write something first."}, 400
+                if len(log) >= LOG_MAX:
+                    return {"error": "That horse already has %d notes." % LOG_MAX}, 400
+                n = 1 + max([to_int(str(x.get("id", ""))[1:], 0) for x in log] + [0])
+                log.append({"id": "n%d" % n, "text": text, "at": time.time(), "gd": META.get("game_date")})
+            if isinstance(data.get("edit"), dict):
+                e = data["edit"]
+                text = str(e.get("text") or "").strip()[:NOTE_MAX]
+                for x in log:
+                    if x.get("id") == e.get("id"):
+                        if text and text != x.get("text"):
+                            x["text"], x["edited"] = text, time.time()
+                        elif not text:
+                            data["delete"] = x["id"]
+                        break
+                else:
+                    return {"error": "That note isn't there any more."}, 404
+            if data.get("delete"):
+                log = [x for x in log if x.get("id") != data["delete"]]
+            it["log"] = log
+            it.pop("note", None)
             if "tags" in data:
                 known = {t["id"] for t in d["tags"]}
                 it["tags"] = [t for t in dict.fromkeys(str(x) for x in (data.get("tags") or [])) if t in known]
             it["updated"] = time.time()
-            if (it.get("note") or "").strip() or it.get("tags"):
+            if notes_has(it):
                 d["items"][key] = it
             else:
                 d["items"].pop(key, None)
@@ -5032,7 +5067,7 @@ def notes_post(path, data):
             for k in list(d["items"]):
                 it = d["items"][k]
                 it["tags"] = [x for x in (it.get("tags") or []) if x in keep]
-                if not (it.get("note") or "").strip() and not it["tags"]:
+                if not notes_has(it):
                     d["items"].pop(k)
             d["tags"] = new
             write_json(notes_path(), d)
@@ -5769,7 +5804,7 @@ class Handler(BaseHTTPRequestHandler):
 
 # --------------------------------------------------------------------------- in-app updates
 
-VERSION = "15.7"
+VERSION = "15.8"
 BACKUP_DIR = os.path.join(APP_DIR, "backups")
 UPDATE_PENDING = os.path.join(DATA_DIR, "update_pending.json")
 UPDATE_RESULT = os.path.join(DATA_DIR, "update_result.json")

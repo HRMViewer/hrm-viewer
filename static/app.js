@@ -131,7 +131,7 @@ const SECTIONS = [
   { k: "stables", label: "Stables", ic: "barn", href: "#/stables", routes: ["stables", "stable", "stable-table", "stable-rankings"] },
   { k: "people", label: "People", ic: "user", href: "#/people-overview", routes: ["people-overview", "people", "person", "jockeys"] },
   { k: "awards", label: "Awards", ic: "trophy", href: "#/awards", routes: ["awards"] },
-  { k: "settings", label: "Settings", ic: "cog", href: "#/settings", routes: ["settings", "databases", "tables", "versions", "shortcuts"], right: true },
+  { k: "settings", label: "Settings", ic: "cog", href: "#/settings", routes: ["settings", "databases", "tables", "versions", "shortcuts", "tags"], right: true },
 ];
 const SIDE = {
   home: null,   // filled in below: every other area's pages
@@ -146,7 +146,7 @@ const SIDE = {
   awards: [["Awards", [["#/awards", "trophy", "Awards by year"], ["#/awards?view=winners", "star", "Most awards"], ["#/awards?group=hof", "star", "Hall of Fame"]]],
     ["By award", [["#/awards?group=year", "trophy", "Horse of the Year"], ["#/awards?group=age", "horse", "Age divisions"], ["#/awards?group=distance", "flag", "Distance champions"],
       ["#/awards?group=breeding", "tree", "Breeding"], ["#/awards?group=people", "user", "People"], ["#/awards?group=stables", "barn", "Stables"], ["#/awards?group=special", "star", "Special awards"]]]],
-  settings: [["Settings", [["#/settings", "cog", "General"], ["#/databases", "db", "Databases"], ["#/tables", "table", "All tables"], ["#/shortcuts", "key", "Shortcuts"], ["#/versions", "info", "Versions & changes"]]]],
+  settings: [["Settings", [["#/settings", "cog", "General"], ["#/databases", "db", "Databases"], ["#/tables", "table", "All tables"], ["#/shortcuts", "key", "Shortcuts"], ["#/tags", "tag", "Tags"], ["#/versions", "info", "Versions & changes"]]]],
 };
 // on Home the side menu lists every area, each under its own heading
 SIDE.home = [["Home", [["#/", "home", "Overview"]]]].concat(
@@ -366,7 +366,7 @@ function favIcon(h) {
   if (side) return side[1];
   return ({ "": "home", horse: "horse", horses: "horse", "horse-table": "horse", person: "user", people: "user", jockeys: "trophy", "people-overview": "user", stable: "barn", stables: "barn",
     "stable-table": "grid", "stable-rankings": "trophy", race: "flag", races: "flag", meeting: "list", meetings: "list", course: "pin", courses: "pin", pedigree: "tree", pedigrees: "tree",
-    awards: "trophy", notes: "tag", settings: "cog", databases: "db", tables: "table", versions: "info", shortcuts: "key" })[k] || "star";
+    awards: "trophy", notes: "tag", tags: "tag", settings: "cog", databases: "db", tables: "table", versions: "info", shortcuts: "key" })[k] || "star";
 }
 function pageTitle() {
   const cur = normHash(location.hash);
@@ -702,7 +702,7 @@ function hashFor(parts, q = {}) {
 function go(parts, q) { location.hash = hashFor(parts, q); }
 
 const PAGES = {
-  "": homePage, horses: horsesPage, notes: Object.assign((r) => notesPage(r), { after: () => notesPage.after() }), horse: (r) => (r.parts[2] === "awards" ? entityAwardsPage("horse", r) : r.parts[2] === "fans" ? horseFansPage(r.parts[1]) : horsePage(r.parts[1])), races: racesPage, race: Object.assign((r) => racePage(r.parts[1]), { after: () => {
+  "": homePage, horses: horsesPage, notes: notesPage, tags: Object.assign(() => tagsPage(), { after: () => tagsPage.after() }), horse: (r) => (r.parts[2] === "awards" ? entityAwardsPage("horse", r) : r.parts[2] === "fans" ? horseFansPage(r.parts[1]) : horsePage(r.parts[1])), races: racesPage, race: Object.assign((r) => racePage(r.parts[1]), { after: () => {
     $$("[data-openall]", APP).forEach((b) => b.addEventListener("click", () => {
       const open = b.textContent.startsWith("Open");
       $$(".rtoggle", APP).forEach((t) => { if (t.classList.contains("open") !== open) t.click(); });
@@ -2016,7 +2016,7 @@ function horseTagsHtml(id, withNote = true, auto = null) {
   const it = noteOf(id), extra = autoTagsInner(auto);
   if (!it) return extra ? `<span class="tgs">${extra}</span>` : "";
   const chips = (it.tags || []).map(tagById).filter(Boolean).map(tagChip).join("");
-  const txt = (it.note || "").trim();
+  const ln = latestNote(it), nn = (it.log || []).length, txt = ln ? ln.text + (nn > 1 ? `\n(+${nn - 1} more note${nn > 2 ? "s" : ""})` : "") : "";
   const note = withNote && txt ? `<a class="tg-note" href="#/horse/${id}/fans" data-tip="${esc(txt.slice(0, 240))}${txt.length > 240 ? "…" : ""}" aria-label="Your note">${tagIc("note")}</a>` : "";
   return chips || note || extra ? `<span class="tgs">${chips}${note}${extra}</span>` : "";
 }
@@ -2079,26 +2079,56 @@ document.addEventListener("click", (e) => {
   if (b.dataset.tc === "hn") HN_COLOUR = b.dataset.c; else NT_COLOUR = b.dataset.c;
 });
 const pickedColour = (root) => { const on = root && $(".tc-pick .nt-c.on", root); return on ? on.dataset.c : nextColour(); };
-// the panel on a horse's Fans, sponsors & notes tab
-function horseNotesPanel(id) {
+// ------------------------------------------------------------------ a horse's tags and notes log (right-hand side of its Fans, sponsors & notes tab)
+const noteLog = (it) => ((it && it.log) || []).slice().sort((a, b) => (b.at || 0) - (a.at || 0));
+const latestNote = (it) => noteLog(it)[0] || null;
+const fWhen = (t) => (isNum(t) ? new Date(t * 1000).toLocaleString("en-NZ", { day: "numeric", month: "short", year: "numeric", hour: "numeric", minute: "2-digit" }) : "");
+function horseTagsPanel(id) {
   const it = noteOf(id) || {}, on = new Set(it.tags || []);
   const chips = NOTES.tags.map((t) => `<button class="tg-tog ${t.color || "grey"}${on.has(t.id) ? " on" : ""}" data-hn-tag="${esc(t.id)}" aria-pressed="${on.has(t.id)}">${tagIc(t.icon || "tag")}${esc(t.name)}</button>`).join("");
-  return `<section class="panel hn-panel" id="hn-panel" data-hn="${id}"><div class="panel-head"><h2>Your notes &amp; tags</h2><span class="note">Only you see these · kept with this database · <a href="#/notes">Rename or recolour tags</a></span></div>
-    <div class="hn-tags">${chips}<span class="hn-new"><input type="text" maxlength="40" placeholder="New tag" aria-label="New tag name">${tagColourPick("hn", HN_COLOUR)}<button class="btn sm" data-hn-add>Add tag</button></span></div>
-    <textarea class="hn-text" rows="4" maxlength="20000" placeholder="Anything about this horse: its website, fan club, merchandise, plans, reminders…" aria-label="Your notes about this horse">${esc(it.note || "")}</textarea>
-    <div class="hn-foot small muted"><span class="hn-state">${it.updated ? "Last changed " + fDate(it.updated) : "Saves as you type"}</span></div></section>`;
+  return `<section class="panel hn-panel" data-hn="${id}"><div class="panel-head"><h2>Your tags</h2><span class="note"><a href="#/tags">Create or edit tags in Settings</a></span></div>
+    <div class="hn-tags">${chips || '<span class="muted small">No tags yet. Create them in <a href="#/tags">Settings → Tags</a>.</span>'}</div>
+    <div class="small muted hn-state" style="margin-top:8px">Click a tag to put it on this horse or take it off.</div></section>`;
+}
+function noteEntry(n) {
+  return `<li class="hl-item" data-nid="${esc(n.id)}"><div class="hl-meta"><span>${fWhen(n.at)}</span>${isNum(n.gd) ? `<span class="hl-gd">Game date ${fDate(n.gd)}</span>` : ""}${n.edited ? `<span class="hl-ed" data-tip="Edited ${fWhen(n.edited)}">edited</span>` : ""}
+    <span class="hl-acts"><button class="lnk" data-hl-edit>Edit</button><button class="lnk danger-t" data-hl-del>Delete</button></span></div>
+    <div class="hl-text">${esc(n.text)}</div></li>`;
+}
+function horseNotesPanel(id) {
+  const log = noteLog(noteOf(id));
+  return `<section class="panel hlog-panel" data-hl="${id}"><div class="panel-head"><h2>Your notes <span class="muted small" id="hl-n">${log.length ? fNum(log.length) : ""}</span></h2><span class="note">Only you see these · <a href="#/notes">All notes</a></span></div>
+    <textarea class="hl-new" rows="3" maxlength="20000" placeholder="Write a note and press Enter to save it (Shift+Enter for a new line)" aria-label="New note"></textarea>
+    <div class="hl-bar"><span class="small muted hl-state"></span><button class="btn sm primary" data-hl-add>Save note</button></div>
+    <ol class="hl-log">${log.map(noteEntry).join("") || '<li class="hl-empty muted small">No notes yet. Anything goes: its website, fan club, plans, reminders…</li>'}</ol></section>`;
 }
 function hnRefreshHead(id) {
   const h = $("#hn-head");
   if (h) h.innerHTML = horseTagsHtml(id, false);
 }
+function hlRedraw(box, id, msg) {
+  const log = noteLog(noteOf(id));
+  $(".hl-log", box).innerHTML = log.map(noteEntry).join("") || '<li class="hl-empty muted small">No notes yet.</li>';
+  $("#hl-n").textContent = log.length ? fNum(log.length) : "";
+  if (msg) $(".hl-state", box).textContent = msg;
+}
+async function hlAdd(box) {
+  const id = +box.dataset.hl, ta = $(".hl-new", box), text = ta.value.trim();
+  if (!text) { ta.focus(); return; }
+  const st = $(".hl-state", box);
+  st.textContent = "Saving…";
+  try { await saveHorseNote(id, { add: text }); ta.value = ""; hlRedraw(box, id, "Saved"); hnRefreshHead(id); ta.focus(); } catch (er) { st.textContent = er.message; }
+}
+async function hlSaveEdit(li) {
+  const box = li.closest("[data-hl]"), id = +box.dataset.hl, ta = $(".hl-edit", li);
+  try { await saveHorseNote(id, { edit: { id: li.dataset.nid, text: ta.value } }); hlRedraw(box, id, ta.value.trim() ? "Changed" : "Deleted"); hnRefreshHead(id); }
+  catch (er) { $(".hl-state", box).textContent = er.message; }
+}
 document.addEventListener("click", async (e) => {
-  const box = e.target.closest("[data-hn]");
-  if (!box) return;
-  const id = +box.dataset.hn, st = $(".hn-state", box);
-  const tg = e.target.closest("[data-hn-tag]");
+  const tbox = e.target.closest("[data-hn]");
+  const tg = tbox && e.target.closest("[data-hn-tag]");
   if (tg) {
-    const it = noteOf(id) || {}, tags = new Set(it.tags || []);
+    const id = +tbox.dataset.hn, st = $(".hn-state", tbox), it = noteOf(id) || {}, tags = new Set(it.tags || []);
     tags.has(tg.dataset.hnTag) ? tags.delete(tg.dataset.hnTag) : tags.add(tg.dataset.hnTag);
     try {
       await saveHorseNote(id, { tags: [...tags] });
@@ -2107,49 +2137,40 @@ document.addEventListener("click", async (e) => {
     } catch (er) { st.textContent = er.message; }
     return;
   }
-  if (e.target.closest("[data-hn-add]")) hnAddTag(box);
-});
-document.addEventListener("keydown", (e) => { if (e.key === "Enter" && e.target.closest(".hn-new input")) { e.preventDefault(); hnAddTag(e.target.closest("[data-hn]")); } });
-async function hnAddTag(box) {
-  const id = +box.dataset.hn, inp = $(".hn-new input", box), name = inp.value.trim(), st = $(".hn-state", box);
-  if (!name) { inp.focus(); return; }
-  let t = NOTES.tags.find((x) => x.name.toLowerCase() === name.toLowerCase());
-  try {
-    if (!t) {
-      await saveTagList(NOTES.tags.concat([{ name, color: pickedColour(box) }]));
-      HN_COLOUR = "";
-      t = NOTES.tags.find((x) => x.name.toLowerCase() === name.toLowerCase());
-    }
-    const it = noteOf(id) || {};
-    if (t && !(it.tags || []).includes(t.id)) await saveHorseNote(id, { tags: (it.tags || []).concat([t.id]) });
-    box.outerHTML = horseNotesPanel(id);
-    hnRefreshHead(id);
-    const nb = $("#hn-panel");
-    if (nb) $(".hn-state", nb).textContent = `Added “${name}”`;
-  } catch (er) { st.textContent = er.message; }
-}
-// the note saves itself a moment after you stop typing, and when you leave the box
-let HN_TIMER = null;
-async function hnSave(ta) {
-  clearTimeout(HN_TIMER);
-  const box = ta.closest("[data-hn]");
+  const box = e.target.closest("[data-hl]");
   if (!box) return;
-  const id = +box.dataset.hn, st = $(".hn-state", box);
-  if (((noteOf(id) || {}).note || "") === ta.value) return;
-  st.textContent = "Saving…";
-  try { await saveHorseNote(id, { note: ta.value }); if (st.isConnected) st.textContent = "Saved"; } catch (er) { if (st.isConnected) st.textContent = er.message; }
-}
-document.addEventListener("input", (e) => {
-  const ta = e.target.closest(".hn-text");
-  if (!ta) return;
-  $(".hn-state", ta.closest("[data-hn]")).textContent = "Typing…";
-  clearTimeout(HN_TIMER);
-  HN_TIMER = setTimeout(() => hnSave(ta), 700);
+  const id = +box.dataset.hl, li = e.target.closest(".hl-item");
+  if (e.target.closest("[data-hl-add]")) return hlAdd(box);
+  if (li && e.target.closest("[data-hl-edit]")) {
+    const n = noteLog(noteOf(id)).find((x) => x.id === li.dataset.nid);
+    if (!n) return;
+    $(".hl-text", li).outerHTML = `<div class="hl-editbox"><textarea class="hl-edit" rows="3" maxlength="20000" aria-label="Edit note">${esc(n.text)}</textarea>
+      <div class="hl-bar"><span class="small muted">Enter saves · Esc cancels</span><span><button class="btn sm" data-hl-cancel>Cancel</button> <button class="btn sm primary" data-hl-save>Save</button></span></div></div>`;
+    $(".hl-acts", li).hidden = true;
+    const ta = $(".hl-edit", li); ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length);
+    return;
+  }
+  if (li && e.target.closest("[data-hl-save]")) return hlSaveEdit(li);
+  if (li && e.target.closest("[data-hl-cancel]")) return hlRedraw(box, id);
+  const del = li && e.target.closest("[data-hl-del]");
+  if (del) {
+    if (!del.dataset.sure) { del.dataset.sure = "1"; del.textContent = "Delete this note?"; setTimeout(() => { if (del.isConnected) { delete del.dataset.sure; del.textContent = "Delete"; } }, 4000); return; }
+    try { await saveHorseNote(id, { delete: li.dataset.nid }); hlRedraw(box, id, "Deleted"); hnRefreshHead(id); } catch (er) { $(".hl-state", box).textContent = er.message; }
+  }
 });
-document.addEventListener("focusout", (e) => { if (e.target.closest && e.target.closest(".hn-text")) hnSave(e.target); });
-window.addEventListener("hashchange", () => { const ta = $(".hn-text"); if (ta) hnSave(ta); });
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
+    const ta = e.target.closest && e.target.closest(".hl-new, .hl-edit");
+    if (!ta) return;
+    e.preventDefault();
+    if (ta.classList.contains("hl-new")) hlAdd(ta.closest("[data-hl]")); else hlSaveEdit(ta.closest(".hl-item"));
+  } else if (e.key === "Escape" && e.target.closest && e.target.closest(".hl-edit")) {
+    const box = e.target.closest("[data-hl]");
+    e.preventDefault(); e.stopPropagation(); hlRedraw(box, +box.dataset.hl);
+  }
+}, true);
 
-// the Notes & tags page: every horse you've tagged or written about, and your tags
+// the Notes & tags page: every horse you've tagged or written about
 async function notesPage(route) {
   const q = route.q || {};
   const d = await api("notes?detail=1");
@@ -2160,34 +2181,42 @@ async function notesPage(route) {
   let html = `<div class="page-head"><div><div class="crumb"><a href="#/horses">Horses</a></div><h1>Notes &amp; tags</h1>
     <div class="sub">Your own notes and tags on horses: websites, fan clubs, merchandise, plans, anything. Only you see them; they're kept with this database, so they stay when you load a newer save into it.</div></div></div>`;
   html += sectionTabs("horses", "notes");
-  // the tags themselves
+  html += `<div class="nt-sum">${NOTES.tags.map((t) => `<a class="tg ${t.color || "grey"}" href="${hashFor(["notes"], { ...q, tag: t.id })}">${tagIc(t.icon || "tag")}${esc(t.name)} <b>${fNum(count[t.id] || 0)}</b></a>`).join("")}
+    <a class="btn sm" href="#/tags">Create or edit tags</a></div>`;
+  const text = (q.q || "").trim().toLowerCase(), tag = q.tag || "";
+  const list = Object.entries(NOTES.items).filter(([k]) => k.startsWith("horse:")).map(([k, it]) => ({ id: +k.slice(6), ...it, ...(horses[+k.slice(6)] || {}) }))
+    .filter((r) => (!tag || (tag === "_notes" ? (r.log || []).length : tag === "_any" ? (r.tags || []).length : (r.tags || []).includes(tag))))
+    .filter((r) => !text || `${r.name || ""} ${(r.log || []).map((n) => n.text).join(" ")} ${r.stable || ""}`.toLowerCase().includes(text))
+    .sort((a, b) => (b.updated || 0) - (a.updated || 0));
+  html += `<div style="margin-top:16px">${panel(`Horses <span class="muted small">${fNum(list.length)}</span>`, `<div class="filters">${searchBox(q, "Search names and notes")}${select("tag", q, tagFilterOpts().filter(([k]) => !k.startsWith("auto:")))}</div>` + table([
+    { h: "Horse", cls: "nowrap", f: (r) => `${horseThumb(r.id)}${r.name ? `<a href="#/horse/${r.id}/fans">${esc(r.name)}</a>` : `<span class="muted">Horse #${r.id} (not in this save)</span>`}${r.died ? ' <span class="badge dead">Dead</span>' : ""}` },
+    { h: "Tags", f: (r) => (r.tags || []).map(tagById).filter(Boolean).map(tagChip).join(" ") || '<span class="muted">—</span>' },
+    { h: "Latest note", cls: "nt-note", f: (r) => { const n = latestNote(r); return n ? esc(n.text.slice(0, 220)) + (n.text.length > 220 ? "…" : "") : '<span class="muted">—</span>'; } },
+    { h: "Notes", cls: "num", f: (r) => fNum((r.log || []).length) },
+    { h: "Stable", f: (r) => (r.stable_id ? L.stable(r.stable_id, r.stable) : '<span class="muted">—</span>') },
+    { h: "Changed", cls: "num nowrap", f: (r) => (r.updated ? fDate(r.updated) : "—") },
+  ], list, { empty: Object.keys(NOTES.items).length ? "No horses match." : "No notes or tags yet. Open any horse's Fans, sponsors & notes tab to add them." }))}</div>`;
+  return html;
+}
+
+// Settings → Tags: create, rename, recolour and delete your tags
+async function tagsPage() {
+  await loadNotes();
+  const count = {};
+  Object.values(NOTES.items).forEach((it) => (it.tags || []).forEach((t) => (count[t] = (count[t] || 0) + 1)));
+  let html = settingsTabs("tags") + `<div class="page-head"><div><h1>Tags</h1><div class="sub">Your own tags for horses. Make them here, then tick them on a horse's <b>Fans, sponsors &amp; notes</b> tab. They're kept with this database.</div></div></div>`;
   const tagRows = NOTES.tags.map((t, i) => `<div class="nt-row" data-nt="${i}"><span class="tg ${t.color || "grey"}">${tagIc(t.icon || "tag")}</span>
       <input type="text" class="nt-name" value="${esc(t.name)}" maxlength="40" aria-label="Tag name">
       <span class="nt-cols" role="group" aria-label="Colour">${TAG_COLOURS.map(([c, n]) => `<button class="nt-c ${c}${(t.color || "grey") === c ? " on" : ""}" data-nt-c="${c}" aria-label="${n}" aria-pressed="${(t.color || "grey") === c}" title="${n}"></button>`).join("")}</span>
-      <a class="small" href="${hashFor(["notes"], { tag: t.id })}">${fNum(count[t.id] || 0)} horse${count[t.id] === 1 ? "" : "s"}</a>
+      <a class="small nt-cnt" href="${hashFor(["notes"], { tag: t.id })}">${fNum(count[t.id] || 0)} horse${count[t.id] === 1 ? "" : "s"}</a>
       <button class="btn sm" data-nt-del="${i}">Delete</button></div>`).join("");
-  html += panel("Your tags", `<div class="nt-list">${tagRows || '<div class="empty">No tags yet.</div>'}</div>
-    <div class="nt-add"><input type="text" id="nt-new" maxlength="40" placeholder="New tag, e.g. Social media" aria-label="New tag name">${tagColourPick("nt", NT_COLOUR)}<button class="btn" id="nt-add">Add tag</button><span class="small muted" id="nt-state"></span></div>`,
-    "Rename one by typing over it · tick a horse's tags on its Fans, sponsors & notes tab");
-  // the horses
-  const text = (q.q || "").trim().toLowerCase(), tag = q.tag || "";
-  const list = Object.entries(NOTES.items).filter(([k]) => k.startsWith("horse:")).map(([k, it]) => ({ id: +k.slice(6), ...it, ...(horses[+k.slice(6)] || {}) }))
-    .filter((r) => (!tag || (tag === "_notes" ? (r.note || "").trim() : tag === "_any" ? (r.tags || []).length : (r.tags || []).includes(tag))))
-    .filter((r) => !text || `${r.name || ""} ${r.note || ""} ${r.stable || ""}`.toLowerCase().includes(text))
-    .sort((a, b) => (b.updated || 0) - (a.updated || 0));
-  html += `<div style="margin-top:16px">${panel(`Horses <span class="muted small">${fNum(list.length)}</span>`, `<div class="filters">${searchBox(q, "Search names and notes")}${select("tag", q, tagFilterOpts())}</div>` + table([
-    { h: "Horse", cls: "nowrap", f: (r) => `${horseThumb(r.id)}${r.name ? L.horse(r.id, r.name) : `<span class="muted">Horse #${r.id} (not in this save)</span>`}${r.died ? ' <span class="badge dead">Dead</span>' : ""}` },
-    { h: "Tags", f: (r) => (r.tags || []).map(tagById).filter(Boolean).map(tagChip).join(" ") || '<span class="muted">—</span>' },
-    { h: "Note", cls: "nt-note", f: (r) => ((r.note || "").trim() ? esc(r.note.trim().slice(0, 220)) + (r.note.trim().length > 220 ? "…" : "") : '<span class="muted">—</span>') },
-    { h: "Stable", f: (r) => (r.stable_id ? L.stable(r.stable_id, r.stable) : '<span class="muted">—</span>') },
-    { h: "Changed", cls: "num nowrap", f: (r) => (r.updated ? fDate(r.updated) : "—") },
-  ], list, { empty: Object.keys(NOTES.items).length ? "No horses match." : "No notes or tags yet. Open any horse and use “Your notes & tags” on its Fans, sponsors & notes tab." }))}</div>`;
+  html += panel("New tag", `<div class="nt-add"><input type="text" id="nt-new" maxlength="40" placeholder="Tag name, e.g. Social media" aria-label="New tag name">${tagColourPick("nt", NT_COLOUR)}<button class="btn primary" id="nt-add">Create tag</button><span class="small muted" id="nt-state"></span></div>`);
+  html += `<div style="margin-top:16px">${panel(`Your tags <span class="muted small">${fNum(NOTES.tags.length)}</span>`, `<div class="nt-list">${tagRows || '<div class="empty">No tags yet.</div>'}</div>`, "Rename one by typing over it · click a colour to change it")}</div>`;
   return html;
 }
-notesPage.after = () => {
-  const st = $("#nt-state");
-  const say = (m) => { if (st) st.textContent = m; };
-  const save = async (tags, msg) => { try { await saveTagList(tags); say(msg); render(); } catch (e) { say(e.message); } };
+tagsPage.after = () => {
+  const say = (m) => { const st = $("#nt-state"); if (st) st.textContent = m; };
+  const save = async (tags, msg) => { try { await saveTagList(tags); await render(); say(msg); } catch (e) { say(e.message); } };
   const copy = () => NOTES.tags.map((t) => ({ ...t }));
   $$(".nt-name").forEach((inp) => {
     const go = () => { const i = +inp.closest("[data-nt]").dataset.nt, v = inp.value.trim(); if (!v || v === NOTES.tags[i].name) { inp.value = NOTES.tags[i].name; return; } const t = copy(); t[i].name = v; save(t, "Renamed."); };
@@ -2200,11 +2229,17 @@ notesPage.after = () => {
     if (!b.dataset.sure) { b.dataset.sure = "1"; b.classList.add("danger"); b.textContent = n ? `Remove from ${n} horse${n === 1 ? "" : "s"}?` : "Click again to delete"; return; }
     const t = copy(); t.splice(i, 1); save(t, "Deleted.");
   }));
-  const add = () => { const inp = $("#nt-new"), v = inp.value.trim(); if (!v) return inp.focus(); if (NOTES.tags.some((t) => t.name.toLowerCase() === v.toLowerCase())) return say("You already have that tag."); NT_COLOUR = ""; save(copy().concat([{ name: v, color: pickedColour($(".nt-add")) }]), "Added."); };
+  const add = () => {
+    const inp = $("#nt-new"), v = inp.value.trim();
+    if (!v) return inp.focus();
+    if (NOTES.tags.some((t) => t.name.toLowerCase() === v.toLowerCase())) return say("You already have that tag.");
+    const color = pickedColour($(".nt-add")); NT_COLOUR = "";
+    save(copy().concat([{ name: v, color }]), `Created “${v}”.`);
+  };
   const ab = $("#nt-add");
   if (ab) ab.addEventListener("click", add);
   const ni = $("#nt-new");
-  if (ni) ni.addEventListener("keydown", (e) => { if (e.key === "Enter") add(); });
+  if (ni) { ni.addEventListener("keydown", (e) => { if (e.key === "Enter") add(); }); }
 };
 
 async function horsesPage(route) {
@@ -2270,7 +2305,7 @@ async function horseFansPage(id) {
   const ladderPanel = panel("Fan milestones", `<ol class="fl">${ladder}</ol>
     <p class="small muted fl-foot">The save keeps the best world fan ranking each horse has reached, so this works for every horse; steps marked <i>Not any more</i> are ones it has since dropped out of. For your own horses, the dates come from your inbox.</p>`,
     st ? `Reached top ${st[0]}${f.died ? "" : isNum(f.rank) ? ` · #${fNum(f.rank)} now` : " · unranked now"}` : "Not reached yet");
-  html += `<div class="grid cols-2 hf-top">${ladderPanel}${horseNotesPanel(f.id)}</div>`;
+  html += `<div class="hf-layout"><div class="hf-main">${ladderPanel}`;
   // sponsors
   html += `<div style="margin-top:16px">${panel(`Sponsors <span class="muted small">${fNum(sp.length)}</span>`, table([
     { h: "Sponsor", f: (r) => `<b>${esc(r.brand)}</b>${r.current ? ' <span class="badge good">Now</span>' : ""}` },
@@ -2294,6 +2329,7 @@ async function horseFansPage(id) {
       { h: "Replied", f: (r) => (r.replied ? "Yes" : '<span class="muted">No</span>') },
     ], inbox.slice().reverse(), { empty: "No fan or merchandise messages about this horse." }), "Fan and merchandise messages about this horse")}</div>`;
   }
+  html += `</div><aside class="hf-side">${horseTagsPanel(f.id)}${horseNotesPanel(f.id)}</aside></div>`;
   return html;
 }
 async function horsePage(id) {
@@ -5895,7 +5931,7 @@ async function drawFontDropdowns() {
 // ------------------------------------------------------------------ settings
 function settingsTabs(on) {
   return `<div class="subtabs"><a href="#/settings" class="${on === "settings" ? "on" : ""}">General</a><a href="#/databases" class="${on === "databases" ? "on" : ""}">Databases</a>
-    <a href="#/tables" class="${on === "tables" ? "on" : ""}">All tables</a><a href="#/shortcuts" class="${on === "shortcuts" ? "on" : ""}">Shortcuts</a><a href="#/versions" class="${on === "versions" ? "on" : ""}">Versions &amp; changes</a></div>`;
+    <a href="#/tables" class="${on === "tables" ? "on" : ""}">All tables</a><a href="#/shortcuts" class="${on === "shortcuts" ? "on" : ""}">Shortcuts</a><a href="#/tags" class="${on === "tags" ? "on" : ""}">Tags</a><a href="#/versions" class="${on === "versions" ? "on" : ""}">Versions &amp; changes</a></div>`;
 }
 function settingsPage() {
   const ms = (STATUS && STATUS.my_stables) || [], cur = myStableId();
