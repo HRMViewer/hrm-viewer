@@ -10,7 +10,8 @@
       "Click a series for every season side by side: who won each race (a horse that won more than one is highlighted), who swept it, and a 5–3–1 points table for any season.",
       "New Racing → Qualifying tab: races you have to earn a place in, by points (the Kentucky Derby, Kentucky Oaks) or by finishing in the places in certain races (the Breeders' Cup races, Caulfield Cup, Cox Plate and more), with how many horses are in so far and how many are yours.",
       "Click one for the standings this time round, where each horse earned its points or place, and every race that leads to it with its points or places and next date.",
-      "Both are also in the Racing side menu under Series & qualifying."
+      "Both are also in the Racing side menu under Series & qualifying.",
+      "Fix: a person's Awards tab now includes stable awards (Stable of the Year, the Thravang Award and Breeder of the Year) for the stable's owner and everyone who managed it that year, with their role (Owner, Manager or both). They show in Latest awards and count in the Lifespans and Dynasty award totals too, and there's an As owner filter."
     ]
   },
   {

@@ -1462,7 +1462,7 @@ AWARD_ROLE_COLS = [("award_jockey_id", "Jockey"), ("award_trainer_id", "Trainer"
                    ("award_stable_manager_id", "Manager"), ("award_caretaker_id", "Caretaker")]
 
 
-AWARD_ROLE_ORDER = ["Manager", "Head trainer", "Trainer", "Jockey", "Caretaker"]
+AWARD_ROLE_ORDER = ["Owner", "Manager", "Head trainer", "Trainer", "Jockey", "Caretaker"]
 
 
 def person_horse_awards(con, pids, races=False):
@@ -1480,8 +1480,10 @@ def person_horse_awards(con, pids, races=False):
     race_cats = ("g1_race", "g2_race", "g3_race", "listed_race")
     sql = """select a.award_id as id, a.award_category as cat, a.award_year as year, a.award_date as date, a.award_rank as rank,
         a.award_value as value, a.award_description as description, a.award_race_id as race_id, a.award_entity_type as etype,
-        a.award_entity_id as eid, coalesce(a.award_horse_id, a.award_entity_id) as horse_id, a.award_stable_id as stable_id,
-        a.award_jockey_id as jockey_id%s from awards a where a.award_entity_type='horse'""" % "".join(", a.%s as %s" % (c, c) for c, _ in roles)
+        a.award_entity_id as eid, case when a.award_entity_type='horse' then coalesce(a.award_horse_id, a.award_entity_id) end as horse_id,
+        coalesce(a.award_stable_id, case when a.award_entity_type='stable' then a.award_entity_id end) as stable_id,
+        a.award_jockey_id as jockey_id%s from awards a where a.award_entity_type in ('horse', 'stable')""" % "".join(", a.%s as %s" % (c, c) for c, _ in roles)
+    own = ownership(con)["pct"]       # stable awards (Stable of the Year, the Thravang Award…) also go to the stable's owner
     if not races:
         sql += " and a.award_category not in ('g1_race','g2_race','g3_race','listed_race')"
     for r in rows(con, sql):
@@ -1489,6 +1491,10 @@ def person_horse_awards(con, pids, races=False):
         for c, role in roles:
             if r.get(c) in pids:
                 got.setdefault(r[c], set()).add(role)
+        if r["etype"] == "stable":
+            h = own.get(r["stable_id"])
+            if h and h[0] == "person" and h[1] in pids:
+                got.setdefault(h[1], set()).add("Owner")
         if r["stable_id"] and r["date"] is not None:
             for a, b, pid in by_st.get(r["stable_id"], ()):
                 if pid in pids and a <= r["date"] <= b:
@@ -1523,6 +1529,7 @@ def api_awards_of(con, kind, eid):
         for r in person_horse_awards(con, [eid], races=True)[eid]:
             r["role"] = " & ".join(r.pop("roles"))
             r["horse_award"] = r["cat"] not in AWARD_RACE_CATS.values()
+            r["stable_award"] = r["etype"] == "stable"
             data.append(r)
     # Group 2/3 and Listed wins the awards table doesn't hold, from the results (for a person: the races they rode)
     have = {r["race_id"] for r in data if r.get("race_id")}
@@ -4024,12 +4031,15 @@ def life_facts(con, ids):
                     continue
                 hn.setdefault(r["horse_id"], None)
                 out[pid]["awards"].append({"year": r["year"], "date": r["date"], "label": award_label(r["cat"], concepts), "cat": r["cat"],
-                                           "horse_id": r["horse_id"], "roles": r["roles"]})
+                                           "horse_id": r["horse_id"], "roles": r["roles"], "stable_id": r["stable_id"] if r["etype"] == "stable" else None})
         names = name_map(con, "horses", "horse_horse_id", "horse_name", list(hn))
+        stn = name_map(con, "stables", "stable_stable_id", "stable_name", [a.get("stable_id") for f in out.values() for a in f["awards"] if a.get("stable_id")])
         for f in out.values():
             for a in f["awards"]:
                 if a.get("horse_id"):
                     a["label"] = "%s · %s, as %s" % (a["label"], names.get(a["horse_id"]) or "a horse", " & ".join(a["roles"]).lower())
+                elif a.get("stable_id"):
+                    a["label"] = "%s · %s, as %s" % (a["label"], stn.get(a["stable_id"]) or "a stable", " & ".join(a["roles"]).lower())
             f["awards"].sort(key=lambda a: (a["year"] or 0, a["date"] or 0))
     for f in out.values():
         f["wins"] = sum(f["by_year"].values())      # different races won, in any role
@@ -4314,8 +4324,11 @@ def api_person(con, pid):
     ha = person_horse_awards(con, [pid])[pid] if has_table(con, "awards") else []
     if ha:
         names = name_map(con, "horses", "horse_horse_id", "horse_name", [r["horse_id"] for r in ha])
+        sn = name_map(con, "stables", "stable_stable_id", "stable_name", [r["stable_id"] for r in ha if r["etype"] == "stable"])
         out["awards"] += [{"category": r["cat"], "year": r["year"], "date": r["date"], "rank": r["rank"], "value": r["value"], "description": r["description"],
-                           "horse_id": r["horse_id"], "horse": names.get(r["horse_id"]), "role": " & ".join(r["roles"])} for r in ha]
+                           "horse_id": r["horse_id"], "horse": names.get(r["horse_id"]), "role": " & ".join(r["roles"]),
+                           "stable_award": r["etype"] == "stable", "stable_id": r["stable_id"] if r["etype"] == "stable" else None,
+                           "stable": sn.get(r["stable_id"]) if r["etype"] == "stable" else None} for r in ha]
         out["awards"].sort(key=lambda a: a["date"] or 0, reverse=True)
     if out["awards"]:
         concepts = dict(con.execute("select concept_id, concept_name from concepts").fetchall()) if has_table(con, "concepts") else {}

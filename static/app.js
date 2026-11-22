@@ -4539,22 +4539,23 @@ async function entityAwardsPage(kind, route) {
   const grades = Object.keys(GR).map((c) => [c, races.filter((a) => a.cat === c).length]).filter(([, n]) => n)
     .map(([c, n]) => `${n}× ${GR[c] === "listed" ? "Listed" : GR[c]}`).join(" · ");
   const hasRole = (a, r) => (a.role || "").split(" & ").includes(r);
-  const roles = ["Manager", "Head trainer", "Trainer", "Jockey", "Caretaker"].filter((r) => all.some((a) => hasRole(a, r)));
+  const roles = ["Owner", "Manager", "Head trainer", "Trainer", "Jockey", "Caretaker"].filter((r) => all.some((a) => hasRole(a, r)));
   const wonN = (l) => l.filter((a) => result(a) === "won").length;
   const tl = kind === "person" ? [
     ["Own awards", fNum(season.length), season.length ? `${fNum(wonN(season))} won · given to ${esc(name.split(" ")[0])}` : "None yet"],
-    ["Horse & concept awards", fNum(horseAw.length), horseAw.length ? `${fNum(wonN(horseAw))} won · horses they worked with` : "None yet"],
+    ["Horse, stable & concept awards", fNum(horseAw.length), horseAw.length ? `${fNum(wonN(horseAw))} won · horses and stables they worked with` : "None yet"],
     ["Group & Listed wins", fNum(races.length), grades || "None yet"],
   ] : [
     ["Season awards", fNum(season.length), season.length ? `${fNum(wonN(season))} won` : "None yet"],
     ["Group & Listed wins", fNum(races.length), grades || "None yet"],
   ];
-  if (kind === "person") roles.forEach((r) => { const l = all.filter((a) => a.kind !== "season" || a.horse_award).filter((a) => hasRole(a, r)); tl.push([`As ${r.toLowerCase()}`, fNum(l.length), `${fNum(l.filter((a) => a.horse_award).length)} horse awards · ${fNum(l.filter((a) => a.kind === "race").length)} race wins`]); });
+  if (kind === "person") roles.forEach((r) => { const l = all.filter((a) => a.kind !== "season" || a.horse_award).filter((a) => hasRole(a, r)); const st = l.filter((a) => a.stable_award).length, ho = l.filter((a) => a.horse_award && !a.stable_award).length, rw = l.filter((a) => a.kind === "race").length;
+    tl.push([`As ${r.toLowerCase()}`, fNum(l.length), [ho ? `${fNum(ho)} horse award${ho === 1 ? "" : "s"}` : "", st ? `${fNum(st)} stable award${st === 1 ? "" : "s"}` : "", rw ? `${fNum(rw)} race win${rw === 1 ? "" : "s"}` : ""].filter(Boolean).join(" · ")]); });
   html += tiles(tl);
   const years = [...new Set(all.map((a) => a.year).filter(Boolean))].sort((a, b) => b - a);
   const type = q.type || "all", res = q.result || "all", yr = q.year || "", term = (q.q || "").toLowerCase();
   const typeOpts = kind === "person"
-    ? [["all", `Everything (${all.length})`], ["season", `Own awards (${season.length})`], ["horse", `Horse awards (${horseAw.length})`], ["race", `Race wins (${races.length})`]]
+    ? [["all", `Everything (${all.length})`], ["season", `Own awards (${season.length})`], ["horse", `Horse & stable awards (${horseAw.length})`], ["race", `Race wins (${races.length})`]]
       .concat(roles.length > 1 ? roles.map((r) => [r, `As ${r.toLowerCase()} (${all.filter((a) => hasRole(a, r)).length})`]) : [])
     : [["all", `Everything (${all.length})`], ["season", `Season awards (${season.length})`], ["race", `Race wins (${races.length})`]];
   const rows = all.filter((a) => (type === "all" || grp(a) === type || hasRole(a, type)) && (res === "all" || result(a) === "won") && (!yr || String(a.year) === String(yr))
@@ -4567,7 +4568,7 @@ async function entityAwardsPage(kind, route) {
     { h: "Result", cls: "nowrap", f: badge },
     { h: "Details", f: (a) => (a.kind === "race" && a.race_id ? L.race(a.race_id, a.description, "Race") : a.description ? esc(a.description) : '<span class="muted">—</span>') },
   ];
-  if (kind === "person") cols.splice(2, 0, { h: "Role", f: (a) => (a.role ? esc(a.role) : '<span class="muted">Own award</span>') }, { h: "Horse", f: (a) => ((a.kind === "race" || a.horse_award) && a.horse_id ? L.horse(a.horse_id, a.horse) : '<span class="muted">—</span>') });
+  if (kind === "person") cols.splice(2, 0, { h: "Role", f: (a) => (a.role ? esc(a.role) : '<span class="muted">Own award</span>') }, { h: "Horse", f: (a) => (a.stable_award ? `<span class="muted small">Stable:</span> ${L.stable(a.stable_id, a.stable)}` : (a.kind === "race" || a.horse_award) && a.horse_id ? L.horse(a.horse_id, a.horse) : '<span class="muted">—</span>') });
   else cols.splice(2, 0, { h: "Jockey", f: (a) => (a.jockey_id ? L.person(a.jockey_id, a.jockey) : '<span class="muted">—</span>') });
   cols.push({ h: "Stable", f: (a) => (a.stable_id ? L.stable(a.stable_id, a.stable) : '<span class="muted">—</span>') });
   html += `<section class="panel"><div class="filters">
@@ -4575,7 +4576,7 @@ async function entityAwardsPage(kind, route) {
     ${seg("result", q, [["won", "Wins only"], ["all", "Wins and places"]], "all")}
     ${select("year", q, yearOptions(years), "Only this year's awards")}</div>
     ${table(cols, rows, { rowClass: (a) => (result(a) === "won" ? "win" : ""), empty: "No awards match these filters." })}
-    <div class="help">The stable is the one ${kind === "horse" ? "the horse raced for" : "they worked for"} at the time.${kind === "person" ? " Horse awards and race wins are those of horses they rode, trained, managed or looked after; a manager shares in every one won while they managed the horse's stable (the game names only one manager on each)." : ""} <a href="#/awards">All season awards</a></div></section>`;
+    <div class="help">The stable is the one ${kind === "horse" ? "the horse raced for" : "they worked for"} at the time.${kind === "person" ? " Horse awards and race wins are those of horses they rode, trained, managed or looked after; stable awards (Stable of the Year, the Thravang Award, Breeder of the Year) go to the stable's managers and its owner. A manager shares in every one won while they managed the stable (the game names only one manager on each)." : ""} <a href="#/awards">All season awards</a></div></section>`;
   return html;
 }
 
@@ -4979,7 +4980,8 @@ async function personPage(id) {
   const awards = compactPanel({ key: "awards", title: "Latest awards", items: d.awards, empty: "No awards yet.",
     row: (a) => `<div class="cp-d">${a.date ? fDate(a.date) : esc(a.year || "")}</div><div><b>${esc(a.label || (a.category || "").replace(/_/g, " "))}</b>${a.rank > 1 ? ` <span class="muted small">${ord(a.rank)}</span>` : ""}
       ${a.horse_id ? `<div class="small">${L.horse(a.horse_id, a.horse)} <span class="muted">· as ${esc((a.role || "").toLowerCase())}</span></div>` : ""}
-      ${a.description && !a.horse_id ? `<div class="muted small">${esc(a.description)}</div>` : ""}</div>` });
+      ${a.stable_award ? `<div class="small">${L.stable(a.stable_id, a.stable)} <span class="muted">· as ${esc((a.role || "").toLowerCase())}</span></div>` : ""}
+      ${a.description && !a.horse_id && !a.stable_award ? `<div class="muted small">${esc(a.description)}</div>` : ""}</div>` });
   const news = compactPanel({ key: "news", title: "Latest news", items: d.events, empty: "No news yet.",
     row: (n) => `<div class="cp-d">${fDate(n.date)}</div><div class="small">${esc(n.text || n.type)}</div>` });
   html += `<div class="po-layout" style="margin-top:16px"><div class="po-main">${roles}</div><aside class="po-side">${awards}${news}
