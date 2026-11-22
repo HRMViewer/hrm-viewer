@@ -305,8 +305,10 @@ def warm_up(delay=1.0):
         if META.get("player_id"):
             pages.append("person/%s" % META["player_id"])
         if META.get("player_stable_id"):
-            pages += ["stable/%s" % META["player_stable_id"], "horse_table?stable=%s" % META["player_stable_id"],
-                      "stable_races/%s" % META["player_stable_id"]]
+            ps = META["player_stable_id"]
+            pages += ["stable/%s" % ps, "horse_table?stable=%s" % ps, "stable_races/%s" % ps,
+                      # your stable's money pages, alone and for its whole ownership group
+                      "stable_finance/%s" % ps, "stable_finance/%s?group=1" % ps, "stable_horse_money/%s" % ps, "stable_horse_money/%s?group=1" % ps]
         for pg in pages:
             if DB_GEN != gen:
                 return
@@ -2346,12 +2348,12 @@ def api_stable_finance(con, sid, q):
         out["detail_dir"] = "in" if incoming else "out"
         me, other = ("to", "from") if incoming else ("from", "to")
         if len(grp) > 1:     # the group's payments to and from outside it (money moved between its own stables drops out)
-            base = """from transactions where transaction_%s_entity_type='stable' and cast(transaction_%s_entity_id as int) in (%s) and ? is not null
-                and not (transaction_%s_entity_type='stable' and cast(transaction_%s_entity_id as int) in (%s))
+            base = """from transactions where transaction_%s_entity_type='stable' and transaction_%s_entity_id in (%s) and ? is not null
+                and not (transaction_%s_entity_type='stable' and transaction_%s_entity_id in (%s))
                 and coalesce(transaction_type,'') <> 'Yearly Summary'""" % (me, me, gin, other, other, gin)
             out["internal"] = rows(con, """select %s as year, count(*) as n, sum(transaction_amount) as total from transactions
-                where transaction_from_entity_type='stable' and transaction_to_entity_type='stable' and cast(transaction_from_entity_id as int) in (%s)
-                and cast(transaction_to_entity_id as int) in (%s) and coalesce(transaction_type,'') <> 'Yearly Summary' group by 1 order by 1"""
+                where transaction_from_entity_type='stable' and transaction_to_entity_type='stable' and transaction_from_entity_id in (%s)
+                and transaction_to_entity_id in (%s) and coalesce(transaction_type,'') <> 'Yearly Summary' group by 1 order by 1"""
                                    % (FIN_YEAR.format("transaction_date"), gin, gin))
         else:
             base = """from transactions where transaction_%s_entity_type='stable' and transaction_%s_entity_id=?
@@ -2536,7 +2538,7 @@ def horse_trades(con, sid):
     tx = rows(con, """select transaction_date as date, transaction_amount as amount, transaction_note as note,
             cast(transaction_from_entity_id as int) as buyer, cast(transaction_to_entity_id as int) as seller from transactions
             where transaction_category='horse_trade' and transaction_from_entity_type='stable' and transaction_to_entity_type='stable'
-            and (cast(transaction_from_entity_id as int) in (%s) or cast(transaction_to_entity_id as int) = ?)""" % marks, group + [sid])
+            and (transaction_from_entity_id in (%s) or transaction_to_entity_id = ?)""" % marks, group + [sid])
     if not tx:
         return []
     wanted = {}
@@ -6063,7 +6065,7 @@ class Handler(BaseHTTPRequestHandler):
 
 # --------------------------------------------------------------------------- in-app updates
 
-VERSION = "16.3"
+VERSION = "16.4"
 BACKUP_DIR = os.path.join(APP_DIR, "backups")
 UPDATE_PENDING = os.path.join(DATA_DIR, "update_pending.json")
 UPDATE_RESULT = os.path.join(DATA_DIR, "update_result.json")

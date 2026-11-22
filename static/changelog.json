@@ -1,5 +1,15 @@
 [
   {
+    "version": "16.4",
+    "date": "2026-11-22",
+    "title": "Whole group financials load quickly",
+    "changes": [
+      "Whole group Financials and Horse finances are much faster: the group's payments are now looked up through the save's index instead of reading every payment in the game (over 1.7 million in a typical save). The group Financials tab went from about 1.5 seconds to a few hundredths of a second, and changing the year or month is just as quick.",
+      "Horse finances (one stable or the group) also find private horse sales faster.",
+      "Your own stable's Financials and Horse finances, for the stable and its whole group, are now got ready in the background when the viewer starts, so they open straight away."
+    ]
+  },
+  {
     "version": "16.3",
     "date": "2026-11-22",
     "title": "Group financials for the stables a person owns",
