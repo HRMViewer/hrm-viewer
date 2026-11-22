@@ -4846,6 +4846,14 @@ def fan_inbox(con):
     return FAN_CACHE[k]
 
 
+def fan_rank(con, fans, died=None):
+    """World rank by fans among living horses (None if dead or without fans)."""
+    ranks = fan_rankings(con)
+    if died or not fans or not ranks:
+        return None
+    return len(ranks) - bisect.bisect_right(ranks, fans) + 1
+
+
 def horse_auto(con, ids):
     """What the save says about these horses' fans and sponsors, for the horse lists: {id: {fans, band, level, sponsor, pay, merch}}."""
     ids = [i for i in ids if i]
@@ -4856,9 +4864,9 @@ def horse_auto(con, ids):
     gd = META.get("game_date") or time.time()
     mk = ",".join("?" * len(ids))
     if "horse_fame_calculated" in hc:
-        for i, f, b in con.execute("select horse_horse_id, horse_fame_calculated, %s from horses where horse_horse_id in (%s)"
-                                   % ("horse_fan_band_notified" if "horse_fan_band_notified" in hc else "0", mk), ids):
-            out[i] = {"fans": f, "band": b or 0, "level": fan_label(b or 0)}
+        for i, f, b, died in con.execute("select horse_horse_id, horse_fame_calculated, %s, horse_deceased_date from horses where horse_horse_id in (%s)"
+                                         % ("horse_fan_band_notified" if "horse_fan_band_notified" in hc else "0", mk), ids):
+            out[i] = {"fans": f, "band": b or 0, "level": fan_label(b or 0), "rank": fan_rank(con, f, died) if b else None, "died": bool(died)}
     if has_table(con, "horse_sponsors"):
         for i, brand, pay in con.execute("""select sponsor_horse_id, sponsor_brand_name, sponsor_monthly_payment from horse_sponsors where sponsor_horse_id in (%s)
                 and sponsor_contract_start_date<=? and (sponsor_contract_end_date is null or sponsor_contract_end_date>?)""" % mk, ids + [gd, gd]):
@@ -4892,11 +4900,8 @@ def api_horse_fans(con, hid):
             % ("horse_fame_calculated" if "horse_fame_calculated" in hc else "null", "horse_fan_band_notified" if "horse_fan_band_notified" in hc else "0"), (hid,))
     if not h:
         return None
-    ranks = fan_rankings(con)
-    h["rank"] = None
-    if h["fans"] and not h["died"] and ranks:
-        h["rank"] = len(ranks) - bisect.bisect_right(ranks, h["fans"]) + 1
-    h["of"] = len(ranks)
+    h["rank"] = fan_rank(con, h["fans"], h["died"])
+    h["of"] = len(fan_rankings(con))
     h["level"] = fan_label(h["band"] or 0)
     h["levels"] = [{"top": b, "label": l, "about": a, "reached": bool(h["band"]) and h["band"] <= b} for b, l, a in FAN_LEVELS]
     gd = META.get("game_date") or time.time()

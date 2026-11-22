@@ -1301,3 +1301,8 @@ td.nt-note { white-space: normal; min-width: 260px; max-width: 520px; color: #3f
 .fl-when { color: #7a560c; font-weight: 600; }
 .fl-foot { margin: 8px 0 0; }
 table.data.wide .tgs { flex-wrap: nowrap; }
+.tg.auto.fan.was { border-style: dashed; border-color: #d6c9a8; color: #8a7a55; }
+.tg-was { font-weight: 500; opacity: .85; margin-left: 2px; }
+.fl-not { display: inline-block; font-size: var(--fs-xs); font-weight: 600; color: #a5481f; background: #fbe9e1; border-radius: 999px; padding: 0 7px; margin-left: 4px; }
+.fl-step.was .fl-dot { background: #fdf8ec; border-style: dashed; }
+.tile .hint .fl-not { margin-left: 0; }

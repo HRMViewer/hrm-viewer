@@ -2043,6 +2043,8 @@ const AUTO_TAG_OPTS = [["auto:sponsored", "Auto: Sponsored now"], ["auto:website
   ["auto:trips", "Auto: Fan club trips (top 20)"], ["auto:superfans", "Auto: Superfans (top 10)"], ["auto:merch", "Auto: Merchandise deal"]];
 const FAN_STEPS = [[1, "No. 1 by fans", "trophy", "superfans"], [10, "Superfans", "heart", "superfans"], [20, "Fan club trips", "bus", "trips"], [50, "Supporters' club", "users", "club"], [100, "Fan website", "globe", "website"]];
 const fanStep = (band) => (band > 0 ? FAN_STEPS.find(([b]) => band <= b) || null : null);
+// a step it reached but isn't at any more: its rank now (living horses), or why it has none
+const fanWas = (top, rank, died) => (died ? "died" : !isNum(rank) ? "now unranked" : rank > top ? "now #" + fNum(rank) : "");
 function fShortN(n) {
   if (!isNum(n)) return "—";
   const a = Math.abs(n);
@@ -2052,7 +2054,11 @@ function fShortN(n) {
 function autoTagsHtml(a) {
   if (!a) return "";
   const st = fanStep(a.band), out = [];
-  if (st) out.push(`<span class="tg auto fan" data-tip="Best fan ranking reached: top ${st[0]} in the world · ${fShortN(a.fans)} fans now">${tagIc(st[2])}${esc(st[1])}</span>`);
+  if (st) {
+    const was = fanWas(st[0], a.rank, a.died);
+    const tip = `Best fan ranking reached: top ${st[0]} in the world · ${was ? (a.died ? "it has since died" : `not any more: ${isNum(a.rank) ? "#" + fNum(a.rank) + " now" : "no longer ranked"}`) : `still there: #${fNum(a.rank)} now`} · ${fShortN(a.fans)} fans`;
+    out.push(`<span class="tg auto fan${was ? " was" : ""}" data-tip="${tip}">${tagIc(st[2])}${esc(st[1])}${was ? `<span class="tg-was">· ${was}</span>` : ""}</span>`);
+  }
   if (a.sponsor) out.push(`<span class="tg auto spon" data-tip="Sponsored by ${esc(a.sponsor)}${isNum(a.pay) ? " · " + fMoneyShort(a.pay) + " a month" : ""}">${tagIc("badge")}Sponsored</span>`);
   if (a.merch) out.push(`<span class="tg auto merch" data-tip="Offered a merchandise deal (from your inbox)">${tagIc("bag")}Merch</span>`);
   return out.length ? `<span class="tgs">${out.join("")}</span>` : "";
@@ -2227,11 +2233,11 @@ async function horseFansPage(id) {
   const sp = f.sponsors || [], now = sp.find((x) => x.current), inbox = f.inbox || [];
   const merch = inbox.filter((m) => m.kind === "merch"), merchSum = merch.reduce((a, m) => a + (+m.payout || 0), 0);
   const paid = sp.reduce((a, x) => a + (x.paid || 0), 0);
-  const st = fanStep(f.band);
+  const st = fanStep(f.band), stWas = st ? fanWas(st[0], f.rank, f.died) : "";
   html += tiles([
     ["Fans", fShortN(f.fans), f.died ? "When it died" : "Now"],
     ["World rank by fans", f.died ? "—" : isNum(f.rank) ? "#" + fNum(f.rank) : "—", f.died ? "Living horses only" : `of ${fNum(f.of)} living horses with fans`],
-    ["Fan level", st ? esc(st[1]) : "—", st ? `Best reached: top ${st[0]}` : "Not yet in the top 100"],
+    ["Fan level", st ? esc(st[1]) : "—", st ? (stWas ? `Best reached: top ${st[0]} · <b class="fl-not">not any more</b> (${stWas})` : `Best reached: top ${st[0]} · still there`) : "Not yet in the top 100"],
     ["Sponsor now", now ? esc(now.brand) : "None", now ? `${fMoneyShort(now.monthly)} a month · ${esc(now.industry || "")}` : sp.length ? `${fNum(sp.length)} in the past` : ""],
     ["Sponsorship paid", fMoneyShort(paid), `${fNum(sp.length)} sponsor${sp.length === 1 ? "" : "s"} in all`],
     merch.length ? ["Merchandise offers", fNum(merch.length), merchSum ? fMoneyShort(merchSum) + " offered in all" : ""] : null,
@@ -2240,12 +2246,13 @@ async function horseFansPage(id) {
   const ladder = (f.levels || []).slice().map((l) => {
     const ic = (FAN_STEPS.find((x) => x[0] === l.top) || [])[2];
     const msg = inbox.find((m) => ({ 100: "website", 50: "club", 20: "trips", 10: "superfans" })[l.top] === m.kind);
-    return `<li class="fl-step${l.reached ? " on" : ""}"><span class="fl-dot">${tagIc(ic)}</span><div><b>${esc(l.label)}</b> <span class="muted small">top ${l.top}</span>
+    const was = l.reached ? fanWas(l.top, f.rank, f.died) : "";
+    return `<li class="fl-step${l.reached ? " on" : ""}${was ? " was" : ""}"><span class="fl-dot">${tagIc(ic)}</span><div><b>${esc(l.label)}</b> <span class="muted small">top ${l.top}</span>${was ? ` <span class="fl-not">Not any more · ${was}</span>` : ""}
       <div class="small muted">${esc(l.about.replace(/ \(top \d+ by fans\)$/, ""))}${msg ? ` · <span class="fl-when">${fDate(msg.date)}</span>` : ""}</div></div></li>`;
   }).join("");
   const ladderPanel = panel("Fan milestones", `<ol class="fl">${ladder}</ol>
-    <p class="small muted fl-foot">The save keeps the best world fan ranking each horse has reached, so this works for every horse. For your own horses, the dates come from your inbox.</p>`,
-    st ? `Reached top ${st[0]}` : "Not reached yet");
+    <p class="small muted fl-foot">The save keeps the best world fan ranking each horse has reached, so this works for every horse; steps marked <i>Not any more</i> are ones it has since dropped out of. For your own horses, the dates come from your inbox.</p>`,
+    st ? `Reached top ${st[0]}${f.died ? "" : isNum(f.rank) ? ` · #${fNum(f.rank)} now` : " · unranked now"}` : "Not reached yet");
   html += `<div class="grid cols-2 hf-top">${ladderPanel}${horseNotesPanel(f.id)}</div>`;
   // sponsors
   html += `<div style="margin-top:16px">${panel(`Sponsors <span class="muted small">${fNum(sp.length)}</span>`, table([
@@ -5021,7 +5028,7 @@ async function horseTablePage(route) {
       { h: "Condition", sort: "condition", cls: "num", f: (r) => (isNum(r.condition) ? fNum(r.condition) + "%" : "—") },
       { h: "Breeding ability", sort: "breeding", cls: "num", f: (r) => fNum(r.breeding, 1) },
       { h: "Fans", sort: "fans", cls: "num grp-start", f: (r) => fShortN(r.fans) },
-      { h: `<span data-tip="Best world fan ranking it has reached: Fan website (top 100), Supporters' club (top 50), Fan club trips (top 20), Superfans (top 10), No. 1">Fan level</span>`, f: (r) => { const st = fanStep(r.fan_band); return st ? esc(st[1]) : '<span class="muted">—</span>'; } },
+      { h: `<span data-tip="Best world fan ranking it has reached: Fan website (top 100), Supporters' club (top 50), Fan club trips (top 20), Superfans (top 10), No. 1">Fan level</span>`, f: (r) => { const st = fanStep(r.fan_band); if (!st) return '<span class="muted">—</span>'; const a = r.auto || {}, was = fanWas(st[0], a.rank, r.died); return esc(st[1]) + (was ? ` <span class="muted small" data-tip="It reached the top ${st[0]} but isn't there any more">(${was})</span>` : ""); } },
       { h: "Sponsor", sort: "sponsor_pay", f: (r) => (r.sponsor ? `${esc(r.sponsor)} <span class="muted small">${fMoneyShort(r.sponsor_pay)}/mo</span>` : '<span class="muted">—</span>') },
       { h: "Colour", f: (r) => esc(r.color || "") },
     ],
