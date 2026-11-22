@@ -862,7 +862,7 @@ def migrate_legacy(name):
         POOL.close_all()
         db_changed()
         time.sleep(0.2)
-        for f in ("current.db", "meta.json"):
+        for f in ("current.db", "meta.json", "notes.json"):      # your notes and tags go with their database too
             src = os.path.join(DATA_DIR, f)
             if os.path.exists(src):
                 replace_retry(src, os.path.join(DBS_DIR, sid, f))
@@ -1736,6 +1736,7 @@ def api_horses(con, q):
     if q.get("stable"):
         where.append("h.horse_stable_id=?")
         params.append(to_int(q["stable"]))
+    notes_filter(where, q)
     sort, d = sort_args(q, HORSE_SORTS, "earnings")
     page, off = page_args(q)
     w = (" where " + " and ".join(where)) if where else ""
@@ -3760,6 +3761,7 @@ def horse_table_query(con, q):
         where.append("h.horse_birth_date<=?"); params.append(gd - to_int(q["agemin"], 0) * YEAR)
     if q.get("agemax") not in (None, ""):
         where.append("h.horse_birth_date>?"); params.append(gd - (to_int(q["agemax"], 0) + 1) * YEAR)
+    notes_filter(where, q)
     if q.get("stakes") == "1":
         where.append("(coalesce(s.stakes_wins,0)>0 or coalesce(h.horse_g1_wins,0)+coalesce(h.horse_g2_wins,0)+coalesce(h.horse_g3_wins,0)+coalesce(h.horse_listed_wins,0)>0)")
     base = """from horses h left join hrmv_horse_stats s on s.horse_id=h.horse_horse_id
@@ -4730,6 +4732,7 @@ ROUTES = [
     (re.compile(r"^/api/family/(-?\d+)$"), lambda con, m, q: api_family(con, int(m.group(1)))),
     (re.compile(r"^/api/dynasty/(-?\d+)$"), lambda con, m, q: api_dynasty(con, int(m.group(1)))),
     (re.compile(r"^/api/lifespans/(-?\d+)$"), lambda con, m, q: api_lifespans(con, int(m.group(1)))),
+    (re.compile(r"^/api/notes$"), lambda con, m, q: notes_detail(con) if q.get("detail") else notes_load()),
     (re.compile(r"^/api/people_overview$"), lambda con, m, q: api_people_overview(con, q)),
     (re.compile(r"^/api/people$"), lambda con, m, q: api_people(con, q)),
     (re.compile(r"^/api/careers$"), lambda con, m, q: api_careers(con, q)),
@@ -4759,6 +4762,130 @@ MIME = {".json": "application/json; charset=utf-8", ".html": "text/html; charset
 # ------------------------------------------------------------------ horse photos (a gallery per horse, kept with each database)
 IMG_MAX = 25 * 1024 * 1024
 IMG_LOCK = threading.Lock()
+
+
+# ------------------------------------------------------------------ your own notes and tags (15.7)
+# Kept with each database (its folder), so they stay when you load a newer save into it. Keys are "horse:<id>".
+NOTES_LOCK = threading.Lock()
+TAG_COLORS = ("blue", "rose", "amber", "green", "purple", "teal", "grey")
+TAG_PRESETS = [{"id": "website", "name": "Website", "color": "blue", "icon": "globe"},
+               {"id": "fanclub", "name": "Fan club", "color": "rose", "icon": "users"},
+               {"id": "merch", "name": "Merchandise", "color": "amber", "icon": "bag"}]
+NOTE_MAX, TAG_MAX, TAGS_MAX = 20000, 40, 60
+NOTES_REV = [0]
+
+
+def notes_path():
+    return os.path.join(slot_dir(ACTIVE["id"]), "notes.json") if ACTIVE["id"] else None
+
+
+def notes_load():
+    p = notes_path()
+    d = read_json(p, None) if p else None
+    if not isinstance(d, dict):
+        d = {}
+    if not isinstance(d.get("tags"), list):
+        d["tags"] = [dict(t) for t in TAG_PRESETS]
+    if not isinstance(d.get("items"), dict):
+        d["items"] = {}
+    d["v"] = 1
+    return d
+
+
+def notes_ids(kind, tag):
+    """The ids of one kind (horse) with this tag, or with notes ("_notes"), or with any tag ("_any")."""
+    out = []
+    for k, it in notes_load()["items"].items():
+        kk, _, i = k.partition(":")
+        if kk != kind or not isinstance(it, dict):
+            continue
+        ok = bool((it.get("note") or "").strip()) if tag == "_notes" else bool(it.get("tags")) if tag == "_any" else tag in (it.get("tags") or [])
+        if ok and re.match(r"^-?\d+$", i):
+            out.append(int(i))
+    return out
+
+
+def notes_filter(where, q, col="h.horse_horse_id"):
+    tag = str(q.get("tag") or "")
+    if tag:
+        ids = notes_ids("horse", tag)
+        where.append("%s in (%s)" % (col, ",".join(map(str, ids))) if ids else "0=1")
+
+
+def notes_detail(con):
+    """Your notes and tags with each horse's name, stable and whether it's still alive, for the Notes & tags page."""
+    d = notes_load()
+    ids = [int(k.split(":", 1)[1]) for k in d["items"] if k.startswith("horse:") and re.match(r"^-?\d+$", k.split(":", 1)[1])]
+    info = {}
+    for i in range(0, len(ids), 900):
+        chunk = ids[i:i + 900]
+        for r in rows(con, """select h.horse_horse_id as id, h.horse_name as name, h.horse_deceased_date as died, h.horse_gender as gender, h.horse_birth_date as birth,
+                h.horse_stable_id as stable_id, s.stable_name as stable from horses h left join stables s on s.stable_stable_id=h.horse_stable_id
+                where h.horse_horse_id in (%s)""" % ",".join("?" * len(chunk)), chunk):
+            info[r["id"]] = r
+    d["horses"] = info
+    return d
+
+
+def notes_slug(name, taken):
+    base = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")[:24] or "tag"
+    sid, n = base, 2
+    while sid in taken:
+        sid, n = "%s-%d" % (base, n), n + 1
+    return sid
+
+
+def notes_post(path, data):
+    """Change one horse's note and tags, or the list of tags."""
+    if not notes_path():
+        return {"error": "Load a database first."}, 409
+    with NOTES_LOCK:
+        d = notes_load()
+        if path == "/api/notes/item":
+            kind = str(data.get("kind") or "horse")
+            if kind != "horse" or not re.match(r"^-?\d+$", str(data.get("id") or "")):
+                return {"error": "Which horse?"}, 400
+            key = "%s:%d" % (kind, int(data["id"]))
+            it = dict(d["items"].get(key) or {})
+            if "note" in data:
+                it["note"] = str(data.get("note") or "")[:NOTE_MAX]
+            if "tags" in data:
+                known = {t["id"] for t in d["tags"]}
+                it["tags"] = [t for t in dict.fromkeys(str(x) for x in (data.get("tags") or [])) if t in known]
+            it["updated"] = time.time()
+            if (it.get("note") or "").strip() or it.get("tags"):
+                d["items"][key] = it
+            else:
+                d["items"].pop(key, None)
+            write_json(notes_path(), d)
+            return {"ok": True, "item": d["items"].get(key), "key": key}, 200
+        if path == "/api/notes/tags":
+            old = {t["id"]: t for t in d["tags"]}
+            new, taken = [], set()
+            for t in (data.get("tags") or [])[:TAGS_MAX]:
+                name = str((t or {}).get("name") or "").strip()[:TAG_MAX]
+                if not name:
+                    continue
+                tid = str(t.get("id") or "")
+                if tid not in old or tid in taken:
+                    tid = notes_slug(name, taken | set(old))
+                taken.add(tid)
+                color = t.get("color") if t.get("color") in TAG_COLORS else (old.get(tid) or {}).get("color") or TAG_COLORS[len(new) % len(TAG_COLORS)]
+                row = {"id": tid, "name": name, "color": color}
+                icon = (old.get(tid) or {}).get("icon")
+                if icon:
+                    row["icon"] = icon
+                new.append(row)
+            keep = {t["id"] for t in new}
+            for k in list(d["items"]):
+                it = d["items"][k]
+                it["tags"] = [x for x in (it.get("tags") or []) if x in keep]
+                if not (it.get("note") or "").strip() and not it["tags"]:
+                    d["items"].pop(k)
+            d["tags"] = new
+            write_json(notes_path(), d)
+            return {"ok": True, "tags": new}, 200
+    return {"error": "Not found."}, 404
 
 
 def img_root():
@@ -5013,6 +5140,8 @@ class Handler(BaseHTTPRequestHandler):
             m = rx.match(path)
             if m:
                 key = path + "?" + "&".join("%s=%s" % kv for kv in sorted(q.items()) if kv[1] != "")
+                if path == "/api/notes" or q.get("tag"):
+                    key += "#notes%d" % NOTES_REV[0]      # your notes change without the save changing
                 size = to_int(q.get("size"))
                 PAGE_LOCAL.size = max(10, min(MAX_PAGE_ROWS, size)) if size else None
                 try:
@@ -5086,7 +5215,7 @@ class Handler(BaseHTTPRequestHandler):
                 if sid == ACTIVE["id"]:
                     return self.send_json({"error": "Open a different database before deleting this one."}, 409)
                 if sid == LEGACY_ID:
-                    for f in ("current.db", "meta.json", "incoming.db", "work.db"):
+                    for f in ("current.db", "meta.json", "incoming.db", "work.db", "notes.json"):
                         try:
                             os.remove(os.path.join(DATA_DIR, f))
                         except OSError:
@@ -5291,6 +5420,17 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 open_outside(os.path.dirname(p))
             return self.send_json({"ok": True})
+        if path in ("/api/notes/item", "/api/notes/tags"):
+            length = to_int(self.headers.get("Content-Length"), 0)
+            if length > 512 * 1024:
+                return self.send_json({"error": "That's too long."}, 413)
+            try:
+                data = json.loads(self.rfile.read(length) or b"{}") if length else {}
+            except ValueError:
+                data = {}
+            out, code = notes_post(path, data if isinstance(data, dict) else {})
+            NOTES_REV[0] += 1
+            return self.send_json(out, code)
         m = re.match(r"^/api/horse_images/(-?\d+)(?:/(main|banner|bannerview|delete))?$", path)
         if m:
             hid, act = int(m.group(1)), m.group(2)
@@ -5477,7 +5617,7 @@ class Handler(BaseHTTPRequestHandler):
 
 # --------------------------------------------------------------------------- in-app updates
 
-VERSION = "15.6"
+VERSION = "15.7"
 BACKUP_DIR = os.path.join(APP_DIR, "backups")
 UPDATE_PENDING = os.path.join(DATA_DIR, "update_pending.json")
 UPDATE_RESULT = os.path.join(DATA_DIR, "update_result.json")

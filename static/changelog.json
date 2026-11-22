@@ -1,5 +1,17 @@
 [
   {
+    "version": "15.7",
+    "date": "2026-11-22",
+    "title": "Notes and tags on horses",
+    "changes": [
+      "New: your own notes and tags on any horse. The game doesn't record things like a horse's website or fan club, so now you can mark them yourself.",
+      "On a horse's Overview, Your notes & tags has a button for each tag: Website, Fan club and Merchandise to start, plus any you add. Click one to tick or untick it, type a name in New tag to make your own, and write anything in the notes box: it saves as you type.",
+      "Tags show beside the horse's name on every tab of its page, and in All horses and the Horse table, with a note icon you can point at to read your note. A new tag filter on both pages shows only horses with a given tag, horses with notes, or anything you've tagged.",
+      "New Horses → Notes & tags page (also in the Horses side menu): every horse you've tagged or written about, newest change first, with a search across names and notes. Rename, recolour, add and delete tags there; deleting a tag takes it off every horse (it asks first).",
+      "Only you see your notes and tags. They're kept with the database (next to its data, not in the game), so they stay when you load a newer save into it, and move with it when an old-layout database is converted."
+    ]
+  },
+  {
     "version": "15.6",
     "date": "2026-11-22",
     "title": "Manager wins shared fairly between co-managers",

@@ -118,6 +118,7 @@ const ICON_PATHS = {
   search: '<circle cx="7" cy="7" r="4.5"/><path d="m10.5 10.5 3 3"/>',
   side: '<rect x="2" y="3" width="12" height="10" rx="1.2"/><path d="M6 3v10"/>',
   moon: '<path d="M12.5 10A5.2 5.2 0 0 1 6 3.5a5.2 5.2 0 1 0 6.5 6.5z"/>',
+  tag: '<path d="M2.5 2.5h5l6 6-5 5-6-6z"/><circle cx="5.3" cy="5.3" r=".9"/>',
   key: '<rect x="1.5" y="4" width="13" height="8.5" rx="1.5"/><path d="M4 6.8h.5M6.6 6.8h.5M9.2 6.8h.5M11.8 6.8h.2M4.5 9.8h7"/>',
 };
 const icon = (k) => `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">${ICON_PATHS[k] || ""}</svg>`;
@@ -126,7 +127,7 @@ const icon = (k) => `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" 
 const SECTIONS = [
   { k: "home", label: "Home", ic: "home", href: "#/", routes: [""] },
   { k: "racing", label: "Racing", ic: "flag", href: "#/meetings", routes: ["meetings", "meeting", "races", "race", "courses", "course"] },
-  { k: "horses", label: "Horses", ic: "horse", href: "#/horses", routes: ["horses", "horse", "horse-table", "pedigrees", "pedigree"] },
+  { k: "horses", label: "Horses", ic: "horse", href: "#/horses", routes: ["horses", "horse", "horse-table", "pedigrees", "pedigree", "notes"] },
   { k: "stables", label: "Stables", ic: "barn", href: "#/stables", routes: ["stables", "stable", "stable-table", "stable-rankings"] },
   { k: "people", label: "People", ic: "user", href: "#/people-overview", routes: ["people-overview", "people", "person", "jockeys"] },
   { k: "awards", label: "Awards", ic: "trophy", href: "#/awards", routes: ["awards"] },
@@ -137,7 +138,7 @@ const SIDE = {
   racing: [["Results", [["#/meetings", "list", "Meetings"], ["#/races", "flag", "All races"], ["#/races?type=G1", "trophy", "Group 1 results"]]],
     ["Coming up", [["#/meetings?when=upcoming", "clock", "Upcoming meetings"], ["#/races?when=upcoming", "flag", "Upcoming races"], ["#/races?when=upcoming&type=G1", "star", "Upcoming Group 1s"]]],
     ["Places", [["#/courses", "pin", "Racecourses"]]]],
-  horses: [["Horses", [["#/horses", "horse", "All horses"], ["#/horse-table", "table", "Horse table"]]],
+  horses: [["Horses", [["#/horses", "horse", "All horses"], ["#/horse-table", "table", "Horse table"], ["#/notes", "tag", "Notes & tags"]]],
     ["Breeding", [["#/pedigrees", "tree", "Top sires"], ["#/pedigrees?kind=dams", "tree", "Top dams"], ["#/pedigrees?kind=damsires", "tree", "Broodmare sires"]]]],
   stables: [["Stables", [["#/stables", "barn", "All stables"], ["#/stable-table", "grid", "Stable table"], ["#/stable-rankings", "trophy", "Rankings"]]]],
   people: [["People", [["#/people-overview", "home", "Overview"], ["#/people", "user", "All people"], ["#/jockeys", "trophy", "Jockey stats"], ["#/people?role=Jockey&sort=jockey_wins", "trophy", "Top jockeys"], ["#/people?role=Jockey", "user", "Jockeys"],
@@ -365,7 +366,7 @@ function favIcon(h) {
   if (side) return side[1];
   return ({ "": "home", horse: "horse", horses: "horse", "horse-table": "horse", person: "user", people: "user", jockeys: "trophy", "people-overview": "user", stable: "barn", stables: "barn",
     "stable-table": "grid", "stable-rankings": "trophy", race: "flag", races: "flag", meeting: "list", meetings: "list", course: "pin", courses: "pin", pedigree: "tree", pedigrees: "tree",
-    awards: "trophy", settings: "cog", databases: "db", tables: "table", versions: "info", shortcuts: "key" })[k] || "star";
+    awards: "trophy", notes: "tag", settings: "cog", databases: "db", tables: "table", versions: "info", shortcuts: "key" })[k] || "star";
 }
 function pageTitle() {
   const cur = normHash(location.hash);
@@ -376,7 +377,7 @@ function pageTitle() {
   const h1 = APP.querySelector("h1");
   if (h1) {
     const c = h1.cloneNode(true);
-    c.querySelectorAll(".badge, .tab-n").forEach((x) => x.remove());
+    c.querySelectorAll(".badge, .tab-n, .hn-head").forEach((x) => x.remove());
     t = c.textContent.replace(/\s+/g, " ").trim();
   }
   const tabs = [...APP.querySelectorAll(".subtabs a")], on = tabs.find((a) => a.classList.contains("on"));
@@ -701,7 +702,7 @@ function hashFor(parts, q = {}) {
 function go(parts, q) { location.hash = hashFor(parts, q); }
 
 const PAGES = {
-  "": homePage, horses: horsesPage, horse: (r) => (r.parts[2] === "awards" ? entityAwardsPage("horse", r) : horsePage(r.parts[1])), races: racesPage, race: Object.assign((r) => racePage(r.parts[1]), { after: () => {
+  "": homePage, horses: horsesPage, notes: Object.assign((r) => notesPage(r), { after: () => notesPage.after() }), horse: (r) => (r.parts[2] === "awards" ? entityAwardsPage("horse", r) : horsePage(r.parts[1])), races: racesPage, race: Object.assign((r) => racePage(r.parts[1]), { after: () => {
     $$("[data-openall]", APP).forEach((b) => b.addEventListener("click", () => {
       const open = b.textContent.startsWith("Open");
       $$(".rtoggle", APP).forEach((t) => { if (t.classList.contains("open") !== open) t.click(); });
@@ -1987,13 +1988,186 @@ async function homePage() {
 
 // ------------------------------------------------------------------ horses
 const horseRow = (r) => (r.died ? "" : "");
+// ------------------------------------------------------------------ your own notes and tags on horses (15.7)
+// Kept with each database by the viewer (not in the game), so they survive loading a newer save into it.
+let NOTES = { tags: [], items: {} };
+async function loadNotes() {
+  try { const d = await api("notes"); NOTES = { tags: d.tags || [], items: d.items || {} }; } catch (e) { NOTES = { tags: [], items: {} }; }
+  return NOTES;
+}
+const noteOf = (id) => NOTES.items["horse:" + id] || null;
+const tagById = (t) => NOTES.tags.find((x) => x.id === t);
+const TAG_COLOURS = [["blue", "Blue"], ["rose", "Pink"], ["amber", "Amber"], ["green", "Green"], ["purple", "Purple"], ["teal", "Teal"], ["grey", "Grey"]];
+const TAG_ICONS = {
+  globe: '<circle cx="8" cy="8" r="5.5"/><path d="M2.5 8h11M8 2.5c2.2 2.2 2.2 8.8 0 11M8 2.5c-2.2 2.2-2.2 8.8 0 11"/>',
+  users: '<circle cx="6" cy="5.5" r="2.2"/><path d="M2 13a4 4 0 0 1 8 0"/><circle cx="11.2" cy="6" r="1.8"/><path d="M10.6 9.4A3.6 3.6 0 0 1 14 13"/>',
+  bag: '<path d="M3 5.5h10l-.8 8H3.8z"/><path d="M5.5 5.5V4a2.5 2.5 0 0 1 5 0v1.5"/>',
+  tag: '<path d="M2.5 2.5h5l6 6-5 5-6-6z"/><circle cx="5.3" cy="5.3" r=".9"/>',
+  note: '<path d="M3.5 2.5h6l3 3v8h-9z"/><path d="M9.5 2.5v3h3M5.5 8.5h5M5.5 11h3.5"/>',
+};
+const tagIc = (k) => `<svg class="fic" viewBox="0 0 16 16" aria-hidden="true">${TAG_ICONS[k] || TAG_ICONS.tag}</svg>`;
+const tagChip = (t) => `<span class="tg ${t.color || "grey"}">${tagIc(t.icon || "tag")}${esc(t.name)}</span>`;
+// a horse's tags (and a note icon you can point at) for lists and its page heading
+function horseTagsHtml(id, withNote = true) {
+  const it = noteOf(id);
+  if (!it) return "";
+  const chips = (it.tags || []).map(tagById).filter(Boolean).map(tagChip).join("");
+  const txt = (it.note || "").trim();
+  const note = withNote && txt ? `<a class="tg-note" href="#/horse/${id}" data-tip="${esc(txt.slice(0, 240))}${txt.length > 240 ? "…" : ""}" aria-label="Your note">${tagIc("note")}</a>` : "";
+  return chips || note ? `<span class="tgs">${chips}${note}</span>` : "";
+}
+async function notesPost(path, body) {
+  const r = await fetch("/api/notes/" + path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  let j = {};
+  try { j = await r.json(); } catch (e) { /* below */ }
+  if (!r.ok) throw new Error(j.error || "Couldn't save it.");
+  return j;
+}
+async function saveHorseNote(id, patch) {
+  const j = await notesPost("item", { kind: "horse", id, ...patch });
+  if (j.item) NOTES.items[j.key] = j.item; else delete NOTES.items["horse:" + id];
+  return j;
+}
+async function saveTagList(tags) {
+  const j = await notesPost("tags", { tags });
+  await loadNotes();
+  return j;
+}
+const tagFilterOpts = () => [["", "Any tags"], ["_any", "Tagged"], ["_notes", "With notes"]].concat(NOTES.tags.map((t) => [t.id, t.name]));
+// the panel on a horse's Overview
+function horseNotesPanel(id) {
+  const it = noteOf(id) || {}, on = new Set(it.tags || []);
+  const chips = NOTES.tags.map((t) => `<button class="tg-tog ${t.color || "grey"}${on.has(t.id) ? " on" : ""}" data-hn-tag="${esc(t.id)}" aria-pressed="${on.has(t.id)}">${tagIc(t.icon || "tag")}${esc(t.name)}</button>`).join("");
+  return `<section class="panel hn-panel" id="hn-panel" data-hn="${id}"><div class="panel-head"><h2>Your notes &amp; tags</h2><span class="note">Only you see these · kept with this database · <a href="#/notes">All notes &amp; tags</a></span></div>
+    <div class="hn-tags">${chips}<span class="hn-new"><input type="text" maxlength="40" placeholder="New tag" aria-label="New tag name"><button class="btn sm" data-hn-add>Add tag</button></span></div>
+    <textarea class="hn-text" rows="4" maxlength="20000" placeholder="Anything about this horse: its website, fan club, merchandise, plans, reminders…" aria-label="Your notes about this horse">${esc(it.note || "")}</textarea>
+    <div class="hn-foot small muted"><span class="hn-state">${it.updated ? "Last changed " + fDate(it.updated) : "Saves as you type"}</span></div></section>`;
+}
+function hnRefreshHead(id) {
+  const h = $("#hn-head");
+  if (h) h.innerHTML = horseTagsHtml(id, false);
+}
+document.addEventListener("click", async (e) => {
+  const box = e.target.closest("[data-hn]");
+  if (!box) return;
+  const id = +box.dataset.hn, st = $(".hn-state", box);
+  const tg = e.target.closest("[data-hn-tag]");
+  if (tg) {
+    const it = noteOf(id) || {}, tags = new Set(it.tags || []);
+    tags.has(tg.dataset.hnTag) ? tags.delete(tg.dataset.hnTag) : tags.add(tg.dataset.hnTag);
+    try {
+      await saveHorseNote(id, { tags: [...tags] });
+      tg.classList.toggle("on", tags.has(tg.dataset.hnTag)); tg.setAttribute("aria-pressed", tags.has(tg.dataset.hnTag));
+      st.textContent = "Saved"; hnRefreshHead(id);
+    } catch (er) { st.textContent = er.message; }
+    return;
+  }
+  if (e.target.closest("[data-hn-add]")) hnAddTag(box);
+});
+document.addEventListener("keydown", (e) => { if (e.key === "Enter" && e.target.closest(".hn-new input")) { e.preventDefault(); hnAddTag(e.target.closest("[data-hn]")); } });
+async function hnAddTag(box) {
+  const id = +box.dataset.hn, inp = $(".hn-new input", box), name = inp.value.trim(), st = $(".hn-state", box);
+  if (!name) { inp.focus(); return; }
+  let t = NOTES.tags.find((x) => x.name.toLowerCase() === name.toLowerCase());
+  try {
+    if (!t) {
+      await saveTagList(NOTES.tags.concat([{ name }]));
+      t = NOTES.tags.find((x) => x.name.toLowerCase() === name.toLowerCase());
+    }
+    const it = noteOf(id) || {};
+    if (t && !(it.tags || []).includes(t.id)) await saveHorseNote(id, { tags: (it.tags || []).concat([t.id]) });
+    box.outerHTML = horseNotesPanel(id);
+    hnRefreshHead(id);
+    const nb = $("#hn-panel");
+    if (nb) $(".hn-state", nb).textContent = `Added “${name}”`;
+  } catch (er) { st.textContent = er.message; }
+}
+// the note saves itself a moment after you stop typing, and when you leave the box
+let HN_TIMER = null;
+async function hnSave(ta) {
+  clearTimeout(HN_TIMER);
+  const box = ta.closest("[data-hn]");
+  if (!box) return;
+  const id = +box.dataset.hn, st = $(".hn-state", box);
+  if (((noteOf(id) || {}).note || "") === ta.value) return;
+  st.textContent = "Saving…";
+  try { await saveHorseNote(id, { note: ta.value }); if (st.isConnected) st.textContent = "Saved"; } catch (er) { if (st.isConnected) st.textContent = er.message; }
+}
+document.addEventListener("input", (e) => {
+  const ta = e.target.closest(".hn-text");
+  if (!ta) return;
+  $(".hn-state", ta.closest("[data-hn]")).textContent = "Typing…";
+  clearTimeout(HN_TIMER);
+  HN_TIMER = setTimeout(() => hnSave(ta), 700);
+});
+document.addEventListener("focusout", (e) => { if (e.target.closest && e.target.closest(".hn-text")) hnSave(e.target); });
+window.addEventListener("hashchange", () => { const ta = $(".hn-text"); if (ta) hnSave(ta); });
+
+// the Notes & tags page: every horse you've tagged or written about, and your tags
+async function notesPage(route) {
+  const q = route.q || {};
+  const d = await api("notes?detail=1");
+  NOTES = { tags: d.tags || [], items: d.items || {} };
+  const horses = d.horses || {};
+  const count = {};
+  Object.values(NOTES.items).forEach((it) => (it.tags || []).forEach((t) => (count[t] = (count[t] || 0) + 1)));
+  let html = `<div class="page-head"><div><div class="crumb"><a href="#/horses">Horses</a></div><h1>Notes &amp; tags</h1>
+    <div class="sub">Your own notes and tags on horses: websites, fan clubs, merchandise, plans, anything. Only you see them; they're kept with this database, so they stay when you load a newer save into it.</div></div></div>`;
+  html += sectionTabs("horses", "notes");
+  // the tags themselves
+  const tagRows = NOTES.tags.map((t, i) => `<div class="nt-row" data-nt="${i}"><span class="tg ${t.color || "grey"}">${tagIc(t.icon || "tag")}</span>
+      <input type="text" class="nt-name" value="${esc(t.name)}" maxlength="40" aria-label="Tag name">
+      <span class="nt-cols" role="group" aria-label="Colour">${TAG_COLOURS.map(([c, n]) => `<button class="nt-c ${c}${(t.color || "grey") === c ? " on" : ""}" data-nt-c="${c}" aria-label="${n}" aria-pressed="${(t.color || "grey") === c}" title="${n}"></button>`).join("")}</span>
+      <a class="small" href="${hashFor(["notes"], { tag: t.id })}">${fNum(count[t.id] || 0)} horse${count[t.id] === 1 ? "" : "s"}</a>
+      <button class="btn sm" data-nt-del="${i}">Delete</button></div>`).join("");
+  html += panel("Your tags", `<div class="nt-list">${tagRows || '<div class="empty">No tags yet.</div>'}</div>
+    <div class="nt-add"><input type="text" id="nt-new" maxlength="40" placeholder="New tag, e.g. Social media" aria-label="New tag name"><button class="btn" id="nt-add">Add tag</button><span class="small muted" id="nt-state"></span></div>`,
+    "Rename one by typing over it · tick a horse's tags on its Overview");
+  // the horses
+  const text = (q.q || "").trim().toLowerCase(), tag = q.tag || "";
+  const list = Object.entries(NOTES.items).filter(([k]) => k.startsWith("horse:")).map(([k, it]) => ({ id: +k.slice(6), ...it, ...(horses[+k.slice(6)] || {}) }))
+    .filter((r) => (!tag || (tag === "_notes" ? (r.note || "").trim() : tag === "_any" ? (r.tags || []).length : (r.tags || []).includes(tag))))
+    .filter((r) => !text || `${r.name || ""} ${r.note || ""} ${r.stable || ""}`.toLowerCase().includes(text))
+    .sort((a, b) => (b.updated || 0) - (a.updated || 0));
+  html += `<div style="margin-top:16px">${panel(`Horses <span class="muted small">${fNum(list.length)}</span>`, `<div class="filters">${searchBox(q, "Search names and notes")}${select("tag", q, tagFilterOpts())}</div>` + table([
+    { h: "Horse", cls: "nowrap", f: (r) => `${horseThumb(r.id)}${r.name ? L.horse(r.id, r.name) : `<span class="muted">Horse #${r.id} (not in this save)</span>`}${r.died ? ' <span class="badge dead">Dead</span>' : ""}` },
+    { h: "Tags", f: (r) => (r.tags || []).map(tagById).filter(Boolean).map(tagChip).join(" ") || '<span class="muted">—</span>' },
+    { h: "Note", cls: "nt-note", f: (r) => ((r.note || "").trim() ? esc(r.note.trim().slice(0, 220)) + (r.note.trim().length > 220 ? "…" : "") : '<span class="muted">—</span>') },
+    { h: "Stable", f: (r) => (r.stable_id ? L.stable(r.stable_id, r.stable) : '<span class="muted">—</span>') },
+    { h: "Changed", cls: "num nowrap", f: (r) => (r.updated ? fDate(r.updated) : "—") },
+  ], list, { empty: Object.keys(NOTES.items).length ? "No horses match." : "No notes or tags yet. Open any horse and use “Your notes & tags” on its Overview." }))}</div>`;
+  return html;
+}
+notesPage.after = () => {
+  const st = $("#nt-state");
+  const say = (m) => { if (st) st.textContent = m; };
+  const save = async (tags, msg) => { try { await saveTagList(tags); say(msg); render(); } catch (e) { say(e.message); } };
+  const copy = () => NOTES.tags.map((t) => ({ ...t }));
+  $$(".nt-name").forEach((inp) => {
+    const go = () => { const i = +inp.closest("[data-nt]").dataset.nt, v = inp.value.trim(); if (!v || v === NOTES.tags[i].name) { inp.value = NOTES.tags[i].name; return; } const t = copy(); t[i].name = v; save(t, "Renamed."); };
+    inp.addEventListener("change", go);
+    inp.addEventListener("keydown", (e) => { if (e.key === "Enter") inp.blur(); });
+  });
+  $$("[data-nt-c]").forEach((b) => b.addEventListener("click", () => { const i = +b.closest("[data-nt]").dataset.nt, t = copy(); t[i].color = b.dataset.ntC; save(t, "Colour changed."); }));
+  $$("[data-nt-del]").forEach((b) => b.addEventListener("click", () => {
+    const i = +b.dataset.ntDel, n = Object.values(NOTES.items).filter((it) => (it.tags || []).includes(NOTES.tags[i].id)).length;
+    if (!b.dataset.sure) { b.dataset.sure = "1"; b.classList.add("danger"); b.textContent = n ? `Remove from ${n} horse${n === 1 ? "" : "s"}?` : "Click again to delete"; return; }
+    const t = copy(); t.splice(i, 1); save(t, "Deleted.");
+  }));
+  const add = () => { const inp = $("#nt-new"), v = inp.value.trim(); if (!v) return inp.focus(); if (NOTES.tags.some((t) => t.name.toLowerCase() === v.toLowerCase())) return say("You already have that tag."); save(copy().concat([{ name: v }]), "Added."); };
+  const ab = $("#nt-add");
+  if (ab) ab.addEventListener("click", add);
+  const ni = $("#nt-new");
+  if (ni) ni.addEventListener("keydown", (e) => { if (e.key === "Enter") add(); });
+};
+
 async function horsesPage(route) {
   return listPage({
     title: "Horses", noun: "horses", endpoint: "horses", defaultSort: "earnings", ascDefault: ["name"],
     filters: (q) => searchBox(q, "Search horses") + statusSeg("horse", q, "alive") +
-      select("gender", q, [["", "Any sex"], ["Colt", "Colts"], ["Filly", "Fillies"], ["Stallion", "Stallions"], ["Mare", "Mares"], ["Gelding", "Geldings"]]),
+      select("gender", q, [["", "Any sex"], ["Colt", "Colts"], ["Filly", "Fillies"], ["Stallion", "Stallions"], ["Mare", "Mares"], ["Gelding", "Geldings"]]) + select("tag", q, tagFilterOpts()),
     cols: [
-      { h: "Name", sort: "name", f: (r) => `${horseThumb(r.id)}${L.horse(r.id, r.name)}${r.died ? ' <span class="badge dead">Dead</span>' : ""}` },
+      { h: "Name", sort: "name", f: (r) => `${horseThumb(r.id)}${L.horse(r.id, r.name)}${r.died ? ' <span class="badge dead">Dead</span>' : ""}${horseTagsHtml(r.id)}` },
       { h: "Sex", f: (r) => esc(r.gender) },
       { h: "Age", cls: "num", sort: "birth", f: (r) => fNum(age(r.birth, r.died)) },
       { h: "Stable", f: (r) => L.stable(r.stable_id, r.stable_name) },
@@ -2015,7 +2189,7 @@ function horseHead(d, on) {
   const pic = horsePic(h.horse_horse_id);
   // the main photo is the horse's profile picture, next to its name
   return `<div class="page-head"><div class="hp-head">${pic ? `<img class="hp-avatar" src="${pic}" alt="${esc(h.horse_name)}" data-gallery="${h.horse_horse_id}" data-gname="${esc(h.horse_name)}" data-tip="Open the gallery">` : ""}<div><div class="crumb"><a href="#/horses">Horses</a></div>
-    <h1>${esc(h.horse_name)} ${dead ? '<span class="badge dead">Deceased</span>' : ""}${removedBadge(d)}</h1>
+    <h1>${esc(h.horse_name)} ${dead ? '<span class="badge dead">Deceased</span>' : ""}${removedBadge(d)}<span class="hn-head" id="hn-head">${horseTagsHtml(id, false)}</span></h1>
     <div class="sub">${a !== null ? a + "yo " : ""}${esc(h.horse_color || "")} ${esc((h.horse_gender || "").toLowerCase())} · ${esc(h.horse_breed || "")}
     · Foaled ${fDate(h.horse_birth_date)}${dead ? ` · Died ${fDate(h.horse_deceased_date)} ${esc(h.horse_death_cause || "")}` : ""}
     ${d.stable ? ` · ${L.stable(d.stable.id, d.stable.name)}` : ""}</div>${removedNote(d)}</div></div>
@@ -2036,6 +2210,7 @@ async function horsePage(id) {
     ["Value", fMoneyShort(h.horse_value_calculated)],
     ["Form", esc(h.horse_form || "—"), `Condition ${fNum(h.horse_condition)}%`],
   ]);
+  html += horseNotesPanel(h.horse_horse_id);
 
   const ped = (x, role, cls = "") => `<div class="p ${cls}"><div class="r">${role}</div>${x ? L.horse(x.id, x.name) : '<span class="muted">Unknown</span>'}</div>`;
   const gp = d.grandparents || {};
@@ -2355,7 +2530,7 @@ function bindRunnerToggles(root) {
 // the same row of tabs at the top of every list page in a section
 const SECTION_TABS = {
   racing: [["meetings", "#/meetings", "Meetings"], ["races", "#/races", "Races"], ["courses", "#/courses", "Racecourses"]],
-  horses: [["horses", "#/horses", "All horses"], ["horse-table", "#/horse-table", "Horse table"], ["pedigrees", "#/pedigrees", "Pedigrees"]],
+  horses: [["horses", "#/horses", "All horses"], ["horse-table", "#/horse-table", "Horse table"], ["pedigrees", "#/pedigrees", "Pedigrees"], ["notes", "#/notes", "Notes &amp; tags"]],
   stables: [["stables", "#/stables", "All stables"], ["stable-table", "#/stable-table", "Stable table"], ["stable-rankings", "#/stable-rankings", "Rankings"]],
 };
 function sectionTabs(sec, active) {
@@ -4742,11 +4917,11 @@ async function horseTablePage(route) {
     filters: (q) => searchBox(q, "Search horses") + searchBox(q, "Search stables", "stableq") + statusSeg("horse", q, "alive") +
       select("gender", q, [["", "Any sex"], ["Colt", "Colts"], ["Filly", "Fillies"], ["Stallion", "Stallions"], ["Mare", "Mares"], ["Gelding", "Geldings"]]) +
       select("minstarts", q, [["", "Any starts"], ["1", "Raced"], ["5", "5+ starts"], ["10", "10+ starts"], ["20", "20+ starts"]]) +
-      select("stakes", q, [["", "Any class"], ["1", "Stakes winners only"]]) +
+      select("stakes", q, [["", "Any class"], ["1", "Stakes winners only"]]) + select("tag", q, tagFilterOpts()) +
       rangeBox("Age", `<input type="number" min="0" data-q="agemin" value="${esc(q.agemin || "")}" placeholder="any" aria-label="Youngest age">`,
         `<input type="number" min="0" data-q="agemax" value="${esc(q.agemax || "")}" placeholder="any" aria-label="Oldest age">`) + chip,
     cols: [
-      { h: "Horse", sort: "name", f: (r) => `${horseThumb(r.id)}${L.horse(r.id, r.name)}` },
+      { h: "Horse", sort: "name", f: (r) => `${horseThumb(r.id)}${L.horse(r.id, r.name)}${horseTagsHtml(r.id)}` },
       { h: "Sex", sort: "gender", f: (r) => esc(r.gender) },
       { h: "Age", sort: "birth", cls: "num", f: (r) => fNum(age(r.birth, r.died)) },
       { h: "Stable", sort: "stable", f: (r) => L.stable(r.stable_id, r.stable) },
@@ -5861,6 +6036,7 @@ databasesPage.after = () => {
 bindRunnerToggles(APP);
 async function refreshStatus() {
   try { STATUS = await api("status"); } catch (e) { STATUS = null; }
+  if (STATUS && STATUS.loaded) await loadNotes(); else NOTES = { tags: [], items: {} };
   const m = (STATUS && STATUS.meta) || {};
   const dbn = STATUS && STATUS.db ? STATUS.db.name : "";
   $("#gamedate").innerHTML = STATUS ? `<span class="dbn">${esc(dbn || "Database")} ▾</span><b>${STATUS.loaded ? "Game date " + fDate(m.game_date) : "Empty"}</b>` : "";
