@@ -1489,6 +1489,8 @@ def person_horse_awards(con, pids, races=False):
     for r in rows(con, sql):
         got = {}
         for c, role in roles:
+            if r["etype"] == "stable" and role != "Manager":      # stable awards: only its owner and managers
+                continue
             if r.get(c) in pids:
                 got.setdefault(r[c], set()).add(role)
         if r["etype"] == "stable":
