@@ -3201,11 +3201,29 @@ document.addEventListener("click", (e) => {
   }
 });
 
+// an ownership group (stables a person owns outright, and the stables those, or a parent stable, hold a majority of):
+// the switch between one stable and the whole group on Financials and Horse finances
+function groupSwitch(d, q, what) {
+  const g = d.group;
+  if (!g) return "";
+  const on = q.group === "1", me = d.stable.stable_stable_id;
+  const who = (s) => (s.holder_kind ? ` <span class="muted small">${fNum(s.pct, s.pct % 1 ? 1 : 0)}% ${s.holder_kind === "person" ? "owned by" : "held by"} ${esc(s.holder)}${s.closed ? " · closed" : ""}</span>` : "");
+  const list = g.stables.map((s) => `<li class="${s.parent_id ? "sub" : ""}">${s.id === me ? `<b>${esc(s.name)}</b>` : L.stable(s.id, s.name)}${who(s)}</li>`).join("");
+  const about = g.person ? `Everything ${L.person(g.person.id, g.person.name)} owns outright, and the stables those hold a majority of` : "A parent stable and the stables it holds a majority of";
+  return `<div class="grp-bar">${seg("group", q, [["", "This stable"], ["1", `Whole group · ${g.stables.length} stables`]], "")}
+    <div class="grp-about small">${on ? `<b>${what} for the whole group, added together.</b> ` : ""}${about}:</div><ul class="grp-list small">${list}</ul></div>`;
+}
 async function stableFinancePage(route) {
   const id = route.parts[1], q = route.q;
-  const [d, fin] = await Promise.all([api("stable/" + id), api(`stable_finance/${id}?` + new URLSearchParams({ ...(q.year ? { year: q.year } : {}), ...(q.month ? { month: q.month } : {}), ...(q.dir === "in" ? { dir: "in" } : {}) }))]);
-  let html = stableHead(d, "financials");
-  const lf = d.latest_finance || {}, monthly = d.finance || [];
+  const grpOn = q.group === "1";
+  const [d, fin] = await Promise.all([api("stable/" + id), api(`stable_finance/${id}?` + new URLSearchParams({ ...(q.year ? { year: q.year } : {}), ...(q.month ? { month: q.month } : {}), ...(q.dir === "in" ? { dir: "in" } : {}), ...(grpOn ? { group: "1" } : {}) }))]);
+  let html = stableHead(d, "financials") + groupSwitch(d, q, "Financials");
+  const G = !!(fin.group && fin.group_monthly);
+  const lf = (G ? fin.group_latest : d.latest_finance) || {}, monthly = (G ? fin.group_monthly : d.finance) || [];
+  if (G) {
+    const moved = (fin.internal || []).filter((x) => x.total);
+    html += `<div class="note-line grp-note">The monthly figures below are each stable's own, added up, so money moved between the group's stables counts as income in one and spending in another (the net is unaffected). The payment detail leaves those moves out.${moved.length ? ` Moved between them: ${moved.map((x) => `${x.year} ${fMoneyShort(x.total)} (${fNum(x.n)} payment${x.n === 1 ? "" : "s"})`).join(" · ")}.` : ""}</div>`;
+  }
   const years = (fin.years || []).map((y) => ({ ...y, net: (y.income_total || 0) - (y.expense_total || 0) }));
   const last = years[years.length - 1], prev = years[years.length - 2];
   if (!years.length && !monthly.length) return html + `<div class="empty">No financial records for this stable.</div>`;
@@ -4202,9 +4220,10 @@ function hmBreakdown(book, total, color) {
     return `<tr><td>${esc(k)}</td><td class="num">${finAmt(v)}</td><td class="hm-bar"><span class="sbar"><i style="width:${Math.max(0, Math.min(100, pc)).toFixed(1)}%;background:${color}"></i></span></td><td class="num muted">${fNum(pc, pc < 10 ? 1 : 0)}%</td></tr>`; }).join("")}</table>`;
 }
 async function stableHorseMoneyPage(route) {
-  const id = route.parts[1];
-  const [d, hm] = await Promise.all([api("stable/" + id), api("stable_horse_money/" + id)]);
-  let html = stableHead(d, "horse-money");
+  const id = route.parts[1], q = route.q || {}, grpOn = q.group === "1";
+  const [d, hm] = await Promise.all([api("stable/" + id), api("stable_horse_money/" + id + (grpOn ? "?group=1" : ""))]);
+  let html = stableHead(d, "horse-money") + groupSwitch(d, q, "Horse finances");
+  const G = !!hm.group;
   const hs = hm.horses || [];
   if (!hs.length) return html + `<div class="empty">This stable hasn't had any horses the save can show money for.</div>`;
   const cur = hs.filter((h) => h.status === "current");
@@ -4228,9 +4247,9 @@ async function stableHorseMoneyPage(route) {
     return `<span class="badge ${c}">${t}</span>${h.now_stable ? ` <span class="muted small">now ${L.stable(h.now_stable_id, h.now_stable)}</span>` : ""}${h.bred ? ' <span class="muted small" data-tip="Born at this stable">bred here</span>' : ""}`; };
   const rowsHtml = hs.map((h, i) => {
     const roi = h.expenses ? (100 * h.net) / h.expenses : null;
-    const search = `${h.name} ${(HM_STATUS[h.status] || [""])[0]} ${h.now_stable || ""}`.toLowerCase();
+    const search = `${h.name} ${(HM_STATUS[h.status] || [""])[0]} ${h.now_stable || ""} ${(h.with || []).map((w) => w.name).join(" ")}`.toLowerCase();
     return `<tr class="hm-row" data-hm-status="${h.status === "current" ? "current" : "past"}" data-hm-search="${esc(search)}">
-      <td><button class="fin-tg" data-hm="${i}" title="Show this horse's money in detail">▸</button> ${L.horse(h.id, h.name)}</td>
+      <td><button class="fin-tg" data-hm="${i}" title="Show this horse's money in detail">▸</button> ${L.horse(h.id, h.name)}${G && h.with ? `<div class="muted small hm-with">${h.with.map((w) => esc(w.name)).join(" · ")}</div>` : ""}</td>
       <td>${status(h)}</td><td class="nowrap small" data-sv="${h.from || ""}">${span(h)}</td>
       <td class="num">${fNum(h.starts)}</td><td class="num">${fNum(h.wins)}</td>
       <td class="num" data-sv="${h.income}" data-csv="${h.income}">${h.income ? finAmt(h.income) : '<span class="muted">—</span>'}</td>
@@ -4253,7 +4272,7 @@ async function stableHorseMoneyPage(route) {
       <th class="num">Income</th><th class="num">Expenses</th><th class="num">Net</th><th class="num" data-tip="Net as a share of what was spent on the horse">Return</th></tr></thead>
       <tbody>${rowsHtml}</tbody>
       <tfoot><tr><td colspan="5">All horses shown</td><td class="num hm-t-inc">${finAmt(inc)}</td><td class="num hm-t-exp">${finAmt(exp)}</td><td class="num hm-t-net">${finAmt(inc - exp, inc - exp >= 0 ? "pos" : "neg")}</td><td></td></tr></tfoot></table></div>`,
-    "Only money while the horse was with this stable")}</div>`;
+    G ? "Only money while the horse was with the group's stables, added up (moves between them left out)" : "Only money while the horse was with this stable")}</div>`;
   html += `<p class="muted small hm-note">Where the figures come from: prize money from race results; sales and purchases from auctions; stud and breeding fees from the breeding records;
     feed, care, training and staff costs from the game's per-horse cost records (yearly up to 2017, monthly after); travel from the travel log (plus an older lifetime total for horses still here);
     and payments whose note names the horse (sponsorships, win shares, vet treatment, jockey fees). Stable-wide costs that aren't tied to one horse — facilities, wages, subscriptions — aren't included.</p>`;
@@ -4537,6 +4556,17 @@ async function personPage(id) {
     row: (n) => `<div class="cp-d">${fDate(n.date)}</div><div class="small">${esc(n.text || n.type)}</div>` });
   html += `<div class="po-layout" style="margin-top:16px"><div class="po-main">${roles}</div><aside class="po-side">${awards}${news}
     <div class="small"><a href="#/person/${p.person_person_id}/awards">Awards tab · every award and race win</a></div></aside></div>`;
+  // stables they own outright (with the stables those hold a majority of), and other stables of theirs with sub-stables:
+  // one click to the group's combined financials and horse finances
+  if ((d.owned_groups || []).length) {
+    html += `<div style="margin-top:16px">${panel("Stables they own", d.owned_groups.map((g) => {
+      const many = g.stables.length > 1, k = g.key, qs = many ? "?group=1" : "";
+      return `<div class="og">
+        <div class="og-h"><b>${g.full ? "Owned outright" : `Majority owner of ${esc(g.stables[0].name)}`}</b>${many ? ` <span class="muted small">· ${fNum(g.stables.length)} stables, with the stables they hold a majority of</span>` : ""}
+          <span class="og-btns"><a class="btn sm" href="#/stable/${k}/financials${qs}">${many ? "Group financials" : "Financials"}</a> <a class="btn sm" href="#/stable/${k}/horse-money${qs}">${many ? "Group horse finances" : "Horse finances"}</a></span></div>
+        <ul class="grp-list small">${g.stables.map((s) => `<li class="${s.parent_id ? "sub" : ""}">${L.stable(s.id, s.name)} <span class="muted">${fNum(s.pct, s.pct % 1 ? 1 : 0)}% ${s.holder_kind === "person" ? "owned by" : "held by"} ${esc(s.holder || "")}${s.closed ? " · closed" : ""}</span></li>`).join("")}</ul></div>`;
+    }).join(""), "Financials and horse finances added up for each group")}</div>`;
+  }
   html += `<div class="grid cols-2" style="margin-top:16px">${panel("Jobs", table([
     { h: "Role", f: (r) => esc(r.role) }, { h: "Stable", f: (r) => L.stable(r.stable_id, r.stable) },
     { h: "From", cls: "nowrap", f: (r) => fDate(r.start) }, { h: "To", cls: "nowrap", f: (r) => (r.end ? fDate(r.end) : "Now") }, { h: "Salary", cls: "num", f: (r) => fMoney(r.salary) },

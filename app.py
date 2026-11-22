@@ -2110,6 +2110,136 @@ def api_stables(con, q):
     return {"total": total, "page": page, "page_size": page_size(), "rows": data}
 
 
+# ------------------------------------------------------------------ ownership groups (16.3)
+# A person's group: every stable they own outright (all its shares), plus the stables those stables hold a majority of, and so on.
+# A stable not wholly owned by one person still forms a group with the stables it (or its majority parent) holds a majority of.
+OWN_CACHE = {}
+
+
+def ownership(con):
+    """{parent: {child: parent stable holding > half its shares}, kids: {stable: [children]}, full: {stable: person owning all of it},
+    by_person: {person: [stables they own outright]}, pct: {stable: (holder kind, holder id, share)}}. Kept for the loaded save."""
+    if OWN_CACHE.get("gen") == DB_GEN:
+        return OWN_CACHE["o"]
+    o = {"parent": {}, "kids": {}, "full": {}, "by_person": {}, "pct": {}}
+    if has_table(con, "stable_investors") and "stable_total_shares" in columns(con, "stables"):
+        tot = {sid: t for sid, t in con.execute("select stable_stable_id, stable_total_shares from stables where stable_total_shares>0")}
+        for sid, pid, hs, n in con.execute("""select investor_stable_id, coalesce(investor_person_id,0), coalesce(investor_holder_stable_id,0), sum(investor_shares_owned)
+                from stable_investors group by 1, 2, 3"""):
+            t = tot.get(sid)
+            if not t or not n:
+                continue
+            share = n / float(t)
+            if hs > 0 and hs != sid and share > 0.5:
+                o["parent"][sid] = hs
+                o["kids"].setdefault(hs, []).append(sid)
+                o["pct"][sid] = ("stable", hs, share)
+            elif hs <= 0 and pid > 0:
+                if share >= 1 - 1e-9:
+                    o["full"][sid] = pid
+                    o["by_person"].setdefault(pid, []).append(sid)
+                if share > 0.5 and sid not in o["pct"]:
+                    o["pct"][sid] = ("person", pid, share)
+    OWN_CACHE.update(gen=DB_GEN, o=o)
+    return o
+
+
+def own_descendants(o, roots):
+    ids, stack = [], list(roots)
+    while stack:
+        x = stack.pop(0)
+        if x in ids:
+            continue
+        ids.append(x)
+        stack += sorted(o["kids"].get(x, []))
+    return ids
+
+
+def ownership_group(con, sid):
+    """The stables consolidated with this one: (ids in tree order, the person owning the top outright or None)."""
+    o = ownership(con)
+    top, seen = sid, set()
+    while top in o["parent"] and top not in seen:
+        seen.add(top)
+        top = o["parent"][top]
+    person = o["full"].get(top)
+    roots = sorted(o["by_person"][person]) if person else [top]
+    return own_descendants(o, roots), person
+
+
+def group_list(con, ids):
+    """The group's stables for the page: name, who holds it (a person or a parent stable) and how much, closed or not."""
+    o = ownership(con)
+    info = {r["id"]: r for r in rows(con, "select stable_stable_id as id, stable_name as name, stable_liquidated as closed from stables where stable_stable_id in (%s)"
+                                     % ",".join(str(int(i)) for i in ids))} if ids else {}
+    hold = [o["pct"].get(i) for i in ids]
+    pn = name_map(con, "persons", "person_person_id", "person_full_name", [h[1] for h in hold if h and h[0] == "person"])
+    out = []
+    for i, h in zip(ids, hold):
+        r = info.get(i) or {"id": i, "name": "Stable %s" % i, "closed": 0}
+        out.append({"id": i, "name": r["name"], "closed": bool(r["closed"]), "holder_kind": h[0] if h else None, "holder_id": h[1] if h else None,
+                    "holder": (pn.get(h[1]) if h[0] == "person" else (info.get(h[1]) or {}).get("name")) if h else None,
+                    "pct": round(100 * h[2], 2) if h else None, "parent_id": o["parent"].get(i)})
+    return out
+
+
+def person_owned_groups(con, pid):
+    """A person's stables for their page: the ones they own outright (one group) and each majority-owned stable with sub-stables."""
+    o = ownership(con)
+    out = []
+    full = sorted(o["by_person"].get(pid, []))
+    if full:
+        ids = own_descendants(o, full)
+        out.append({"key": full[0], "full": True, "stables": group_list(con, ids)})
+    for sid, (kind, holder, share) in sorted(o["pct"].items()):
+        if kind == "person" and holder == pid and sid not in full and o["kids"].get(sid):
+            out.append({"key": sid, "full": False, "stables": group_list(con, own_descendants(o, [sid]))})
+    return out
+
+
+def merge_horse_money(parts, ids):
+    """Horse finances for a group: each horse's money in all the group's stables added up. Transfers inside the group
+    (and a group stable's purchase before passing a horse on, already counted where it was bought) drop out."""
+    H, tot = {}, {"inc": {}, "exp": {}}
+    names = {}
+    for sid, part in parts:
+        for h in part.get("horses") or []:
+            m = H.get(h["id"])
+            if m is None:
+                m = H[h["id"]] = dict(h, inc={}, exp={}, years={}, starts=0, wins=0, with_ids=[], current_in=None)
+            m["with_ids"].append(sid)
+            m["starts"] += h["starts"] or 0
+            m["wins"] += h["wins"] or 0
+            m["bred"] = m["bred"] or h["bred"]
+            m["from"] = min([x for x in (m["from"], h["from"]) if x is not None], default=None)
+            m["to"] = max([x for x in (m["to"], h["to"]) if x is not None], default=None)
+            if h["status"] == "current":
+                m["current_in"] = sid
+            for k in ("inc", "exp"):
+                for c, v in (h[k] or {}).items():
+                    if c == "Transfer fee within the group" or c.startswith("Purchase by "):
+                        continue
+                    m[k][c] = m[k].get(c, 0) + v
+            for y in h.get("years") or []:
+                yy = m["years"].setdefault(y["year"], {"inc": 0, "exp": 0})
+                yy["inc"] += y.get("inc") or 0
+                yy["exp"] += y.get("exp") or 0
+    out = []
+    for hid, m in H.items():
+        inc, exp = sum(m["inc"].values()), sum(m["exp"].values())
+        for k in ("inc", "exp"):
+            for c, v in m[k].items():
+                tot[k][c] = tot[k].get(c, 0) + v
+        if m["current_in"] is not None:
+            m["status"], m["now_stable_id"], m["now_stable"] = "current", None, None
+        elif m.get("now_stable_id") in ids:      # moved to another of the group's stables and left from there
+            m["now_stable_id"], m["now_stable"] = None, None
+        m.update(income=inc, expenses=exp, net=inc - exp, years=[{"year": y, **v} for y, v in sorted(m["years"].items())])
+        out.append(m)
+    out.sort(key=lambda r: (r["status"] != "current", -(r["net"] or 0)))
+    return {"horses": out, "totals": tot}
+
+
 def api_stable(con, sid):
     s = one(con, "select * from stables where stable_stable_id=?", (sid,))
     if not s:
@@ -2131,6 +2261,10 @@ def api_stable(con, sid):
             snapshot_income_total as income, snapshot_expense_total as expenses, snapshot_net_income as net_income,
             snapshot_share_price as share_price from stable_financial_snapshots where snapshot_stable_id=? order by snapshot_date""", (sid,))
         out["latest_finance"] = one(con, "select * from stable_financial_snapshots where snapshot_stable_id=? order by snapshot_date desc limit 1", (sid,))
+    gids, gperson = ownership_group(con, sid)
+    if len(gids) > 1:
+        out["group"] = {"stables": group_list(con, gids), "person": one(con, "select person_person_id as id, person_full_name as name from persons where person_person_id=?",
+                                                                             (gperson,)) if gperson else None}
     out["recent_results"] = rows(con, """select r.race_result_date as date, r.race_result_rank as rank, r.race_result_cash_received as prize,
         r.race_result_horse_id as horse_id, h.horse_name as horse, r.race_result_race_id as race_id, x.races_race_name as race_name,
         x.races_type_of_race as race_type, r.race_result_person_jockey_id as jockey_id, j.person_full_name as jockey
@@ -2155,6 +2289,13 @@ def api_stable_finance(con, sid, q):
     if not one(con, "select 1 as x from stables where stable_stable_id=?", (sid,)):
         return None
     out = {"income_cats": [], "expense_cats": [], "years": [], "detail": None, "detail_years": []}
+    grp = ownership_group(con, sid)[0] if q.get("group") == "1" else [sid]
+    if len(grp) < 2:
+        grp = [sid]
+    gin = ",".join(str(int(i)) for i in grp)
+    SW = "snapshot_stable_id in (%s)" % gin           # the stable, or every stable in its group
+    if len(grp) > 1:
+        out["group"] = grp
     if has_table(con, "stable_financial_snapshots"):
         cols = columns(con, "stable_financial_snapshots")
         inc = [c for c in cols if c.startswith("snapshot_income_") and c != "snapshot_income_total"]
@@ -2162,26 +2303,31 @@ def api_stable_finance(con, sid, q):
         out["income_cats"] = [c[len("snapshot_income_"):] for c in inc]
         out["expense_cats"] = [c[len("snapshot_expense_"):] for c in exp]
         sums = ", ".join("sum(%s) as %s" % (qident(c), qident(c)) for c in inc + exp + ["snapshot_income_total", "snapshot_expense_total"])
-        for r in rows(con, "select %s as year, count(*) as months, %s from stable_financial_snapshots where snapshot_stable_id=? group by 1 order by 1"
-                      % (FIN_YEAR.format("snapshot_date"), sums), (sid,)):
+        for r in rows(con, "select %s as year, count(distinct snapshot_date) as months, %s from stable_financial_snapshots where %s group by 1 order by 1"
+                      % (FIN_YEAR.format("snapshot_date"), sums, SW)):
             out["years"].append({
                 "year": r["year"], "months": r["months"],
                 "income": {c[len("snapshot_income_"):]: r[c] or 0 for c in inc}, "income_total": r["snapshot_income_total"] or 0,
                 "expenses": {c[len("snapshot_expense_"):]: r[c] or 0 for c in exp}, "expense_total": r["snapshot_expense_total"] or 0,
             })
         # month by month (the Financials tab's monthly breakdown)
-        cols_m = ", ".join(qident(c) for c in inc + exp + ["snapshot_income_total", "snapshot_expense_total"])
+        cols_m = ", ".join("sum(%s) as %s" % (qident(c), qident(c)) for c in inc + exp + ["snapshot_income_total", "snapshot_expense_total"])
         out["months"] = [{"date": m["date"], "year": m["year"], "income": {c[len("snapshot_income_"):]: m[c] or 0 for c in inc},
                           "income_total": m["snapshot_income_total"] or 0,
                           "expenses": {c[len("snapshot_expense_"):]: m[c] or 0 for c in exp}, "expense_total": m["snapshot_expense_total"] or 0}
-                         for m in rows(con, "select snapshot_date as date, %s as year, %s from stable_financial_snapshots where snapshot_stable_id=? order by snapshot_date"
-                                       % (FIN_YEAR.format("snapshot_date"), cols_m), (sid,))]
+                         for m in rows(con, "select snapshot_date as date, %s as year, %s from stable_financial_snapshots where %s group by snapshot_date order by snapshot_date"
+                                       % (FIN_YEAR.format("snapshot_date"), cols_m, SW))]
+        if len(grp) > 1:      # the group's cash, net worth, income and expenses month by month, added up
+            out["group_monthly"] = rows(con, """select snapshot_date as date, sum(snapshot_cash) as cash, sum(snapshot_net_worth) as net_worth, sum(snapshot_income_total) as income,
+                sum(snapshot_expense_total) as expenses, count(*) as stables from stable_financial_snapshots where %s group by snapshot_date order by snapshot_date""" % SW)
+            last = out["group_monthly"][-1] if out["group_monthly"] else None
+            out["group_latest"] = {"snapshot_date": last["date"], "snapshot_cash": last["cash"], "snapshot_net_worth": last["net_worth"]} if last else {}
         # a year still in progress is compared with the same months of the year before ("prev_same")
         part = [y for y in out["years"] if y["months"] < 12]
         if part:
-            cols_sel = ", ".join(qident(c) for c in inc + exp + ["snapshot_income_total", "snapshot_expense_total"])
-            monthly = rows(con, "select %s as year, cast(strftime('%%m', snapshot_date, 'unixepoch') as int) as month, %s from stable_financial_snapshots where snapshot_stable_id=?"
-                           % (FIN_YEAR.format("snapshot_date"), cols_sel), (sid,))
+            cols_sel = ", ".join("sum(%s) as %s" % (qident(c), qident(c)) for c in inc + exp + ["snapshot_income_total", "snapshot_expense_total"])
+            monthly = rows(con, "select %s as year, cast(strftime('%%m', snapshot_date, 'unixepoch') as int) as month, %s from stable_financial_snapshots where %s group by snapshot_date"
+                           % (FIN_YEAR.format("snapshot_date"), cols_sel, SW))
             for y in part:
                 months = {m["month"] for m in monthly if m["year"] == y["year"]}
                 prev = [m for m in monthly if m["year"] == y["year"] - 1 and m["month"] in months]
@@ -2199,8 +2345,17 @@ def api_stable_finance(con, sid, q):
         incoming = q.get("dir") == "in"
         out["detail_dir"] = "in" if incoming else "out"
         me, other = ("to", "from") if incoming else ("from", "to")
-        base = """from transactions where transaction_%s_entity_type='stable' and transaction_%s_entity_id=?
-            and coalesce(transaction_type,'') <> 'Yearly Summary'""" % (me, me)
+        if len(grp) > 1:     # the group's payments to and from outside it (money moved between its own stables drops out)
+            base = """from transactions where transaction_%s_entity_type='stable' and cast(transaction_%s_entity_id as int) in (%s) and ? is not null
+                and not (transaction_%s_entity_type='stable' and cast(transaction_%s_entity_id as int) in (%s))
+                and coalesce(transaction_type,'') <> 'Yearly Summary'""" % (me, me, gin, other, other, gin)
+            out["internal"] = rows(con, """select %s as year, count(*) as n, sum(transaction_amount) as total from transactions
+                where transaction_from_entity_type='stable' and transaction_to_entity_type='stable' and cast(transaction_from_entity_id as int) in (%s)
+                and cast(transaction_to_entity_id as int) in (%s) and coalesce(transaction_type,'') <> 'Yearly Summary' group by 1 order by 1"""
+                                   % (FIN_YEAR.format("transaction_date"), gin, gin))
+        else:
+            base = """from transactions where transaction_%s_entity_type='stable' and transaction_%s_entity_id=?
+                and coalesce(transaction_type,'') <> 'Yearly Summary'""" % (me, me)
         yr = FIN_YEAR.format("transaction_date")
         out["detail_years"] = [r["year"] for r in rows(con, "select distinct %s as year %s order by 1" % (yr, base), (sid,))]
         snap_years = sorted({m["year"] for m in out.get("months") or [] if m.get("year")})
@@ -2411,9 +2566,20 @@ def horse_trades(con, sid):
 
 def api_stable_horse_money(con, sid, q):
     """Horse finances tab: money in and out for every horse the stable has had, now or in the past.
-    Each horse's figures only count what happened while it was with this stable (as far as the save can tell)."""
+    Each horse's figures only count what happened while it was with this stable (as far as the save can tell).
+    With group=1: every horse of the stable's ownership group, its money in all the group's stables added up."""
     if not one(con, "select 1 as x from stables where stable_stable_id=?", (sid,)):
         return None
+    if q.get("group") == "1":
+        grp = ownership_group(con, sid)[0]
+        if len(grp) > 1:
+            out = merge_horse_money([(g, api_stable_horse_money(con, g, {})) for g in grp], set(grp))
+            sn = name_map(con, "stables", "stable_stable_id", "stable_name", grp)
+            for h in out["horses"]:
+                h["with"] = [{"id": g, "name": sn.get(g)} for g in h.pop("with_ids")]
+                h.pop("current_in", None)
+            out.update(now=META.get("game_date"), group=grp)
+            return out
     has = lambda t: has_table(con, t)
     H = {}
 
@@ -3542,6 +3708,7 @@ def api_person(con, pid):
         for a in out["awards"]:
             a["label"] = award_label(a["category"], concepts)
     out["roles"] = person_roles(con, pid, p)
+    out["owned_groups"] = person_owned_groups(con, pid)
     return out
 
 
@@ -5896,7 +6063,7 @@ class Handler(BaseHTTPRequestHandler):
 
 # --------------------------------------------------------------------------- in-app updates
 
-VERSION = "16.2"
+VERSION = "16.3"
 BACKUP_DIR = os.path.join(APP_DIR, "backups")
 UPDATE_PENDING = os.path.join(DATA_DIR, "update_pending.json")
 UPDATE_RESULT = os.path.join(DATA_DIR, "update_result.json")

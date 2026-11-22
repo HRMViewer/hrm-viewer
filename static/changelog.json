@@ -1,5 +1,17 @@
 [
   {
+    "version": "16.3",
+    "date": "2026-11-22",
+    "title": "Group financials for the stables a person owns",
+    "changes": [
+      "New: Financials and Horse finances can show a whole ownership group. A group is every stable a person owns outright (all its shares) plus the stables those hold a majority of; for stables nobody owns outright, a parent stable and the stables it holds a majority of. Use the new This stable / Whole group switch at the top of either tab.",
+      "The group bar lists every stable in it and who holds it (e.g. Archer Bloodstock NZ, 100% held by Northwind Marine Archer Racing NZ).",
+      "Whole group Financials: income, expenses, net, cash and net worth added up month by month and year by year, with the same charts, year-by-year table and month-by-month breakdown. Payments between the group's stables are left out of the payment detail; in the monthly figures they show as income in one and spending in another, so the net is unaffected.",
+      "Whole group Horse finances: every horse the group has had, with its money in all the group's stables added up and the stables it was with under its name. Transfers between the group's stables drop out.",
+      "A person's page has a new Stables they own panel, with Group financials and Group horse finances buttons for each group they own."
+    ]
+  },
+  {
     "version": "16.2",
     "date": "2026-11-22",
     "title": "Horse and concept awards for managers and staff",

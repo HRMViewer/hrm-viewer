@@ -1353,3 +1353,14 @@ html.dark body .anc-table .ai.hl { background: color-mix(in srgb, var(--hl) 16%,
 html.dark body .anc-table .ai.hl a, html.dark body .anc-table .ai.hl b { color: color-mix(in srgb, var(--hl) 85%, #fff) !important; }
 html.dark body .pk-chip { background: color-mix(in srgb, var(--hl) 16%, transparent); color: color-mix(in srgb, var(--hl) 85%, #fff); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--hl) 45%, transparent); }
 html.dark body .anc-table .hits { background: rgba(255, 213, 74, .14); color: #f0d68a; }
+/* 16.3 ownership groups: one stable or the whole group on Financials and Horse finances; a person's owned stables */
+.grp-bar { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 6px 14px; margin: 0 0 14px; padding: 10px 12px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; }
+.grp-about { color: #4a5466; align-self: center; }
+.grp-list { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 2px 16px; flex-basis: 100%; }
+.grp-list li.sub::before { content: "↳ "; color: #9aa2b1; }
+.grp-note { margin: 0 0 12px; }
+.hm-with { margin: 2px 0 0 26px; }
+.og { padding: 8px 0; border-bottom: 1px solid var(--line); }
+.og:last-child { border-bottom: 0; }
+.og-h { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 4px; }
+.og-btns { margin-left: auto; }
