@@ -1416,3 +1416,4 @@ html.dark body .anc-table .hits { background: rgba(255, 213, 74, .14); color: #f
 .cc-legs { margin: 0; padding-left: 18px; } .cc-legs li { margin: 2px 0 6px; }
 .cc-grid th { vertical-align: bottom; } .cc-grid td { vertical-align: top; }
 .cc-dbl { background: #fff1c7; border-radius: 4px; padding: 0 3px; }
+.season-pick { display: inline-flex; gap: 6px; }

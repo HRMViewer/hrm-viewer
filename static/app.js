@@ -912,6 +912,12 @@ function autoScale(series) {
 }
 // smoothing: each point averaged with its neighbours (one each side), so the trend shows through month-to-month swings
 const smooth3 = (pts) => pts.map((p, i) => { const w = pts.slice(Math.max(0, i - 1), i + 2); const q = p.slice(); q[1] = w.reduce((a, x) => a + x[1], 0) / w.length; return q; });
+// your racing season (Settings → Display): the day it starts, and whether race series keep their own season
+const MONTHS_LONG = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+function seasonStart() { try { const v = localStorage.getItem("hrm.season"); return /^\d{2}-\d{2}$/.test(v || "") ? v : "08-01"; } catch (e) { return "08-01"; } }
+function seriesOwnSeason() { try { return localStorage.getItem("hrm.seasonSeries") === "1"; } catch (e) { return false; } }
+const seasonQS = (series) => "ss=" + (series && seriesOwnSeason() ? "auto" : seasonStart());
+function seasonText() { const [m, d] = seasonStart().split("-").map(Number); return m === 1 && d === 1 ? "calendar years" : `seasons starting ${d} ${MONTHS_LONG[m - 1]}`; }
 function chartDefaultRange() { try { return localStorage.getItem("hrm.chartRange") || "all"; } catch (e) { return "all"; } }
 const RANGES = [["all", "All", 0], ["10y", "10 years", 3652], ["5y", "5 years", 1826], ["3y", "3 years", 1096], ["2y", "2 years", 730], ["1y", "1 year", 365],
   ["9m", "9 months", 274], ["6m", "6 months", 183], ["3m", "3 months", 91], ["1m", "1 month", 30]];
@@ -2411,12 +2417,12 @@ const SEASON_DELTA = (a, b, fmt, pctPts) => {
 };
 async function jockeySeasonPage(route) {
   const id = route.parts[1], q = route.q || {};
-  const [d, s] = await Promise.all([api("person/" + id), api(`jockey_season/${id}` + (q.year ? "?year=" + q.year : ""))]);
+  const [d, s] = await Promise.all([api("person/" + id), api(`jockey_season/${id}?${seasonQS(false)}` + (q.year ? "&year=" + q.year : ""))]);
   let html = personHead(d, "season");
   const n = s.now, pv = s.prev, ps = s.prev_same;
   const cmp = ps || pv, cmpLab = ps ? `this time last season` : `last season`;
-  html += `<div class="filters" style="margin:4px 0 12px">${select("year", q, (s.years || []).map((y) => [String(y), `Season ${y}`]))}
-    <span class="small muted">Seasons are calendar years · compared with ${ps ? "the same point of " : ""}${s.year - 1}</span></div>`;
+  html += `<div class="filters" style="margin:4px 0 12px">${select("year", { year: String(s.year) }, (s.years || []).map((y) => [String(y.key), `Season ${y.label}`]))}
+    <span class="small muted">${seasonText().replace(/^./, (x) => x.toUpperCase())} (<a href="#/settings">change in Settings</a>) · compared with ${ps ? "the same point of " : ""}${esc(s.prev_label)}</span></div>`;
   html += tiles([
     ["Rides", fNum(n.rides), SEASON_DELTA(n.rides, cmp.rides, fNum) + ` <span class="muted small">vs ${fNum(cmp.rides)} ${cmpLab}</span>`],
     ["Wins", fNum(n.wins), SEASON_DELTA(n.wins, cmp.wins, fNum) + ` <span class="muted small">vs ${fNum(cmp.wins)}</span>`],
@@ -3024,9 +3030,9 @@ function sectionTabs(sec, active) {
 }
 // ------------------------------------------------------------------ 16.6: Racing → Concepts and Qualifying
 async function conceptsPage() {
-  const d = await api("concepts");
+  const d = await api("concepts?" + seasonQS(true));
   let html = raceSubTabs("concepts") + `<div class="page-head"><div><h1>Concepts</h1><div class="sub">Triple Crowns and other race series: win every race in one season to sweep it.
-    A season can run across the new year (December to March, say). A horse that has won every race run so far is marked <b>on for the sweep</b>.</div></div></div>`;
+    ${seriesOwnSeason() ? "Each series keeps its own season, from its first race to its last" : `Seasons are your ${seasonText()}`} (<a href="#/settings">change in Settings</a>). A horse that has won every race run so far is marked <b>on for the sweep</b>.</div></div></div>`;
   const status = (c) => {
     const nx = c.next_season;
     if (!c.season) return `<span class="muted small">Not started yet${nx ? `<br>first race ${fDate(nx.start)}` : ""}</span>`;
@@ -3048,7 +3054,7 @@ async function conceptsPage() {
 }
 async function conceptPage(route) {
   const id = route.parts[1], q = route.q || {};
-  const d = await api("concept/" + id);
+  const d = await api("concept/" + id + "?" + seasonQS(true));
   const c = d.concept, seasons = d.seasons || [];
   const run = seasons.filter((s) => s.started);
   const S = seasons.find((s) => s.label === q.season) || run[0] || seasons[0];
@@ -6449,6 +6455,11 @@ function settingsPage() {
       `<select id="set-range"><option value="all" ${cr === "all" ? "selected" : ""}>All of the history</option>
         <optgroup label="Years">${RANGES.filter((r) => r[0].endsWith("y")).map((r) => `<option value="${r[0]}" ${r[0] === cr ? "selected" : ""}>Last ${r[1]}</option>`).join("")}</optgroup>
         <optgroup label="Months">${RANGES.filter((r) => r[0].endsWith("m")).map((r) => `<option value="${r[0]}" ${r[0] === cr ? "selected" : ""}>Last ${r[1]}</option>`).join("")}</optgroup></select>`),
+    row("Racing season", "The day your racing season starts. Jockey season and Concepts (and their season pickers) use it. Choose 1 January for calendar years. Seasons that cross the new year are shown like 2018/19.",
+      (() => { const [m, d] = seasonStart().split("-").map(Number); return `<span class="season-pick"><select id="set-season-d" aria-label="Day">${Array.from({ length: 28 }, (_, i) => `<option value="${i + 1}" ${i + 1 === d ? "selected" : ""}>${i + 1}</option>`).join("")}</select>
+        <select id="set-season-m" aria-label="Month">${MONTHS_LONG.map((n, i) => `<option value="${i + 1}" ${i + 1 === m ? "selected" : ""}>${n}</option>`).join("")}</select></span>`; })()),
+    row("Race series keep their own season", "On: each series in Concepts runs from its first race to its last, whatever your season start (handy when, say, a Northern Hemisphere series runs April to October). Off: Concepts follow your racing season.",
+      sw("set-season-series", seriesOwnSeason())),
   ].join("")) +
     // right-hand column: your stables (compact), then the viewer and database panels underneath
     `<div class="set-stack">` + panel("Your stables", ms.length ? [
@@ -6533,6 +6544,10 @@ settingsPage.after = () => {
   $("#set-cards").onchange = (e) => { HOVER_CARDS = e.target.checked; save("hrm.hoverCards", HOVER_CARDS ? "1" : "0"); hideCard(); };
   $("#set-pedcol").onchange = (e) => { ANC_COLOURS = e.target.checked; save("hrm.ancColours", ANC_COLOURS ? "1" : "0"); };
   $("#set-range").onchange = (e) => save("hrm.chartRange", e.target.value);
+  const saveSeason = () => save("hrm.season", String($("#set-season-m").value).padStart(2, "0") + "-" + String($("#set-season-d").value).padStart(2, "0"));
+  $("#set-season-m").onchange = saveSeason;
+  $("#set-season-d").onchange = saveSeason;
+  $("#set-season-series").onchange = (e) => save("hrm.seasonSeries", e.target.checked ? "1" : "0");
   $("#set-side").value = sideMenuMode();
   $("#set-rows").onchange = (e) => { if (e.target.value) save("hrm.pageSize", e.target.value); else { try { localStorage.removeItem("hrm.pageSize"); } catch (er) { /* none */ } } };
   $("#set-side").onchange = (e) => setSideMenu(e.target.value);

@@ -2243,6 +2243,29 @@ def language_list(con):
     return [r[0] for r in con.execute("select language from person_languages group by 1 order by count(*) desc")] if _t(con, "person_languages") else []
 
 
+# ------------------------------------------------------------------ 16.7: your racing season (set in Settings; the viewer passes ss=MM-DD)
+def season_start(q):
+    """The day your racing season starts, from ?ss=MM-DD: (month, day). Calendar year if not given."""
+    m = re.match(r"^(\d{1,2})-(\d{1,2})$", str(q.get("ss") or ""))
+    if m and 1 <= int(m.group(1)) <= 12 and 1 <= int(m.group(2)) <= 28:
+        return int(m.group(1)), int(m.group(2))
+    return 1, 1
+
+
+def season_key(ts, ss):
+    """The season a date falls in, by the year it starts."""
+    t = time.gmtime(ts)
+    return t.tm_year if (t.tm_mon, t.tm_mday) >= ss else t.tm_year - 1
+
+
+def season_label(y, ss):
+    return str(y) if ss == (1, 1) else "%d/%s" % (y, str(y + 1)[2:])
+
+
+def season_bounds(y, ss):
+    return calendar.timegm((y, ss[0], ss[1], 0, 0, 0)), calendar.timegm((y + 1, ss[0], ss[1], 0, 0, 0))
+
+
 # ------------------------------------------------------------------ 16.5: a jockey's season
 DIST_BANDS = [(0, 1300, "Sprint (up to 1,300 m)"), (1300, 1700, "Mile (1,300–1,700 m)"), (1700, 2100, "Middle (1,700–2,100 m)"),
               (2100, 2700, "Classic (2,100–2,700 m)"), (2700, 99999, "Staying (2,700 m+)")]
@@ -2251,12 +2274,12 @@ DIST_BANDS = [(0, 1300, "Sprint (up to 1,300 m)"), (1300, 1700, "Mile (1,300–1
 def api_jockey_season(con, pid, q):
     """Season summary for a jockey: this season against the one before, and where and with whom they win."""
     gd = META.get("game_date") or time.time()
-    years = [r[0] for r in con.execute("""select distinct cast(strftime('%Y', race_result_date, 'unixepoch') as int) from race_results
-        where race_result_person_jockey_id=? order by 1 desc""", (pid,))]
-    now_y = int(time.strftime("%Y", time.gmtime(gd)))
+    ss = season_start(q)
+    years = sorted({season_key(r[0], ss) for r in con.execute("select race_result_date from race_results where race_result_person_jockey_id=? and race_result_date is not null", (pid,))}, reverse=True)
+    now_y = season_key(gd, ss)
     year = to_int(q.get("year"), None) or (years[0] if years else now_y)
     def span(y):
-        return (calendar.timegm((y, 1, 1, 0, 0, 0)), calendar.timegm((y + 1, 1, 1, 0, 0, 0)))
+        return season_bounds(y, ss)
     def runs(y, extra=""):
         a, b = span(y)
         return rows(con, """select r.race_result_rank as rank, r.race_result_cash_received as prize, r.race_result_horse_id as horse_id, r.race_result_trainer_id as trainer_id,
@@ -2301,7 +2324,8 @@ def api_jockey_season(con, pid, q):
     pn = name_map(con, "persons", "person_person_id", "person_full_name", [r["trainer_id"] for r in cur])
     hn = name_map(con, "horses", "horse_horse_id", "horse_name", [r["horse_id"] for r in cur])
     sn = name_map(con, "stables", "stable_stable_id", "stable_name", [r["stable_id"] for r in cur])
-    out = {"year": year, "years": years, "now": summary(cur), "prev": summary(prev), "prev_same": summary(prev, upto) if upto else None,
+    out = {"year": year, "label": season_label(year, ss), "prev_label": season_label(year - 1, ss), "start_month": ss[0],
+           "years": [{"key": y, "label": season_label(y, ss)} for y in years], "now": summary(cur), "prev": summary(prev), "prev_same": summary(prev, upto) if upto else None,
            "by_course": group(cur, lambda r: r["course_id"], lambda k: cn.get(k)),
            "by_distance": sorted(group(cur, lambda r: band(r["dist"]), lambda k: k), key=lambda s: [b[2] for b in DIST_BANDS].index(s["key"])),
            "by_track": group(cur, lambda r: r["track"], lambda k: k),
@@ -2314,7 +2338,7 @@ def api_jockey_season(con, pid, q):
         s = months.setdefault(m, {"month": m, "rides": 0, "wins": 0})
         s["rides"] += 1
         s["wins"] += r["rank"] == 1
-    out["months"] = [months[m] for m in sorted(months)]
+    out["months"] = [months[m] for m in sorted(months, key=lambda m: (m - ss[0]) % 12)]
     # rides booked ahead, and ride offers
     out["upcoming"] = rows(con, """select %s, c.racecourse_name as course, c.racecourse_racecourse_id as course_id, p.race_participant_horse_id as horse_id, h.horse_name as horse,
         h.horse_stable_id as stable_id, s.stable_name as stable
@@ -2485,10 +2509,27 @@ def concept_points(scheme):
         return []
 
 
-def concept_seasons(legs, inst, gd):
-    """A series' runnings grouped into seasons. A season starts with a running of its first race; each later race joins the
-    season it follows (series can cross the new year, e.g. December to March). Newest first:
-    [{start, label, legs: [run or None per race], done}]"""
+def concept_seasons(legs, inst, gd, ss=None):
+    """A series' runnings grouped into seasons, newest first: [{start, label, legs: [run or None per race], done}].
+    With ss (month, day) a season is that fixed period (your racing season, set in Settings). Without it each series
+    keeps its own season: it starts with a running of the first race and each later race joins the season it follows."""
+    if ss:
+        by = {}
+        for k, l in enumerate(legs):
+            for r in sorted(inst.get(l["cal"], []), key=lambda r: r["date"]):
+                y = season_key(r["date"], ss)
+                se = by.setdefault(y, {"key": y, "legs": [None] * len(legs)})
+                if se["legs"][k] is None:
+                    se["legs"][k] = r
+        out = []
+        for y, se in by.items():
+            a, b = season_bounds(y, ss)
+            ds = [r["date"] for r in se["legs"] if r]
+            se.update(start=a, end=max(ds), label=season_label(y, ss), started=min(ds) <= gd,
+                      done=all(r and r["date"] <= gd for r in se["legs"]) or (gd >= b and all(r is None or r["date"] <= gd for r in se["legs"])))
+            out.append(se)
+        out.sort(key=lambda se: se["key"], reverse=True)
+        return out
     runs1 = sorted(inst.get(legs[0]["cal"], []), key=lambda r: r["date"]) if legs else []
     seasons = [{"start": r["date"], "legs": [r] + [None] * (len(legs) - 1)} for r in runs1]
     for k, l in enumerate(legs[1:], 1):
@@ -2527,7 +2568,12 @@ def season_status(se, win):
     return legs, alive
 
 
-def api_concepts(con):
+def concept_ss(q):
+    """Concepts follow your racing season unless you've asked each series to keep its own (ss=auto)."""
+    return None if str(q.get("ss") or "") == "auto" else season_start(q)
+
+
+def api_concepts(con, q=None):
     """Racing → Concepts: every series, this season's races and winners, who can still sweep it, and how often it's been swept."""
     if not has_table(con, "concepts"):
         return {"concepts": []}
@@ -2542,7 +2588,7 @@ def api_concepts(con):
     per = {}
     for c in cs:
         cl = [l for l in legs if l["cid"] == c["id"]]
-        ss = concept_seasons(cl, inst, gd)
+        ss = concept_seasons(cl, inst, gd, concept_ss(q or {}))
         started = [se for se in ss if se["started"]]
         cur = started[0] if started else None
         upcoming = next((se for se in reversed(ss) if not se["started"]), None)
@@ -2574,7 +2620,7 @@ def api_concept(con, cid, q):
     legs = rows(con, "select cr_race_name as race, cr_racecourse_name as course, cr_calendar_id as cal, cr_leg_order as n from concept_races where cr_concept_id=? order by cr_leg_order", (cid,))
     inst = race_instances(con, [l["cal"] for l in legs])
     gd = META.get("game_date") or time.time()
-    ss = concept_seasons(legs, inst, gd)
+    ss = concept_seasons(legs, inst, gd, concept_ss(q))
     win = race_winners(con, [r["race_id"] for se in ss for r in se["legs"] if r and r["date"] <= gd])
     awards = rows(con, """select a.award_year as year, a.award_date as date, a.award_entity_id as horse_id, h.horse_name as horse, a.award_stable_id as stable_id, s.stable_name as stable,
         a.award_jockey_id as jockey_id, p.person_full_name as jockey from awards a left join horses h on h.horse_horse_id=a.award_entity_id
@@ -5593,7 +5639,7 @@ ROUTES = [
     (re.compile(r"^/api/stable_more/(-?\d+)$"), lambda con, m, q: api_stable_more(con, int(m.group(1)))),
     (re.compile(r"^/api/jockey_season/(-?\d+)$"), lambda con, m, q: api_jockey_season(con, int(m.group(1)), q)),
     (re.compile(r"^/api/alerts$"), lambda con, m, q: api_alerts(con)),
-    (re.compile(r"^/api/concepts$"), lambda con, m, q: api_concepts(con)),
+    (re.compile(r"^/api/concepts$"), lambda con, m, q: api_concepts(con, q)),
     (re.compile(r"^/api/concept/(-?\d+)$"), lambda con, m, q: api_concept(con, int(m.group(1)), q)),
     (re.compile(r"^/api/qualifying$"), lambda con, m, q: api_qualifying(con, q)),
     (re.compile(r"^/api/horse_fans/(-?\d+)$"), lambda con, m, q: api_horse_fans(con, int(m.group(1)))),
