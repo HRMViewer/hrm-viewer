@@ -3005,9 +3005,17 @@ def api_stable_horse_money(con, sid, q):
     for r in rows(con, """select race_result_horse_id as id, cast(strftime('%Y', race_result_date, 'unixepoch') as int) as year, sum(race_result_cash_received) as prize
             from race_results where race_result_stable_id=? group by 1, 2""", (sid,)):
         put(r["id"], "inc", "Prize money", r["year"], r["prize"] or 0)
+    # auction sales: the game also books an auction as a horse-trade payment for the full price, plus an
+    # "Auction Commission" payment from the seller, and both are counted below. So an auction only counts here when
+    # there's no such payment for it (older auctions in long saves): the full price, and the auction house's cut as a cost.
+    def paid_as_trade(a):
+        return any(t["hid"] == a["id"] and abs((t["date"] or 0) - (a["date"] or 0)) <= 7 * 86400 and abs((t["amount"] or 0) - (a["price"] or 0)) < 1 for t in trades)
     for a in auctions:
+        if paid_as_trade(a):
+            continue
         if a["frm"] == sid:
-            put(a["id"], "inc", "Sale (after auction house cut)", yr(a["date"]), (a["price"] or 0) - (a["cut"] or 0))
+            put(a["id"], "inc", "Sale", yr(a["date"]), a["price"] or 0)
+            put(a["id"], "exp", "Auction commission", yr(a["date"]), a["cut"] or 0)
         if a["too"] == sid:
             put(a["id"], "exp", "Purchase", yr(a["date"]), a["price"] or 0)
     # private sales: the price this stable paid or got, and what one of its group's stables (its parent, sub-stables or their

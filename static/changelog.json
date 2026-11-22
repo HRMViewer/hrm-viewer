@@ -14,7 +14,8 @@
       "Home has a new For you panel: rides coming up, ride offers to answer, sponsor deals ending in the next 60 days, recent fan milestones and new qualifying runs.",
       "The search box also finds horses by your notes and tags.",
       "Settings → Tags: download a backup of your notes and tags, and bring one back (added to yours, or replacing them). Notes already there are never doubled up.",
-      "Sorting the Horse table by Fans or Sponsor no longer relies on SQLite working out a shortcut on its own: there's now a proper lookup for sponsors (plus ones for all the new data)."
+      "Sorting the Horse table by Fans or Sponsor no longer relies on SQLite working out a shortcut on its own: there's now a proper lookup for sponsors (plus ones for all the new data).",
+      "Fix: Horse finances counted auction sales twice. A horse sold at auction showed both Sale (the full price) and Sale (after auction house cut), on top of the Auction commission cost. Now it's just Sale at the full price with the commission as a cost, so the net is right; Sale (after auction house cut) is gone. Horses bought at auction were likewise counted twice as a Purchase and now count once. Older auctions the game kept no payment record for still count, the same way."
     ]
   },
   {
