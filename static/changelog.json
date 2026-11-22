@@ -1,5 +1,16 @@
 [
   {
+    "version": "15.6",
+    "date": "2026-11-22",
+    "title": "Manager wins shared fairly between co-managers",
+    "changes": [
+      "Fixed: a stable with two managers split its wins between them, because the game writes only one manager on each race result. A manager could have fewer wins than the races they trained at their own stable. Now a stable's race counts for every manager it had that day (from each manager's start and end dates there), so co-managers share the same wins, places, prize money and Group and Listed wins.",
+      "This applies everywhere managers are counted: the Managers table on the People overview (any year, working now or everyone), the As a manager section on a person's Overview (with its latest races and Group & Listed wins), and the Dynasty and Lifespans pages. Races from before anyone's job records were kept still go to the manager the game wrote down.",
+      "Dynasty pages now count wins in every role from the race results, the same way as the People overview: Jockey wins, Trainer wins and a new Manager wins column in the Members table and the totals. A person's wins on the cards (Pride of the family, the family tree, Lifespans) are the different races they won as a jockey, trainer or manager, each race once; point at the number to see the split.",
+      "The Managers table and the As a manager section say how manager wins are counted. Jockey stats' As manager prize money is the game's own figure, and now says so when you point at it."
+    ]
+  },
+  {
     "version": "15.5",
     "date": "2026-11-22",
     "title": "Lifespans tab and a new Dynasty tab",

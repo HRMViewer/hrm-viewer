@@ -3413,6 +3413,8 @@ function famRole(r) {
   if ((r.owned || r.stables || []).some((s) => !s.gone)) return "Owner";
   return "";
 }
+// "Different races won: 120 as jockey · 138 as trainer · 144 as manager"
+const famWinsTip = (r) => `Different races won (each once): ${[["jockey", r.j_wins], ["trainer", r.t_wins], ["manager", r.m_wins]].filter(([, n]) => n).map(([k, n]) => `${fNum(n)} as ${k}`).join(" · ")}`;
 // "Trainer of the Year ×2 · Hall of Fame"
 const famAwards = (list) => {
   const n = {};
@@ -3421,7 +3423,7 @@ const famAwards = (list) => {
 };
 const famChips = (r, max = 4) => {
   const out = [];
-  if (r.wins) out.push(`<span class="fchip">${fNum(r.wins)} win${r.wins === 1 ? "" : "s"}</span>`);
+  if (r.wins) out.push(`<span class="fchip" data-tip="${esc(famWinsTip(r))}">${fNum(r.wins)} win${r.wins === 1 ? "" : "s"}</span>`);
   if (r.g1) out.push(`<span class="fchip gold">${fNum(r.g1)} × G1</span>`);
   famAwards(r.award_list).slice(0, Math.max(0, max - out.length)).forEach((a) => out.push(`<span class="fchip gold">${famIc("trophy")} ${esc(a)}</span>`));
   return out.join("");
@@ -3547,6 +3549,7 @@ function dynastyOverview({ id, q, y, M, byId, name }) {
   html += tiles([
     ["Jockey wins", fNum(sum(members, "j_wins")), inJ ? `+ ${fNum(inJ)} by those who married in` : ""],
     ["Trainer wins", fNum(sum(members, "t_wins"))],
+    ["Manager wins", fNum(sum(members, "m_wins")), "shared with co-managers"],
     ["Group 1 wins", fNum(sum(members, "g1"))],
     ["Season awards", fNum(sum(members, "awards"))],
     ["Prize money", fMoneyShort(sum(members, "prize"))],
@@ -3586,6 +3589,7 @@ function dynastyOverview({ id, q, y, M, byId, name }) {
     { h: "Stable", f: (r) => (r.stable_id ? L.stable(r.stable_id, r.stable) : '<span class="muted">—</span>') },
     { h: "Owns", f: (r) => (r.stables || []).map((s) => L.stable(s.id, s.name)).join(", ") || '<span class="muted">—</span>' },
     { h: "Jockey wins", cls: "num", f: (r) => fNum(r.j_wins) }, { h: "Trainer wins", cls: "num", f: (r) => fNum(r.t_wins) },
+    { h: '<span data-tip="Every race their stable won while they were a manager there, shared with any co-manager">Manager wins</span>', cls: "num", f: (r) => fNum(r.m_wins) },
     { h: "G1", cls: "num", f: (r) => fNum(r.g1) }, { h: "Awards", cls: "num", f: (r) => (r.awards ? `<span data-tip="${esc(famAwards(r.award_list).join(" · "))}">${fNum(r.awards)}</span>` : "0") },
     { h: "Prize money", cls: "num", f: (r) => fMoneyShort(r.prize) },
     { h: "Married to", f: (r) => (r.spouses || []).map((x) => `${L.person(x.id, x.name)}${x.divorced ? ` <span class="muted small">(divorced ${yr(x.divorced)})</span>` : ""}`).join(", ") || '<span class="muted">—</span>' },
@@ -3601,7 +3605,7 @@ function dynastyTree({ id, q, y, M, byId, name }) {
   const card = (r, extra = "") => {
     const cls = [r.kind !== "member" ? "in" : "", r.died ? "gone" : "", r.id === id ? "me" : "", hl ? (isHi(r) ? "hi" : "dim") : "", extra].join(" ");
     const sub = r.died ? `${yr(r.birth)}–${yr(r.died)}` : `${yr(r.birth)}${famRole(r) ? " · " + esc(famRole(r)) : ""}`;
-    const chips = [r.wins ? `<span class="fchip">${fNum(r.wins)} wins</span>` : "", r.g1 ? `<span class="fchip gold">${fNum(r.g1)} G1</span>` : "", r.awards ? `<span class="fchip gold" data-tip="${esc(famAwards(r.award_list).join(" · "))}">${famIc("trophy")} ${fNum(r.awards)}</span>` : ""].join("");
+    const chips = [r.wins ? `<span class="fchip" data-tip="${esc(famWinsTip(r))}">${fNum(r.wins)} wins</span>` : "", r.g1 ? `<span class="fchip gold">${fNum(r.g1)} G1</span>` : "", r.awards ? `<span class="fchip gold" data-tip="${esc(famAwards(r.award_list).join(" · "))}">${famIc("trophy")} ${fNum(r.awards)}</span>` : ""].join("");
     return `<div class="dt-card ${cls}">${famAv(r, "sm")}<a class="dt-n" href="#/person/${r.id}/dynasty?view=tree" title="${esc(r.name)}: open their dynasty view">${esc(short(r))}</a><div class="dt-y">${sub}</div>${chips ? `<div class="dt-chips">${chips}</div>` : ""}${r.id === y.head ? `<span class="dt-head" data-tip="Head of the family">${famIc("crown")}</span>` : ""}</div>`;
   };
   const seen = new Set();
@@ -3964,7 +3968,7 @@ async function peoplePage(route) {
 const PO_SECTIONS = {
   jockeys: { title: "Jockeys", noun: "jockeys", races: "Rides" },
   trainers: { title: "Trainers", noun: "trainers", races: "Runners" },
-  managers: { title: "Managers", noun: "managers", races: "Runners" },
+  managers: { title: "Managers", noun: "managers", races: "Runners", note: "A stable's race counts for every manager it had on the day, so co-managers share the same wins. (The game itself writes only one manager on each race.)" },
 };
 
 // one people section; the three sections only differ in their wording (PO_SECTIONS)
@@ -3996,7 +4000,7 @@ function roleSection(meta, sec, ctx) {
     <button class="btn" data-page="1" ${sec.page <= 1 ? "disabled" : ""}>First</button><button class="btn" data-page="${sec.page - 1}" ${sec.page <= 1 ? "disabled" : ""}>Previous</button>
     <span>Page ${fNum(sec.page)} of ${fNum(sec.pages)}</span>
     <button class="btn" data-page="${sec.page + 1}" ${sec.page >= sec.pages ? "disabled" : ""}>Next</button><button class="btn" data-page="${sec.pages}" ${sec.page >= sec.pages ? "disabled" : ""}>Last</button></div>` : "";
-  return panel(meta.title, table_ + pg, more, `po-sec${sec.everyone ? " po-all" : ""}`);
+  return panel(meta.title, table_ + pg + (meta.note && people.length ? `<p class="help">${meta.note}</p>` : ""), more, `po-sec${sec.everyone ? " po-all" : ""}`);
 }
 
 // compact panel: the first few items, collapsed by default. Expanding shows the rest of what was loaded;
@@ -4079,7 +4083,7 @@ async function careersPage(route) {
       { h: "Wins", cls: "num g-s", f: (r) => (r.stable_id ? `${fNum(r.s_wins)} <span class="muted small">/ ${fNum(r.s_starts)}</span>` : "") },
       { h: "Prize money", cls: "num g-s", f: (r) => (r.stable_id ? fMoneyShort(r.s_prize) : "") },
       { h: "Managed", cls: "num g-s", f: (r) => (r.managed_ever ? `${fNum(r.managed_ever)} stable${r.managed_ever === 1 ? "" : "s"}` : '<span class="muted">—</span>') },
-      { h: "As manager", cls: "num g-s", sort: "mgmt_winnings", f: (r) => z(r.m_prize, fMoneyShort) },
+      { h: '<span data-tip="The game\'s own career figure for prize money while managing">As manager</span>', cls: "num g-s", sort: "mgmt_winnings", f: (r) => z(r.m_prize, fMoneyShort) },
     ],
   }, route);
   return html;
@@ -4104,7 +4108,8 @@ function personHead(d, on) {
 const ROLE_META = {
   jockey: { title: "As a jockey", noun: "jockey", races: "rides", none: "No rides recorded." },
   trainer: { title: "As a trainer", noun: "trainer or head trainer", races: "runners trained", none: "No runners trained." },
-  manager: { title: "As a manager", noun: "manager", races: "runners for stables they managed", none: "No runners while managing a stable." },
+  manager: { title: "As a manager", noun: "manager", races: "runners for stables they managed", none: "No runners while managing a stable.",
+    note: "Every race their stable ran while they were a manager there, shared with any co-manager. (The game itself writes only one manager on each race.)" },
 };
 const ROLE_SHOW = 6;     // races shown before "Show all"
 function roleRecordSection(key, rec, person) {
@@ -4119,7 +4124,7 @@ function roleRecordSection(key, rec, person) {
   const split = [["G1", rec.G1], ["G2", rec.G2], ["G3", rec.G3]].filter(([, n]) => n).map(([g, n]) => `${n}×${g}`).join(" ");
   const stats = `<div class="rr-stats">${stat("Races", fNum(rec.starts), m.races)}${stat("Wins", fNum(rec.wins), rec.starts ? pct(rec.wins, rec.starts) + " strike rate" : "")}
     ${stat("Placed (top 3)", fNum(rec.places), rec.starts ? pct(rec.places, rec.starts) : "")}${stat("Prize money", fMoneyShort(rec.prize), "from these races")}
-    ${stat("Group wins", fNum(rec.group), split)}${stat("Listed wins", fNum(rec.listed))}${stat("Group + Listed", fNum(rec.group + rec.listed), "")}</div>`;
+    ${stat("Group wins", fNum(rec.group), split)}${stat("Listed wins", fNum(rec.listed))}${stat("Group + Listed", fNum(rec.group + rec.listed), "")}</div>${m.note ? `<p class="help">${m.note}</p>` : ""}`;
   const races = rec.races || [];
   const racesHtml = races.length ? expandable(table([
     { h: "Date", cls: "nowrap", f: (r) => fDate(r.date) },

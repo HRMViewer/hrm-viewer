@@ -2671,10 +2671,54 @@ def po_years(con):
 PO_LOCK = threading.Lock()
 
 
+MGR_TENURE = {}
+
+
+def manager_tenures(con):
+    """Who managed each stable, and when, from the staff table: ({stable: [(start, end, person)]}, {person: [(stable, start, end)]}).
+    The game writes ONE manager on each race result, so a stable with two managers credits each win to only one of them;
+    the viewer credits a stable's race to every manager it had that day. Kept for the loaded save."""
+    t = MGR_TENURE.get(DB_GEN)
+    if t is None:
+        by_st, by_p = {}, {}
+        if has_table(con, "staff"):
+            for st, a, b, pid in con.execute("""select staff_stable_id, staff_start_date, staff_end_date, staff_person_id from staff
+                    where staff_current_role='Manager' and staff_stable_id>0 and staff_person_id>0"""):
+                a = a if a is not None else -1e18
+                b = b if b is not None else 1e18
+                by_st.setdefault(st, []).append((a, b, pid))
+                by_p.setdefault(pid, []).append((st, a, b))
+        t = (by_st, by_p)
+        MGR_TENURE.clear()
+        MGR_TENURE[DB_GEN] = t
+    return t
+
+
+def managers_on(by_st, stable, date, recorded):
+    """Everyone who managed this stable on this day, plus the manager the game wrote on the result."""
+    out = {recorded} if recorded and recorded > 0 else set()
+    if stable and date is not None:
+        for a, b, pid in by_st.get(stable, ()):
+            if a <= date <= b:
+                out.add(pid)
+    return out
+
+
+def manager_clause(con, pid, alias="r"):
+    """SQL (and its arguments) for the race results a person shares as a manager: those the game wrote them on, and
+    every race their stable ran while they managed it."""
+    parts, args = ["%s.race_result_stable_manager_id=?" % alias], [pid]
+    for st, a, b in manager_tenures(con)[1].get(pid, ()):
+        parts.append("(%s.race_result_stable_id=? and %s.race_result_date between ? and ?)" % (alias, alias))
+        args += [st, a, b]
+    return "(" + " or ".join(parts) + ")", args
+
+
 def po_scan(con):
     """Read the race results once and total everyone's record in each role for each year:
     races, wins, places, prize money, last race date, and G1/G2/G3/Listed wins.
-    A head trainer who is also the trainer is counted once. Kept for the loaded save."""
+    A head trainer who is also the trainer is counted once. A stable's race counts for every manager it had that day
+    (the game itself writes only one). Kept for the loaded save."""
     key = (DB_GEN, "scan")
     with PO_LOCK:
         if key in PO_AGG:
@@ -2693,6 +2737,8 @@ def po_scan(con):
         out = {"jockeys": {}, "trainers": {}, "managers": {}, "stables": {}}     # stables: for the stable rankings
         J, T, M, S = out["jockeys"], out["trainers"], out["managers"], out["stables"]
         years = {}
+        mgr = manager_tenures(con)[0]
+        mgr_from = {st: min(a for a, _, _ in lst) for st, lst in mgr.items()}     # races before anyone's job record: only the recorded manager
 
         def add(d, pid, y, rk, cash, dt, g):
             a = d.get((pid, y))
@@ -2721,7 +2767,11 @@ def po_scan(con):
                 add(T, tr, y, rk, cash, dt, g)
             if ht and ht > 0 and ht != tr:
                 add(T, ht, y, rk, cash, dt, g)
-            if mg and mg > 0:
+            f0 = mgr_from.get(st)
+            if f0 is not None and dt is not None and dt >= f0:
+                for m in managers_on(mgr, st, dt, mg):
+                    add(M, m, y, rk, cash, dt, g)
+            elif mg and mg > 0:
                 add(M, mg, y, rk, cash, dt, g)
             if st and st > 0:
                 add(S, st, y, rk, cash, dt, g)
@@ -2789,10 +2839,10 @@ def po_section(con, key, year=None, who="now", everyone=False, page=1):
                    stable_id=i.get("stable_id"), stable=sn.get(i.get("stable_id")), is_player=i.get("is_player") in ("true", 1, "1", True))
         # their latest race in this period
         if r["last"] is not None and rc:
+            who, wa = manager_clause(con, r["pid"]) if key == "managers" else (" or ".join("r.%s=?" % c for c in rc), [r["pid"]] * len(rc))
             row["last_race"] = one(con, """select r.race_result_date as date, r.race_result_rank as rank, r.race_result_race_id as race_id, x.races_race_name as race
                     from race_results r left join races x on x.races_race_id=r.race_result_race_id and r.race_result_race_id>0
-                    where (%s) and r.race_result_date=? order by r.race_result_rank limit 1""" % " or ".join("r.%s=?" % c for c in rc),
-                                   [r["pid"]] * len(rc) + [r["last"]])
+                    where (%s) and r.race_result_date=? order by r.race_result_rank limit 1""" % who, wa + [r["last"]])
         people.append(row)
     return {"key": key, "people": people, "total": total, "page": page, "pages": pages, "everyone": everyone}
 
@@ -3037,7 +3087,7 @@ def life_facts(con, ids):
     jockey and trainer wins (with Group 1s, first win, first Group 1 and wins per year), season awards they won and prize money.
     {id: {...}}, worked out in a handful of grouped queries however many people there are."""
     ids = [i for i in dict.fromkeys(ids) if i]
-    out = {i: {"careers": [], "owned": [], "j_wins": 0, "t_wins": 0, "g1": 0, "first_win": None, "first_g1": None,
+    out = {i: {"careers": [], "owned": [], "j_wins": 0, "t_wins": 0, "m_wins": 0, "g1": 0, "first_win": None, "first_g1": None,
                "by_year": {}, "awards": [], "prize": 0} for i in ids}
     if not ids:
         return out
@@ -3065,19 +3115,37 @@ def life_facts(con, ids):
         rcols = set(columns(con, "race_results"))
         roles = [("j", "race_result_person_jockey_id"), ("t", "race_result_trainer_id"), ("t", "race_result_stable_head_trainer_id")]
         roles = [(k, c) for k, c in roles if c in rcols]
-        # every win as jockey or trainer; a race they both rode and trained counts once in their total
+        # every win as jockey, trainer or manager; a race they had more than one part in counts once in their total
         won = {}
+        mgr_people = manager_tenures(con)[1]
         for c, mk in chunks():
-            sub = " union all ".join("""select '%s' as k, %s as pid, race_result_id as rid, race_result_race_id as race, race_result_date as d, race_result_horse_id as horse
-                from race_results where race_result_rank=1 and %s in (%s)""" % (k, col, col, mk) for k, col in roles)
+            parts, args = [], []
+            for k, col in roles:
+                parts.append("""select '%s' as k, %s as pid, race_result_id as rid, race_result_race_id as race, race_result_date as d, race_result_horse_id as horse
+                    from race_results where race_result_rank=1 and %s in (%s)""" % (k, col, col, mk))
+                args += c
+            if "race_result_stable_manager_id" in rcols:
+                plain = [x for x in c if x not in mgr_people]
+                if plain:
+                    parts.append("""select 'm', race_result_stable_manager_id, race_result_id, race_result_race_id, race_result_date, race_result_horse_id
+                        from race_results where race_result_rank=1 and race_result_stable_manager_id in (%s)""" % ",".join("?" * len(plain)))
+                    args += plain
+                for x in c:
+                    if x in mgr_people:      # a manager: every race their stable won while they managed it
+                        cl, ca = manager_clause(con, x, "race_results")
+                        parts.append("""select 'm', ?, race_result_id, race_result_race_id, race_result_date, race_result_horse_id
+                            from race_results where race_result_rank=1 and %s""" % cl)
+                        args += [x] + ca
+            sub = " union all ".join(parts)
             for k, who, rid, race, d, horse, typ, rname, hname in con.execute("""select w.*, x.races_type_of_race, x.races_race_name, h.horse_name from (%s) w
-                    left join races x on x.races_race_id=w.race and w.race>0 left join horses h on h.horse_horse_id=w.horse""" % sub, c * len(roles)):
+                    left join races x on x.races_race_id=w.race and w.race>0 left join horses h on h.horse_horse_id=w.horse""" % sub, args):
                 won.setdefault(who, {}).setdefault(rid, [set(), d, typ, race, rname, horse, hname])[0].add(k)
         for who, races in won.items():
             f = out[who]
             for rid, (ks, d, typ, race, rname, horse, hname) in races.items():
                 f["j_wins"] += "j" in ks
                 f["t_wins"] += "t" in ks
+                f["m_wins"] += "m" in ks
                 y = utc_year(d)
                 if y is not None:
                     f["by_year"][y] = f["by_year"].get(y, 0) + 1
@@ -3193,7 +3261,8 @@ def api_dynasty(con, pid):
         c = dict(cards[x])
         f = facts.get(x) or {}
         c.update(kind=kind, gen=gen.get(x), awards=len(f.get("awards") or []), award_list=f.get("awards") or [], stables=owned.get(x, []),
-                 g1=f.get("g1", 0), wins=f.get("wins", 0), prize=f.get("prize", 0), first_win=f.get("first_win"), first_g1=f.get("first_g1"),
+                 g1=f.get("g1", 0), wins=f.get("wins", 0), prize=f.get("prize", 0),
+                 j_wins=f.get("j_wins", 0), t_wins=f.get("t_wins", 0), m_wins=f.get("m_wins", 0), first_win=f.get("first_win"), first_g1=f.get("first_g1"),
                  by_year=f.get("by_year") or {}, careers=f.get("careers") or [], owned=f.get("owned") or [],
                  parents=[p for p in par.get(x, []) if p in cards], children=[k for k in kids.get(x, []) if k in cards],
                  spouses=[{"id": m["id"], "name": cards[m["id"]]["name"], "divorced": m["divorced"], "ended": m["ended"]}
@@ -3300,8 +3369,11 @@ def person_roles(con, pid, p):
                if has_table(con, "staff") else [],
                "starts": 0, "wins": 0, "places": 0, "prize": 0, "races": [], "big_wins": []}
         if rcols:
-            who = " or ".join("r.%s=?" % c for c in rcols)
-            args = [pid] * len(rcols)
+            if key == "manager":      # every race their stable ran while they managed it
+                who, args = manager_clause(con, pid)
+            else:
+                who = " or ".join("r.%s=?" % c for c in rcols)
+                args = [pid] * len(rcols)
             st = one(con, """select count(*) as starts, sum(r.race_result_rank=1) as wins, sum(r.race_result_rank between 1 and 3) as places,
                     sum(r.race_result_cash_received) as prize from race_results r where %s""" % who, args) or {}
             rec.update(starts=st.get("starts") or 0, wins=st.get("wins") or 0, places=st.get("places") or 0, prize=st.get("prize") or 0)
@@ -5405,7 +5477,7 @@ class Handler(BaseHTTPRequestHandler):
 
 # --------------------------------------------------------------------------- in-app updates
 
-VERSION = "15.5"
+VERSION = "15.6"
 BACKUP_DIR = os.path.join(APP_DIR, "backups")
 UPDATE_PENDING = os.path.join(DATA_DIR, "update_pending.json")
 UPDATE_RESULT = os.path.join(DATA_DIR, "update_result.json")
