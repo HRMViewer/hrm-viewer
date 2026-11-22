@@ -1,5 +1,13 @@
 [
   {
+    "version": "16.1",
+    "date": "2026-11-22",
+    "title": "Softer family tree highlights in dark mode",
+    "changes": [
+      "Dark mode: ancestors you highlight in a family tree (8 to 16 generations) are now a soft tint of their colour with the name in that colour, instead of a solid bright block. The same goes for the highlight key above the tree and the “highlighted” count beside each generation. Light mode is unchanged."
+    ]
+  },
+  {
     "version": "16.0",
     "date": "2026-11-22",
     "title": "Your stables stand out in every table",

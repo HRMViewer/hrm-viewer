@@ -1348,3 +1348,8 @@ table.data tbody tr.own:hover td { background: #fbeec4; }
 table.data tr.own td { background: #fff6dc; }
 table.data tr.win.own td { background: var(--win); }
 .own-foot { margin-top: 6px; }
+/* dark mode: picked ancestors as a soft tint with the colour in the text, not a solid bright block */
+html.dark body .anc-table .ai.hl { background: color-mix(in srgb, var(--hl) 16%, transparent); color: color-mix(in srgb, var(--hl) 85%, #fff) !important; box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--hl) 45%, transparent); }
+html.dark body .anc-table .ai.hl a, html.dark body .anc-table .ai.hl b { color: color-mix(in srgb, var(--hl) 85%, #fff) !important; }
+html.dark body .pk-chip { background: color-mix(in srgb, var(--hl) 16%, transparent); color: color-mix(in srgb, var(--hl) 85%, #fff); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--hl) 45%, transparent); }
+html.dark body .anc-table .hits { background: rgba(255, 213, 74, .14); color: #f0d68a; }
