@@ -1348,6 +1348,12 @@ def my_stables(con, player_id, active_id):
     return out
 
 
+def owned_stable_ids(con):
+    """Stables you own: yours, and ones your stables own (not ones you only manage or hold shares in)."""
+    return [s["id"] for s in my_stables(con, META.get("player_id"), META.get("player_stable_id"))
+            if s["mine"] and s["role"] not in ("Manager", "Assistant manager")]
+
+
 def api_card(con, kind, cid):
     """Small summary shown when you hover over a link."""
     if kind == "horse":
@@ -4123,6 +4129,9 @@ def pedigree_query(con, q):
         outer_where.append("(p.horse_deceased_date is not null or p.horse_horse_id in (select pk from hrmv_removed where tbl='horses'))")
     if to_int(q.get("minrunners")):
         outer_where.append("g.runners>=?"); params.append(to_int(q["minrunners"]))
+    if q.get("mine") == "1":                # only those in stables you own
+        ids = owned_stable_ids(con)
+        outer_where.append("p.horse_stable_id in (%s)" % ",".join(str(int(i)) for i in ids) if ids else "0=1")
     base = "from (%s) g join horses p on p.horse_horse_id=g.id left join stables st on st.stable_stable_id=p.horse_stable_id" % inner
     w = (" where " + " and ".join(outer_where)) if outer_where else ""
     sel = """select g.*, p.horse_name as name, p.horse_birth_date as birth, p.horse_deceased_date as died, p.horse_stud_fee as stud_fee,
@@ -5804,7 +5813,7 @@ class Handler(BaseHTTPRequestHandler):
 
 # --------------------------------------------------------------------------- in-app updates
 
-VERSION = "15.8"
+VERSION = "15.9"
 BACKUP_DIR = os.path.join(APP_DIR, "backups")
 UPDATE_PENDING = os.path.join(DATA_DIR, "update_pending.json")
 UPDATE_RESULT = os.path.join(DATA_DIR, "update_result.json")

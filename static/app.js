@@ -4717,8 +4717,11 @@ const KIND_INTRO = {
   dams: "Mares ranked by how their foals have performed. A runner is a foal that has raced; a winner has won at least once; a stakes winner has won a Group or Listed race.",
   damsires: "A broodmare sire is the sire of a horse's dam. These figures cover the foals of each stallion's daughters, so they show how his line carries on through his fillies.",
 };
+// stables you own (yours, and ones your stables own), not ones you only manage or hold shares in
+const ownedStableIds = () => new Set(((STATUS && STATUS.my_stables) || []).filter((s) => s.mine && !/^(Manager|Assistant manager)$/.test(s.role)).map((s) => s.id));
 async function pedigreesPage(route) {
   const q = route.q, kind = q.kind || "sires";
+  const owned = ownedStableIds();
   const offspring = kind === "damsires" ? "Grand-foals" : "Foals";
   const tablesLink = (r) => kind === "damsires" ? "" : ` <a class="small" href="#/horse-table?${kind === "dams" ? "dam" : "sire"}=${r.id}&status=all" title="All foals in the Horse table">foals ↗</a>`;
   const years = [["", "Any year"]];
@@ -4731,7 +4734,9 @@ async function pedigreesPage(route) {
       searchBox(q, "Search horses") + statusSeg("horse", q, "all") +
       select("osex", q, [["", "Any sex of foal"], ["Male", "Colts only"], ["Female", "Fillies only"]]) +
       select("minrunners", q, [["", "Any runners"], ["1", "1+ runners"], ["5", "5+ runners"], ["10", "10+ runners"], ["25", "25+ runners"], ["50", "50+ runners"], ["100", "100+ runners"]]) +
-      rangeBox(`${offspring} foaled`, select("from", q, years), select("to", q, years)),
+      rangeBox(`${offspring} foaled`, select("from", q, years), select("to", q, years)) +
+      (owned.size ? select("mine", q, [["", "Any stable"], ["1", "Your stables only"]]) + `<span class="own-key"><i></i>In a stable you own</span>` : ""),
+    rowClass: (r) => (owned.has(r.stable_id) ? "me own" : ""),
     cols: [
       { h: KIND_LABEL[kind].replace(/s$/, ""), sort: "name", f: (r) => `${L.horse(r.id, r.name)} <a class="small" href="#/pedigree/${r.id}" title="Family tree">tree</a>${tablesLink(r)}` },
       { h: "Born", sort: "birth", cls: "num", f: (r) => yr(r.birth) },
@@ -4749,7 +4754,7 @@ async function pedigreesPage(route) {
       { h: "Best " + (kind === "damsires" ? "grand-foal" : "foal"), f: (r) => (r.best ? `${L.horse(r.best.id, r.best.name)} <span class="muted small">${fMoneyShort(r.best.earnings)}</span>` : "—") },
       { h: "Own earnings", sort: "own_earnings", cls: "num grp-start", f: (r) => fMoneyShort(r.own_earnings) },
       { h: "Stud fee", sort: "stud_fee", cls: "num", f: (r) => (r.stud_fee ? fMoney(r.stud_fee) : "—") },
-      { h: "Stable", f: (r) => L.stable(r.stable_id, r.stable) },
+      { h: "Stable", f: (r) => L.stable(r.stable_id, r.stable) + (owned.has(r.stable_id) ? ' <span class="badge good">Yours</span>' : "") },
     ],
   }, route);
 }

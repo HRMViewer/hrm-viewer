@@ -1339,3 +1339,9 @@ table.data.wide .tgs { flex-wrap: nowrap; }
 .nt-sum .tg b { margin-left: 4px; }
 .nt-cnt { min-width: 70px; }
 @media (max-width: 1100px) { .hf-layout { grid-template-columns: 1fr; } .hf-side { position: static; } .hl-log { max-height: 420px; } }
+/* rows in stables you own (Top sires / dams / broodmare sires) */
+table.data tr.own td:first-child { box-shadow: inset 3px 0 0 #d4a72c; }
+table.data.wide tr.own td:first-child { background: #fff6dc; box-shadow: inset 3px 0 0 #d4a72c, 1px 0 0 var(--line); }
+table.data tbody tr.own:hover td { background: #fbeec4; }
+.own-key { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-sm); color: #6b7385; }
+.own-key i { width: 14px; height: 14px; border-radius: 3px; background: #fff6dc; box-shadow: inset 3px 0 0 #d4a72c, 0 0 0 1px #ecd9a4; }
