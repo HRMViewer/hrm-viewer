@@ -8,6 +8,7 @@ next to this file. Loading a new database replaces it.
 """
 
 import argparse
+import bisect
 import calendar
 import datetime
 import json
@@ -1736,7 +1737,7 @@ def api_horses(con, q):
     if q.get("stable"):
         where.append("h.horse_stable_id=?")
         params.append(to_int(q["stable"]))
-    notes_filter(where, q)
+    notes_filter(where, q, con=con)
     sort, d = sort_args(q, HORSE_SORTS, "earnings")
     page, off = page_args(q)
     w = (" where " + " and ".join(where)) if where else ""
@@ -1747,6 +1748,9 @@ def api_horses(con, q):
         h.horse_stable_id as stable_id, s.stable_name as stable_name
         from horses h left join stables s on s.stable_stable_id=h.horse_stable_id""" + w +
                 " order by %s limit %d offset %d" % (order_sql(sort, d), page_size(), off), params)
+    auto = horse_auto(con, [r["id"] for r in data])
+    for r in data:
+        r["auto"] = auto.get(r["id"])
     return {"total": total, "page": page, "page_size": page_size(), "rows": data}
 
 
@@ -3727,6 +3731,7 @@ def gwins(alias_h, alias_s, g):
 # --------------------------------------------------------------------------- Horse table tab
 
 HT_SORTS = {
+    "fans": "coalesce(fans,0)", "sponsor_pay": "coalesce(sponsor_pay,0)",
     "name": "h.horse_name", "gender": "h.horse_gender", "birth": "h.horse_birth_date", "stable": "st.stable_name",
     "sire": "sp.horse_name", "dam": "dp.horse_name", "rating": "h.horse_international_rating", "peak": "h.horse_peak_rating",
     "starts": "coalesce(s.starts,0)", "wins": "coalesce(s.wins,0)", "seconds": "coalesce(s.seconds,0)", "thirds": "coalesce(s.thirds,0)",
@@ -3761,13 +3766,22 @@ def horse_table_query(con, q):
         where.append("h.horse_birth_date<=?"); params.append(gd - to_int(q["agemin"], 0) * YEAR)
     if q.get("agemax") not in (None, ""):
         where.append("h.horse_birth_date>?"); params.append(gd - (to_int(q["agemax"], 0) + 1) * YEAR)
-    notes_filter(where, q)
+    notes_filter(where, q, con=con)
     if q.get("stakes") == "1":
         where.append("(coalesce(s.stakes_wins,0)>0 or coalesce(h.horse_g1_wins,0)+coalesce(h.horse_g2_wins,0)+coalesce(h.horse_g3_wins,0)+coalesce(h.horse_listed_wins,0)>0)")
     base = """from horses h left join hrmv_horse_stats s on s.horse_id=h.horse_horse_id
         left join stables st on st.stable_stable_id=h.horse_stable_id
         left join horses sp on sp.horse_horse_id=h.horse_breeding_parent_stallion_id
         left join horses dp on dp.horse_horse_id=h.horse_breeding_parent_mare_id"""
+    hc = set(columns(con, "horses"))
+    fan_sel = "cast(round(h.horse_fame_calculated) as integer) as fans, h.horse_fan_band_notified as fan_band" if {"horse_fame_calculated", "horse_fan_band_notified"} <= hc else "null as fans, 0 as fan_band"
+    if has_table(con, "horse_sponsors"):      # the sponsor it has now (one at a time)
+        base += """ left join horse_sponsors hs on hs.sponsor_id=(select x.sponsor_id from horse_sponsors x where x.sponsor_horse_id=h.horse_horse_id
+            and x.sponsor_contract_start_date<=%r and (x.sponsor_contract_end_date is null or x.sponsor_contract_end_date>%r) limit 1)""" % (float(gd), float(gd))
+        sp_sel = "hs.sponsor_brand_name as sponsor, hs.sponsor_monthly_payment as sponsor_pay"
+    else:
+        base += " left join (select null as sponsor_id, null as sponsor_monthly_payment) hs on 0"
+        sp_sel = "null as sponsor, null as sponsor_pay"
     w = (" where " + " and ".join(where)) if where else ""
     sel = """select h.horse_horse_id as id, h.horse_name as name, h.horse_gender as gender, h.horse_birth_date as birth,
         h.horse_deceased_date as died, h.horse_stable_id as stable_id, st.stable_name as stable,
@@ -3776,7 +3790,7 @@ def horse_table_query(con, q):
         coalesce(s.seconds,0) as seconds, coalesce(s.thirds,0) as thirds, %s as g1, %s as g2, %s as g3, %s as listed,
         h.horse_career_earnings as earnings, h.horse_value_calculated as value, h.horse_form as form, s.last_run as last_run,
         h.horse_distance_preference as distance_pref, h.horse_condition as condition, h.horse_breeding_ability as breeding,
-        h.horse_color as color, h.horse_breed as breed """ % (gwins("h", "s", "g1"), gwins("h", "s", "g2"), gwins("h", "s", "g3"), gwins("h", "s", "listed"))
+        h.horse_color as color, h.horse_breed as breed, %s, %s """ % (gwins("h", "s", "g1"), gwins("h", "s", "g2"), gwins("h", "s", "g3"), gwins("h", "s", "listed"), fan_sel, sp_sel)
     sort, d = sort_args(q, HT_SORTS, "earnings")
     order = " order by " + order_sql(sort, d)
     # the other joins are one-to-one, so the count only needs the ones the filters use
@@ -3791,6 +3805,9 @@ def api_horse_table(con, q):
     size = getattr(PAGE_LOCAL, "size", None) or 100
     total = count_rows(con, count_sql, params)
     data = rows(con, sql + " limit %d offset %d" % (size, (page - 1) * size), params)
+    auto = horse_auto(con, [r["id"] for r in data])
+    for r in data:
+        r["auto"] = auto.get(r["id"])
     return {"total": total, "page": page, "page_size": size, "rows": data}
 
 
@@ -4732,6 +4749,7 @@ ROUTES = [
     (re.compile(r"^/api/family/(-?\d+)$"), lambda con, m, q: api_family(con, int(m.group(1)))),
     (re.compile(r"^/api/dynasty/(-?\d+)$"), lambda con, m, q: api_dynasty(con, int(m.group(1)))),
     (re.compile(r"^/api/lifespans/(-?\d+)$"), lambda con, m, q: api_lifespans(con, int(m.group(1)))),
+    (re.compile(r"^/api/horse_fans/(-?\d+)$"), lambda con, m, q: api_horse_fans(con, int(m.group(1)))),
     (re.compile(r"^/api/notes$"), lambda con, m, q: notes_detail(con) if q.get("detail") else notes_load()),
     (re.compile(r"^/api/people_overview$"), lambda con, m, q: api_people_overview(con, q)),
     (re.compile(r"^/api/people$"), lambda con, m, q: api_people(con, q)),
@@ -4762,6 +4780,133 @@ MIME = {".json": "application/json; charset=utf-8", ".html": "text/html; charset
 # ------------------------------------------------------------------ horse photos (a gallery per horse, kept with each database)
 IMG_MAX = 25 * 1024 * 1024
 IMG_LOCK = threading.Lock()
+
+
+# ------------------------------------------------------------------ fans, fan milestones and sponsors (15.7)
+# The save keeps each horse's fans (horse_fame_calculated) and the best fan ranking it has reached (horse_fan_band_notified:
+# 100, 50, 20, 10 or 1). Your inbox shows what each step brings: a fan website or fan page (top 100), a supporters' club
+# (top 50), the fan club's away trips (top 20) and superfans (top 10).
+FAN_LEVELS = [(100, "Fan website", "Fans have built a website or fan page about it (top 100 by fans)"),
+              (50, "Supporters' club", "It has a supporters' club (top 50 by fans)"),
+              (20, "Fan club trips", "Its fan club travels to away races (top 20 by fans)"),
+              (10, "Superfans", "Superfans: tattoos and the like (top 10 by fans)"),
+              (1, "No. 1 by fans", "The most popular horse in the world")]
+FAN_INBOX = {215: "merch", 301: "website", 302: "club", 303: "trips", 304: "superfans", 305: "fans"}
+FAN_CACHE = {}
+
+
+def fan_label(band):
+    """The highest fan step a horse has reached (band 100, 50, 20, 10 or 1)."""
+    if not band or band <= 0:
+        return None
+    best = None
+    for b, l, _ in FAN_LEVELS:
+        if band <= b:
+            best = l
+    return best
+
+
+def fan_rankings(con):
+    """Fans of every living horse, most first (for a horse's world rank by fans). Kept for the loaded save."""
+    k = (DB_GEN, "fans")
+    if k not in FAN_CACHE:
+        for x in [x for x in FAN_CACHE if x[0] != DB_GEN]:
+            FAN_CACHE.pop(x, None)
+        hc = set(columns(con, "horses"))
+        FAN_CACHE[k] = sorted(r[0] for r in con.execute("select horse_fame_calculated from horses where horse_deceased_date is null and horse_fame_calculated > 0")) \
+            if "horse_fame_calculated" in hc else []
+    return FAN_CACHE[k]
+
+
+def fan_inbox(con):
+    """Your inbox's fan and merchandise messages, by horse: {horse: [{date, kind, subject, fans, rank, payout, cost}]}."""
+    k = (DB_GEN, "inbox")
+    if k not in FAN_CACHE:
+        for x in [x for x in FAN_CACHE if x[0] != DB_GEN]:
+            FAN_CACHE.pop(x, None)
+        out = {}
+        if has_table(con, "inbox"):
+            ic = set(columns(con, "inbox"))
+            rp = "inbox_player_replied" if "inbox_player_replied" in ic else "0"
+            for t, d, subj, rel, replied in con.execute("select inbox_type, inbox_date, inbox_subject, inbox_related_ids, " + rp + " from inbox where inbox_type in (%s) order by inbox_date"
+                                               % ",".join(str(x) for x in FAN_INBOX)):
+                try:
+                    j = json.loads(rel or "{}")
+                except ValueError:
+                    continue
+                hid = to_int(j.get("horse_1"), None) if isinstance(j, dict) else None
+                if not hid:
+                    continue
+                o = j.get("overrides") or {}
+                h1 = o.get("horse_1") or {}
+                out.setdefault(hid, []).append({"date": d, "kind": FAN_INBOX[t], "subject": subj, "fans": h1.get("fans"), "rank": to_int(h1.get("rank"), None),
+                                                "payout": o.get("payout_raw"), "cost": h1.get("bus_cost_raw") if t == 303 else None,
+                                                "replied": bool(replied)})
+        FAN_CACHE[k] = out
+    return FAN_CACHE[k]
+
+
+def horse_auto(con, ids):
+    """What the save says about these horses' fans and sponsors, for the horse lists: {id: {fans, band, level, sponsor, pay, merch}}."""
+    ids = [i for i in ids if i]
+    out = {}
+    if not ids:
+        return out
+    hc = set(columns(con, "horses"))
+    gd = META.get("game_date") or time.time()
+    mk = ",".join("?" * len(ids))
+    if "horse_fame_calculated" in hc:
+        for i, f, b in con.execute("select horse_horse_id, horse_fame_calculated, %s from horses where horse_horse_id in (%s)"
+                                   % ("horse_fan_band_notified" if "horse_fan_band_notified" in hc else "0", mk), ids):
+            out[i] = {"fans": f, "band": b or 0, "level": fan_label(b or 0)}
+    if has_table(con, "horse_sponsors"):
+        for i, brand, pay in con.execute("""select sponsor_horse_id, sponsor_brand_name, sponsor_monthly_payment from horse_sponsors where sponsor_horse_id in (%s)
+                and sponsor_contract_start_date<=? and (sponsor_contract_end_date is null or sponsor_contract_end_date>?)""" % mk, ids + [gd, gd]):
+            out.setdefault(i, {}).update(sponsor=brand, pay=pay)
+    inbox = fan_inbox(con)
+    for i in ids:
+        if any(m["kind"] == "merch" for m in inbox.get(i, [])):
+            out.setdefault(i, {})["merch"] = True
+    return out
+
+
+def auto_filter(con, tag, where, col="h.horse_horse_id"):
+    """The automatic tags in the horse lists' tag filter."""
+    gd = float(META.get("game_date") or time.time())
+    if tag == "auto:sponsored" and has_table(con, "horse_sponsors"):
+        where.append("%s in (select sponsor_horse_id from horse_sponsors where sponsor_contract_start_date<=%r and (sponsor_contract_end_date is null or sponsor_contract_end_date>%r))" % (col, gd, gd))
+    elif tag in ("auto:website", "auto:club", "auto:trips", "auto:superfans") and "horse_fan_band_notified" in columns(con, "horses"):
+        top = {"auto:website": 100, "auto:club": 50, "auto:trips": 20, "auto:superfans": 10}[tag]
+        where.append("coalesce(h.horse_fan_band_notified,0) between 1 and %d" % top)
+    elif tag == "auto:merch":
+        ids = [i for i, ms in fan_inbox(con).items() if any(m["kind"] == "merch" for m in ms)]
+        where.append("%s in (%s)" % (col, ",".join(map(str, ids))) if ids else "0=1")
+    else:
+        where.append("0=1")
+
+
+def api_horse_fans(con, hid):
+    """A horse's Fans, sponsors & notes tab."""
+    hc = set(columns(con, "horses"))
+    h = one(con, "select horse_horse_id as id, horse_name as name, horse_deceased_date as died, %s as fans, %s as band from horses where horse_horse_id=?"
+            % ("horse_fame_calculated" if "horse_fame_calculated" in hc else "null", "horse_fan_band_notified" if "horse_fan_band_notified" in hc else "0"), (hid,))
+    if not h:
+        return None
+    ranks = fan_rankings(con)
+    h["rank"] = None
+    if h["fans"] and not h["died"] and ranks:
+        h["rank"] = len(ranks) - bisect.bisect_right(ranks, h["fans"]) + 1
+    h["of"] = len(ranks)
+    h["level"] = fan_label(h["band"] or 0)
+    h["levels"] = [{"top": b, "label": l, "about": a, "reached": bool(h["band"]) and h["band"] <= b} for b, l, a in FAN_LEVELS]
+    gd = META.get("game_date") or time.time()
+    h["sponsors"] = rows(con, """select sponsor_brand_name as brand, sponsor_industry as industry, sponsor_monthly_payment as monthly, sponsor_contract_start_date as start,
+            sponsor_contract_end_date as end, sponsor_win_bonus_multiplier as bonus, sponsor_total_payments_made as paid, sponsor_wins_during_contract as wins,
+            sponsor_offer_date as offered from horse_sponsors where sponsor_horse_id=? order by sponsor_contract_start_date desc""", (hid,)) if has_table(con, "horse_sponsors") else []
+    for r in h["sponsors"]:
+        r["current"] = bool(r["start"] and r["start"] <= gd and (not r["end"] or r["end"] > gd))
+    h["inbox"] = fan_inbox(con).get(hid, [])
+    return h
 
 
 # ------------------------------------------------------------------ your own notes and tags (15.7)
@@ -4805,9 +4950,11 @@ def notes_ids(kind, tag):
     return out
 
 
-def notes_filter(where, q, col="h.horse_horse_id"):
+def notes_filter(where, q, col="h.horse_horse_id", con=None):
     tag = str(q.get("tag") or "")
-    if tag:
+    if tag.startswith("auto:"):
+        auto_filter(con, tag, where, col)
+    elif tag:
         ids = notes_ids("horse", tag)
         where.append("%s in (%s)" % (col, ",".join(map(str, ids))) if ids else "0=1")
 

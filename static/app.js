@@ -702,7 +702,7 @@ function hashFor(parts, q = {}) {
 function go(parts, q) { location.hash = hashFor(parts, q); }
 
 const PAGES = {
-  "": homePage, horses: horsesPage, notes: Object.assign((r) => notesPage(r), { after: () => notesPage.after() }), horse: (r) => (r.parts[2] === "awards" ? entityAwardsPage("horse", r) : horsePage(r.parts[1])), races: racesPage, race: Object.assign((r) => racePage(r.parts[1]), { after: () => {
+  "": homePage, horses: horsesPage, notes: Object.assign((r) => notesPage(r), { after: () => notesPage.after() }), horse: (r) => (r.parts[2] === "awards" ? entityAwardsPage("horse", r) : r.parts[2] === "fans" ? horseFansPage(r.parts[1]) : horsePage(r.parts[1])), races: racesPage, race: Object.assign((r) => racePage(r.parts[1]), { after: () => {
     $$("[data-openall]", APP).forEach((b) => b.addEventListener("click", () => {
       const open = b.textContent.startsWith("Open");
       $$(".rtoggle", APP).forEach((t) => { if (t.classList.contains("open") !== open) t.click(); });
@@ -2004,6 +2004,10 @@ const TAG_ICONS = {
   bag: '<path d="M3 5.5h10l-.8 8H3.8z"/><path d="M5.5 5.5V4a2.5 2.5 0 0 1 5 0v1.5"/>',
   tag: '<path d="M2.5 2.5h5l6 6-5 5-6-6z"/><circle cx="5.3" cy="5.3" r=".9"/>',
   note: '<path d="M3.5 2.5h6l3 3v8h-9z"/><path d="M9.5 2.5v3h3M5.5 8.5h5M5.5 11h3.5"/>',
+  trophy: '<path d="M5 2.5h6v3.5a3 3 0 0 1-6 0z"/><path d="M5 3.5H2.8a2.2 2.2 0 0 0 2.4 2.9M11 3.5h2.2a2.2 2.2 0 0 1-2.4 2.9M8 9v2.5M5.5 13.5h5l-.6-2h-3.8z"/>',
+  heart: '<path d="M8 13.2S2.5 10 2.5 6.2A2.8 2.8 0 0 1 8 5a2.8 2.8 0 0 1 5.5 1.2C13.5 10 8 13.2 8 13.2z"/>',
+  bus: '<rect x="2.5" y="3" width="11" height="8.5" rx="1.5"/><path d="M2.5 7.5h11M5 11.5v1.5M11 11.5v1.5"/><circle cx="5" cy="9.5" r=".5"/><circle cx="11" cy="9.5" r=".5"/>',
+  badge: '<circle cx="8" cy="6" r="3.5"/><path d="M5.8 8.8 5 14l3-1.5 3 1.5-.8-5.2"/>',
 };
 const tagIc = (k) => `<svg class="fic" viewBox="0 0 16 16" aria-hidden="true">${TAG_ICONS[k] || TAG_ICONS.tag}</svg>`;
 const tagChip = (t) => `<span class="tg ${t.color || "grey"}">${tagIc(t.icon || "tag")}${esc(t.name)}</span>`;
@@ -2013,7 +2017,7 @@ function horseTagsHtml(id, withNote = true) {
   if (!it) return "";
   const chips = (it.tags || []).map(tagById).filter(Boolean).map(tagChip).join("");
   const txt = (it.note || "").trim();
-  const note = withNote && txt ? `<a class="tg-note" href="#/horse/${id}" data-tip="${esc(txt.slice(0, 240))}${txt.length > 240 ? "…" : ""}" aria-label="Your note">${tagIc("note")}</a>` : "";
+  const note = withNote && txt ? `<a class="tg-note" href="#/horse/${id}/fans" data-tip="${esc(txt.slice(0, 240))}${txt.length > 240 ? "…" : ""}" aria-label="Your note">${tagIc("note")}</a>` : "";
   return chips || note ? `<span class="tgs">${chips}${note}</span>` : "";
 }
 async function notesPost(path, body) {
@@ -2033,8 +2037,27 @@ async function saveTagList(tags) {
   await loadNotes();
   return j;
 }
-const tagFilterOpts = () => [["", "Any tags"], ["_any", "Tagged"], ["_notes", "With notes"]].concat(NOTES.tags.map((t) => [t.id, t.name]));
-// the panel on a horse's Overview
+const tagFilterOpts = () => [["", "Any tags"], ["_any", "Tagged by you"], ["_notes", "With your notes"]].concat(NOTES.tags.map((t) => [t.id, t.name]), AUTO_TAG_OPTS);
+// automatic tags, from what the save itself records about a horse's fans and sponsor
+const AUTO_TAG_OPTS = [["auto:sponsored", "Auto: Sponsored now"], ["auto:website", "Auto: Fan website (top 100)"], ["auto:club", "Auto: Supporters' club (top 50)"],
+  ["auto:trips", "Auto: Fan club trips (top 20)"], ["auto:superfans", "Auto: Superfans (top 10)"], ["auto:merch", "Auto: Merchandise deal"]];
+const FAN_STEPS = [[1, "No. 1 by fans", "trophy", "superfans"], [10, "Superfans", "heart", "superfans"], [20, "Fan club trips", "bus", "trips"], [50, "Supporters' club", "users", "club"], [100, "Fan website", "globe", "website"]];
+const fanStep = (band) => (band > 0 ? FAN_STEPS.find(([b]) => band <= b) || null : null);
+function fShortN(n) {
+  if (!isNum(n)) return "—";
+  const a = Math.abs(n);
+  return a >= 1e6 ? (n / 1e6).toFixed(a >= 1e7 ? 1 : 2).replace(/\.?0+$/, "") + "M" : a >= 1e4 ? Math.round(n / 1e3) + "k" : fNum(n, 0);
+}
+// the automatic chips (outlined, so they read differently from your own tags)
+function autoTagsHtml(a) {
+  if (!a) return "";
+  const st = fanStep(a.band), out = [];
+  if (st) out.push(`<span class="tg auto fan" data-tip="Best fan ranking reached: top ${st[0]} in the world · ${fShortN(a.fans)} fans now">${tagIc(st[2])}${esc(st[1])}</span>`);
+  if (a.sponsor) out.push(`<span class="tg auto spon" data-tip="Sponsored by ${esc(a.sponsor)}${isNum(a.pay) ? " · " + fMoneyShort(a.pay) + " a month" : ""}">${tagIc("badge")}Sponsored</span>`);
+  if (a.merch) out.push(`<span class="tg auto merch" data-tip="Offered a merchandise deal (from your inbox)">${tagIc("bag")}Merch</span>`);
+  return out.length ? `<span class="tgs">${out.join("")}</span>` : "";
+}
+// the panel on a horse's Fans, sponsors & notes tab
 function horseNotesPanel(id) {
   const it = noteOf(id) || {}, on = new Set(it.tags || []);
   const chips = NOTES.tags.map((t) => `<button class="tg-tog ${t.color || "grey"}${on.has(t.id) ? " on" : ""}" data-hn-tag="${esc(t.id)}" aria-pressed="${on.has(t.id)}">${tagIc(t.icon || "tag")}${esc(t.name)}</button>`).join("");
@@ -2122,7 +2145,7 @@ async function notesPage(route) {
       <button class="btn sm" data-nt-del="${i}">Delete</button></div>`).join("");
   html += panel("Your tags", `<div class="nt-list">${tagRows || '<div class="empty">No tags yet.</div>'}</div>
     <div class="nt-add"><input type="text" id="nt-new" maxlength="40" placeholder="New tag, e.g. Social media" aria-label="New tag name"><button class="btn" id="nt-add">Add tag</button><span class="small muted" id="nt-state"></span></div>`,
-    "Rename one by typing over it · tick a horse's tags on its Overview");
+    "Rename one by typing over it · tick a horse's tags on its Fans, sponsors & notes tab");
   // the horses
   const text = (q.q || "").trim().toLowerCase(), tag = q.tag || "";
   const list = Object.entries(NOTES.items).filter(([k]) => k.startsWith("horse:")).map(([k, it]) => ({ id: +k.slice(6), ...it, ...(horses[+k.slice(6)] || {}) }))
@@ -2135,7 +2158,7 @@ async function notesPage(route) {
     { h: "Note", cls: "nt-note", f: (r) => ((r.note || "").trim() ? esc(r.note.trim().slice(0, 220)) + (r.note.trim().length > 220 ? "…" : "") : '<span class="muted">—</span>') },
     { h: "Stable", f: (r) => (r.stable_id ? L.stable(r.stable_id, r.stable) : '<span class="muted">—</span>') },
     { h: "Changed", cls: "num nowrap", f: (r) => (r.updated ? fDate(r.updated) : "—") },
-  ], list, { empty: Object.keys(NOTES.items).length ? "No horses match." : "No notes or tags yet. Open any horse and use “Your notes & tags” on its Overview." }))}</div>`;
+  ], list, { empty: Object.keys(NOTES.items).length ? "No horses match." : "No notes or tags yet. Open any horse and use “Your notes & tags” on its Fans, sponsors & notes tab." }))}</div>`;
   return html;
 }
 notesPage.after = () => {
@@ -2167,7 +2190,7 @@ async function horsesPage(route) {
     filters: (q) => searchBox(q, "Search horses") + statusSeg("horse", q, "alive") +
       select("gender", q, [["", "Any sex"], ["Colt", "Colts"], ["Filly", "Fillies"], ["Stallion", "Stallions"], ["Mare", "Mares"], ["Gelding", "Geldings"]]) + select("tag", q, tagFilterOpts()),
     cols: [
-      { h: "Name", sort: "name", f: (r) => `${horseThumb(r.id)}${L.horse(r.id, r.name)}${r.died ? ' <span class="badge dead">Dead</span>' : ""}${horseTagsHtml(r.id)}` },
+      { h: "Name", sort: "name", f: (r) => `${horseThumb(r.id)}${L.horse(r.id, r.name)}${r.died ? ' <span class="badge dead">Dead</span>' : ""}${horseTagsHtml(r.id)}${autoTagsHtml(r.auto)}` },
       { h: "Sex", f: (r) => esc(r.gender) },
       { h: "Age", cls: "num", sort: "birth", f: (r) => fNum(age(r.birth, r.died)) },
       { h: "Stable", f: (r) => L.stable(r.stable_id, r.stable_name) },
@@ -2194,7 +2217,60 @@ function horseHead(d, on) {
     · Foaled ${fDate(h.horse_birth_date)}${dead ? ` · Died ${fDate(h.horse_deceased_date)} ${esc(h.horse_death_cause || "")}` : ""}
     ${d.stable ? ` · ${L.stable(d.stable.id, d.stable.name)}` : ""}</div>${removedNote(d)}</div></div>
     <div style="display:flex;gap:8px"><button class="btn" data-gallery="${h.horse_horse_id}" data-gname="${esc(h.horse_name)}">${ICON_PHOTO}${pic ? "Gallery" : "Add photos"}</button></div></div>
-    <div class="subtabs"><a href="#/horse/${id}" class="${on === "overview" ? "on" : ""}">Overview</a><a href="#/horse/${id}/awards" class="${on === "awards" ? "on" : ""}">Awards${(d.awards || []).length ? ` <span class="tab-n">${fNum(d.awards.length)}</span>` : ""}</a></div>`;
+    <div class="subtabs"><a href="#/horse/${id}" class="${on === "overview" ? "on" : ""}">Overview</a><a href="#/horse/${id}/awards" class="${on === "awards" ? "on" : ""}">Awards${(d.awards || []).length ? ` <span class="tab-n">${fNum(d.awards.length)}</span>` : ""}</a><a href="#/horse/${id}/fans" class="${on === "fans" ? "on" : ""}">Fans, sponsors &amp; notes</a></div>`;
+}
+// a horse's Fans, sponsors & notes tab: what the save records about its fans and sponsors, and your own notes and tags
+const FAN_KIND = { website: ["Fan website", "globe"], club: ["Supporters' club", "users"], trips: ["Fan club trip", "bus"], superfans: ["Superfans", "heart"], fans: ["Fans", "users"], merch: ["Merchandise deal", "bag"] };
+async function horseFansPage(id) {
+  const [d, f] = await Promise.all([api("horse/" + id), api("horse_fans/" + id)]);
+  let html = horseHead(d, "fans");
+  const sp = f.sponsors || [], now = sp.find((x) => x.current), inbox = f.inbox || [];
+  const merch = inbox.filter((m) => m.kind === "merch"), merchSum = merch.reduce((a, m) => a + (+m.payout || 0), 0);
+  const paid = sp.reduce((a, x) => a + (x.paid || 0), 0);
+  const st = fanStep(f.band);
+  html += tiles([
+    ["Fans", fShortN(f.fans), f.died ? "When it died" : "Now"],
+    ["World rank by fans", f.died ? "—" : isNum(f.rank) ? "#" + fNum(f.rank) : "—", f.died ? "Living horses only" : `of ${fNum(f.of)} living horses with fans`],
+    ["Fan level", st ? esc(st[1]) : "—", st ? `Best reached: top ${st[0]}` : "Not yet in the top 100"],
+    ["Sponsor now", now ? esc(now.brand) : "None", now ? `${fMoneyShort(now.monthly)} a month · ${esc(now.industry || "")}` : sp.length ? `${fNum(sp.length)} in the past` : ""],
+    ["Sponsorship paid", fMoneyShort(paid), `${fNum(sp.length)} sponsor${sp.length === 1 ? "" : "s"} in all`],
+    merch.length ? ["Merchandise offers", fNum(merch.length), merchSum ? fMoneyShort(merchSum) + " offered in all" : ""] : null,
+  ]);
+  // the fan steps, as a ladder
+  const ladder = (f.levels || []).slice().map((l) => {
+    const ic = (FAN_STEPS.find((x) => x[0] === l.top) || [])[2];
+    const msg = inbox.find((m) => ({ 100: "website", 50: "club", 20: "trips", 10: "superfans" })[l.top] === m.kind);
+    return `<li class="fl-step${l.reached ? " on" : ""}"><span class="fl-dot">${tagIc(ic)}</span><div><b>${esc(l.label)}</b> <span class="muted small">top ${l.top}</span>
+      <div class="small muted">${esc(l.about.replace(/ \(top \d+ by fans\)$/, ""))}${msg ? ` · <span class="fl-when">${fDate(msg.date)}</span>` : ""}</div></div></li>`;
+  }).join("");
+  const ladderPanel = panel("Fan milestones", `<ol class="fl">${ladder}</ol>
+    <p class="small muted fl-foot">The save keeps the best world fan ranking each horse has reached, so this works for every horse. For your own horses, the dates come from your inbox.</p>`,
+    st ? `Reached top ${st[0]}` : "Not reached yet");
+  html += `<div class="grid cols-2 hf-top">${ladderPanel}${horseNotesPanel(f.id)}</div>`;
+  // sponsors
+  html += `<div style="margin-top:16px">${panel(`Sponsors <span class="muted small">${fNum(sp.length)}</span>`, table([
+    { h: "Sponsor", f: (r) => `<b>${esc(r.brand)}</b>${r.current ? ' <span class="badge good">Now</span>' : ""}` },
+    { h: "Industry", f: (r) => esc(r.industry || "—") },
+    { h: "A month", cls: "num", f: (r) => fMoney(r.monthly) },
+    { h: "Win bonus", cls: "num", f: (r) => (isNum(r.bonus) ? fNum(r.bonus * 100, 0) + "%" : "—") },
+    { h: "From", cls: "num nowrap", f: (r) => fDate(r.start) },
+    { h: "To", cls: "num nowrap", f: (r) => (r.current ? `<span class="muted">${fDate(r.end)}</span>` : fDate(r.end)) },
+    { h: "Wins in contract", cls: "num", f: (r) => fNum(r.wins) },
+    { h: "Paid", cls: "num", f: (r) => `<b>${fMoney(r.paid)}</b>` },
+  ], sp, { empty: "No sponsors yet." }), "Brand deals: a monthly payment, plus a bonus for wins")}</div>`;
+  // the player's inbox
+  if (inbox.length || d.stable && d.stable.id === ((STATUS && STATUS.meta) || {}).player_stable_id) {
+    html += `<div style="margin-top:16px">${panel("From your inbox", table([
+      { h: "Date", cls: "nowrap", f: (r) => fDate(r.date) },
+      { h: "What", f: (r) => { const k = FAN_KIND[r.kind] || [r.kind, "tag"]; return `<span class="tg auto">${tagIc(k[1])}${esc(k[0])}</span>`; } },
+      { h: "Message", f: (r) => esc(r.subject || "") },
+      { h: "Fans then", cls: "num", f: (r) => esc(r.fans || "—") },
+      { h: "Rank then", cls: "num", f: (r) => (isNum(r.rank) ? "#" + fNum(r.rank) : "—") },
+      { h: "Money", cls: "num", f: (r) => (isNum(+r.payout) && r.payout ? `${fMoney(+r.payout)} <span class="muted small">offered</span>` : isNum(r.cost) && r.cost ? `${fMoney(r.cost)} <span class="muted small">asked</span>` : "—") },
+      { h: "Replied", f: (r) => (r.replied ? "Yes" : '<span class="muted">No</span>') },
+    ], inbox.slice().reverse(), { empty: "No fan or merchandise messages about this horse." }), "Fan and merchandise messages about this horse")}</div>`;
+  }
+  return html;
 }
 async function horsePage(id) {
   const d = await api("horse/" + id);
@@ -2210,7 +2286,6 @@ async function horsePage(id) {
     ["Value", fMoneyShort(h.horse_value_calculated)],
     ["Form", esc(h.horse_form || "—"), `Condition ${fNum(h.horse_condition)}%`],
   ]);
-  html += horseNotesPanel(h.horse_horse_id);
 
   const ped = (x, role, cls = "") => `<div class="p ${cls}"><div class="r">${role}</div>${x ? L.horse(x.id, x.name) : '<span class="muted">Unknown</span>'}</div>`;
   const gp = d.grandparents || {};
@@ -4921,7 +4996,7 @@ async function horseTablePage(route) {
       rangeBox("Age", `<input type="number" min="0" data-q="agemin" value="${esc(q.agemin || "")}" placeholder="any" aria-label="Youngest age">`,
         `<input type="number" min="0" data-q="agemax" value="${esc(q.agemax || "")}" placeholder="any" aria-label="Oldest age">`) + chip,
     cols: [
-      { h: "Horse", sort: "name", f: (r) => `${horseThumb(r.id)}${L.horse(r.id, r.name)}${horseTagsHtml(r.id)}` },
+      { h: "Horse", sort: "name", f: (r) => `${horseThumb(r.id)}${L.horse(r.id, r.name)}${horseTagsHtml(r.id)}${autoTagsHtml(r.auto)}` },
       { h: "Sex", sort: "gender", f: (r) => esc(r.gender) },
       { h: "Age", sort: "birth", cls: "num", f: (r) => fNum(age(r.birth, r.died)) },
       { h: "Stable", sort: "stable", f: (r) => L.stable(r.stable_id, r.stable) },
@@ -4945,6 +5020,9 @@ async function horseTablePage(route) {
       { h: "Distance", cls: "grp-start", f: (r) => esc({ S: "Sprint", M: "Mile", I: "Intermediate", L: "Long", E: "Extended" }[r.distance_pref] || r.distance_pref || "—") },
       { h: "Condition", sort: "condition", cls: "num", f: (r) => (isNum(r.condition) ? fNum(r.condition) + "%" : "—") },
       { h: "Breeding ability", sort: "breeding", cls: "num", f: (r) => fNum(r.breeding, 1) },
+      { h: "Fans", sort: "fans", cls: "num grp-start", f: (r) => fShortN(r.fans) },
+      { h: `<span data-tip="Best world fan ranking it has reached: Fan website (top 100), Supporters' club (top 50), Fan club trips (top 20), Superfans (top 10), No. 1">Fan level</span>`, f: (r) => { const st = fanStep(r.fan_band); return st ? esc(st[1]) : '<span class="muted">—</span>'; } },
+      { h: "Sponsor", sort: "sponsor_pay", f: (r) => (r.sponsor ? `${esc(r.sponsor)} <span class="muted small">${fMoneyShort(r.sponsor_pay)}/mo</span>` : '<span class="muted">—</span>') },
       { h: "Colour", f: (r) => esc(r.color || "") },
     ],
   }, route);

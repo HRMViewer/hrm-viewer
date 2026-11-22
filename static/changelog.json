@@ -2,11 +2,14 @@
   {
     "version": "15.7",
     "date": "2026-11-22",
-    "title": "Notes and tags on horses",
+    "title": "Fans, sponsors and notes on horses",
     "changes": [
-      "New: your own notes and tags on any horse. The game doesn't record things like a horse's website or fan club, so now you can mark them yourself.",
-      "On a horse's Overview, Your notes & tags has a button for each tag: Website, Fan club and Merchandise to start, plus any you add. Click one to tick or untick it, type a name in New tag to make your own, and write anything in the notes box: it saves as you type.",
-      "Tags show beside the horse's name on every tab of its page, and in All horses and the Horse table, with a note icon you can point at to read your note. A new tag filter on both pages shows only horses with a given tag, horses with notes, or anything you've tagged.",
+      "New tab on every horse's page: Fans, sponsors & notes. Tiles show its fans, its world rank by fans among living horses, its fan level, its sponsor now and everything its sponsors have paid (and any merchandise offers for your horses).",
+      "Fan milestones: the save keeps the best world fan ranking each horse has reached, so every horse now shows how far it has climbed: Fan website (top 100 by fans), Supporters' club (top 50), Fan club trips (top 20), Superfans (top 10) and No. 1. For your own horses each step has the date from your inbox.",
+      "Sponsors: every sponsor the horse has had, with the industry, monthly payment, win bonus, contract dates, wins during the contract and total paid. From your inbox (your horses): the website, supporters' club, fan club trip, superfan and merchandise messages about it, with the fans and rank at the time and the money offered or asked for.",
+      "New: your own notes and tags on any horse, in Your notes & tags on that tab. Click a tag to tick or untick it (Website, Fan club and Merchandise to start), type a name in New tag to make your own, and write anything in the notes box: it saves as you type. Your tags show beside the horse's name on every tab of its page and in the horse lists, with a note icon you can point at to read your note.",
+      "Automatic tags in All horses and the Horse table: outlined chips for each horse's fan level, Sponsored if it has a sponsor now, and Merch if you've been offered a merchandise deal for it. The tag filter has them (Auto: …) alongside your own tags, Tagged by you and With your notes.",
+      "Horse table: new Fans, Fan level and Sponsor columns. Sort by fans or by monthly sponsorship; they're in the CSV export too.",
       "New Horses → Notes & tags page (also in the Horses side menu): every horse you've tagged or written about, newest change first, with a search across names and notes. Rename, recolour, add and delete tags there; deleting a tag takes it off every horse (it asks first).",
       "Only you see your notes and tags. They're kept with the database (next to its data, not in the game), so they stay when you load a newer save into it, and move with it when an old-layout database is converted."
     ]

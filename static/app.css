@@ -1282,3 +1282,22 @@ h1 .hn-head:empty { display: none; }
 .nt-add { display: flex; gap: 8px; align-items: center; margin-top: 12px; flex-wrap: wrap; }
 #nt-new { height: var(--ctl-h); width: 260px; padding: 0 10px; border: 1px solid var(--ctl-line, var(--line)); border-radius: 6px; font: inherit; background: var(--panel); color: inherit; }
 td.nt-note { white-space: normal; min-width: 260px; max-width: 520px; color: #3f4859; }
+
+/* 15.7 fans, sponsors & notes tab and automatic tags */
+.tg.auto { background: transparent; border: 1px solid #c9ced8; color: #4a5466; padding: 0 7px 0 5px; }
+.tg.auto.fan { border-color: #d9b46a; color: #7a560c; }
+.tg.auto.spon { border-color: #9bb5e3; color: #1a4b9e; }
+.tg.auto.merch { border-color: #c9a3d9; color: #6a3a86; }
+.hf-top { margin-top: 16px; align-items: start; }
+.hf-top .hn-panel { margin-top: 0; }
+.fl { list-style: none; margin: 4px 0 0; padding: 0; position: relative; }
+.fl-step { display: flex; gap: 12px; align-items: flex-start; padding: 8px 0; position: relative; }
+.fl-step:not(:last-child)::after { content: ""; position: absolute; left: 15px; top: 40px; bottom: -6px; width: 2px; background: #e3e6ec; }
+.fl-step.on:not(:last-child)::after { background: #e3c27a; }
+.fl-dot { flex: none; width: 32px; height: 32px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; background: #f1f3f6; color: #9aa2b1; border: 1px solid #e3e6ec; }
+.fl-dot .fic { width: 16px; height: 16px; }
+.fl-step.on .fl-dot { background: #fbf1dc; color: #7a560c; border-color: #e3c27a; }
+.fl-step:not(.on) b { color: #6b7385; font-weight: 600; }
+.fl-when { color: #7a560c; font-weight: 600; }
+.fl-foot { margin: 8px 0 0; }
+table.data.wide .tgs { flex-wrap: nowrap; }
