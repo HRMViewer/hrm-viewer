@@ -84,6 +84,8 @@ INDEXES = [
     ("horse_training", "ht_horse_id"),
     ("horse_shoes", "shoe_horse_id"),
     ("horse_yearly_schedule", "hys_horse_id"),
+    ("races", "races_calendar_id"),
+    ("horse_qualification_points", "hqp_target_calendar_id"),
     ("staff", "staff_stable_id"),
     ("staff", "staff_person_id"),
     ("horse_stats_snapshots", "snapshot_horse_id"),
@@ -2438,6 +2440,222 @@ def notes_import(data):
         write_json(notes_path(), cur)
     NOTES_REV[0] += 1
     return {"ok": True, "notes_added": added, "horses": len(src["items"]), "tags": len(cur["tags"])}, 200
+
+
+# ------------------------------------------------------------------ 16.6: Racing → Concepts (Triple Crowns and other series) and Qualifying
+def race_instances(con, cal_ids):
+    """Every running of these races (by the game's calendar id): {calendar_id: [{race_id, date, year, name, course_id, course}]}."""
+    ids = [c for c in set(cal_ids) if c]
+    out = {c: [] for c in ids}
+    for i in range(0, len(ids), 400):
+        chunk = ids[i:i + 400]
+        for r in rows(con, """select x.races_calendar_id as cal, x.races_race_id as race_id, x.races_race_date_time as date, x.races_race_name as name,
+                x.races_type_of_race as grade, d.raceday_racecourse_id as course_id, c.racecourse_name as course
+                from races x left join race_days d on d.raceday_race_day_id=x.races_race_day_id left join racecourses c on c.racecourse_racecourse_id=d.raceday_racecourse_id
+                where x.races_calendar_id in (%s) and coalesce(x.races_cancelled,0)=0 order by x.races_race_date_time""" % ",".join("?" * len(chunk)), chunk):
+            r["year"] = utc_year(r["date"]) if r["date"] else None
+            out[r.pop("cal")].append(r)
+    return out
+
+
+def race_winners(con, race_ids):
+    """{race_id: {horse_id, horse, jockey_id, jockey, stable_id, stable}} for races already run; places 1-3 under "top3"."""
+    out = {}
+    ids = [i for i in set(race_ids) if i]
+    for i in range(0, len(ids), 500):
+        chunk = ids[i:i + 500]
+        for r in rows(con, """select r.race_result_race_id as race_id, r.race_result_rank as rank, r.race_result_horse_id as horse_id, h.horse_name as horse,
+                r.race_result_person_jockey_id as jockey_id, r.race_result_stable_id as stable_id from race_results r left join horses h on h.horse_horse_id=r.race_result_horse_id
+                where r.race_result_race_id in (%s) and r.race_result_rank between 1 and 3""" % ",".join("?" * len(chunk)), chunk):
+            w = out.setdefault(r["race_id"], {"top3": []})
+            w["top3"].append(r)
+            if r["rank"] == 1:
+                w.update(horse_id=r["horse_id"], horse=r["horse"], jockey_id=r["jockey_id"], stable_id=r["stable_id"])
+    pn = name_map(con, "persons", "person_person_id", "person_full_name", [w.get("jockey_id") for w in out.values()])
+    sn = name_map(con, "stables", "stable_stable_id", "stable_name", [w.get("stable_id") for w in out.values()])
+    for w in out.values():
+        w["jockey"], w["stable"] = pn.get(w.get("jockey_id")), sn.get(w.get("stable_id"))
+    return out
+
+
+def concept_points(scheme):
+    try:
+        return [float(x) for x in str(scheme or "").split("-") if x.strip()]
+    except ValueError:
+        return []
+
+
+def concept_seasons(legs, inst, gd):
+    """A series' runnings grouped into seasons. A season starts with a running of its first race; each later race joins the
+    season it follows (series can cross the new year, e.g. December to March). Newest first:
+    [{start, label, legs: [run or None per race], done}]"""
+    runs1 = sorted(inst.get(legs[0]["cal"], []), key=lambda r: r["date"]) if legs else []
+    seasons = [{"start": r["date"], "legs": [r] + [None] * (len(legs) - 1)} for r in runs1]
+    for k, l in enumerate(legs[1:], 1):
+        for r in sorted(inst.get(l["cal"], []), key=lambda r: r["date"]):
+            host = None
+            for se in seasons:
+                if se["start"] <= r["date"] + 86400 and r["date"] - se["start"] < 330 * 86400 and se["legs"][k] is None:
+                    host = se
+            if host is None:      # a later race with no first race before it (the save starts mid-series)
+                host = {"start": r["date"], "legs": [None] * len(legs)}
+                seasons.append(host)
+            host["legs"][k] = r
+    for se in seasons:
+        ds = [r["date"] for r in se["legs"] if r]
+        y0, y1 = utc_year(min(ds)), utc_year(max(ds))
+        se["label"] = str(y0) if y0 == y1 else "%d/%s" % (y0, str(y1)[2:])
+        se["year0"], se["year1"] = y0, y1
+        se["end"] = max(ds)
+        se["started"] = min(ds) <= gd
+        se["done"] = all(r and r["date"] <= gd for r in se["legs"])
+    seasons.sort(key=lambda se: se["start"], reverse=True)
+    return seasons
+
+
+def season_status(se, win):
+    """Winners so far and whether one horse can still sweep it."""
+    legs = []
+    for r in se["legs"]:
+        w = win.get(r["race_id"]) if r else None
+        legs.append({"race_id": r["race_id"] if r else None, "date": r["date"] if r else None, "winner": w if w and w.get("horse_id") else None})
+    ws = [l["winner"]["horse_id"] for l in legs if l["winner"]]
+    alive = None
+    if ws and len(set(ws)) == 1:
+        first = next(l["winner"] for l in legs if l["winner"])
+        alive = {"horse_id": first["horse_id"], "horse": first["horse"], "won": len(ws), "of": len(legs)}
+    return legs, alive
+
+
+def api_concepts(con):
+    """Racing → Concepts: every series, this season's races and winners, who can still sweep it, and how often it's been swept."""
+    if not has_table(con, "concepts"):
+        return {"concepts": []}
+    cs = rows(con, """select concept_id as id, concept_name as name, concept_description as about, concept_scoring_type as scoring, concept_points_granted as points,
+        concept_bonus_cash as bonus, concept_enabled as enabled from concepts order by concept_name""")
+    legs = rows(con, "select cr_concept_id as cid, cr_race_name as race, cr_racecourse_name as course, cr_calendar_id as cal, cr_leg_order as n from concept_races order by cr_concept_id, cr_leg_order") if has_table(con, "concept_races") else []
+    inst = race_instances(con, [l["cal"] for l in legs])
+    gd = META.get("game_date") or time.time()
+    sweeps = {}
+    for cat, n, last in con.execute("select award_category, count(*), max(award_year) from awards where award_category like 'concept_%' and award_entity_type='horse' group by 1"):
+        sweeps[to_int(cat[8:], 0)] = (n, last)
+    per = {}
+    for c in cs:
+        cl = [l for l in legs if l["cid"] == c["id"]]
+        ss = concept_seasons(cl, inst, gd)
+        started = [se for se in ss if se["started"]]
+        cur = started[0] if started else None
+        upcoming = next((se for se in reversed(ss) if not se["started"]), None)
+        per[c["id"]] = (cl, cur, upcoming)
+    win = race_winners(con, [r["race_id"] for cl, cur, _ in per.values() if cur for r in cur["legs"] if r and r["date"] <= gd])
+    for c in cs:
+        cl, cur, upcoming = per[c["id"]]
+        lg, alive = season_status(cur, win) if cur else ([], None)
+        c["season"] = cur["label"] if cur else None
+        c["season_done"] = bool(cur and cur["done"])
+        c["legs"] = []
+        for i, l in enumerate(cl):
+            r = cur["legs"][i] if cur else None
+            nxt = upcoming["legs"][i] if upcoming else None
+            c["legs"].append({"race": l["race"], "course": l["course"], "race_id": (r or nxt or {}).get("race_id"),
+                              "winner": lg[i]["winner"] if lg else None, "date": (r or {}).get("date"), "run": bool(r and r["date"] <= gd)})
+        c["next_season"] = {"label": upcoming["label"], "start": upcoming["start"]} if upcoming else None
+        c["alive"] = alive
+        c["sweeps"], c["last_sweep"] = sweeps.get(c["id"], (0, None))
+    return {"concepts": cs}
+
+
+def api_concept(con, cid, q):
+    """One concept: its races season by season, the points table for a season, and every sweep."""
+    c = one(con, """select concept_id as id, concept_name as name, concept_description as about, concept_scoring_type as scoring, concept_points_granted as points,
+        concept_bonus_cash as bonus from concepts where concept_id=?""", (cid,)) if has_table(con, "concepts") else None
+    if not c:
+        return None
+    legs = rows(con, "select cr_race_name as race, cr_racecourse_name as course, cr_calendar_id as cal, cr_leg_order as n from concept_races where cr_concept_id=? order by cr_leg_order", (cid,))
+    inst = race_instances(con, [l["cal"] for l in legs])
+    gd = META.get("game_date") or time.time()
+    ss = concept_seasons(legs, inst, gd)
+    win = race_winners(con, [r["race_id"] for se in ss for r in se["legs"] if r and r["date"] <= gd])
+    awards = rows(con, """select a.award_year as year, a.award_date as date, a.award_entity_id as horse_id, h.horse_name as horse, a.award_stable_id as stable_id, s.stable_name as stable,
+        a.award_jockey_id as jockey_id, p.person_full_name as jockey from awards a left join horses h on h.horse_horse_id=a.award_entity_id
+        left join stables s on s.stable_stable_id=a.award_stable_id left join persons p on p.person_person_id=a.award_jockey_id
+        where a.award_category=? and a.award_entity_type='horse' order by a.award_date""", ("concept_%d" % cid,))
+    pts = concept_points(c["points"])
+    seasons = []
+    for se in ss:
+        lg, alive = season_status(se, win)
+        # the sweep award: given when (or soon after) the season's last race, to its winner
+        sw = next((a for a in awards if a["date"] and se["start"] - 86400 <= a["date"] <= se["end"] + 120 * 86400), None)
+        table = {}
+        for r in se["legs"]:
+            w = win.get(r["race_id"]) if r else None
+            for t in (w or {}).get("top3", []):
+                if 1 <= (t["rank"] or 0) <= len(pts):
+                    e = table.setdefault(t["horse_id"], {"horse_id": t["horse_id"], "horse": t["horse"], "points": 0, "wins": 0, "legs": 0})
+                    e["points"] += pts[t["rank"] - 1]
+                    e["wins"] += t["rank"] == 1
+                    e["legs"] += 1
+        seasons.append({"label": se["label"], "start": se["start"], "done": se["done"], "started": se["started"], "legs": lg, "alive": alive, "sweep": sw,
+                        "table": sorted(table.values(), key=lambda e: (-e["points"], -e["wins"]))[:12]})
+    return {"concept": c, "legs": legs, "seasons": seasons, "points_scale": pts, "now": gd}
+
+
+def api_qualifying(con, q):
+    """Racing → Qualifying: races you have to earn a place in, the races that lead to them, and who is in so far."""
+    if not has_table(con, "race_qualifications"):
+        return {"targets": []}
+    gd = META.get("game_date") or time.time()
+    rq = rows(con, """select rq_target_race_name as target, rq_target_calendar_id as cal, rq_source_race_name as source, rq_source_racecourse_name as course,
+        rq_source_calendar_id as src_cal, rq_type as type, rq_num_qualifiers as qualifiers, rq_points_granted as points from race_qualifications""")
+    targets = {}
+    for r in rq:
+        t = targets.setdefault(r["cal"], {"cal": r["cal"], "name": r["target"], "type": r["type"], "feeders": []})
+        t["feeders"].append(r)
+    inst = race_instances(con, list(targets) + [r["src_cal"] for r in rq])
+    hq = rows(con, """select hqp_target_calendar_id as cal, hqp_horse_id as horse_id, hqp_type as type, hqp_points as points, hqp_source_race_name as source,
+        hqp_source_race_id as race_id, hqp_date_earned as date, hqp_cycle_closed as closed from horse_qualification_points""") if has_table(con, "horse_qualification_points") else []
+    mine = {s["id"] for s in my_stables(con, META.get("player_id"), META.get("player_stable_id")) if s["mine"]} if META.get("player_id") else set()
+    my_horses = {r[0] for r in con.execute("select horse_horse_id from horses where horse_stable_id in (%s)" % ",".join(str(int(x)) for x in mine))} if mine else set()
+    for t in targets.values():
+        runs = inst.get(t["cal"], [])
+        t["next"] = next((r for r in runs if r["date"] > gd), None)
+        t["last"] = next((r for r in reversed(runs) if r["date"] <= gd), None)
+        t["course"] = (t["next"] or t["last"] or {}).get("course")
+        t["course_id"] = (t["next"] or t["last"] or {}).get("course_id")
+        t["grade"] = (t["next"] or t["last"] or {}).get("grade")
+        opn = [h for h in hq if h["cal"] == t["cal"] and not h["closed"]]
+        t["open"] = len({h["horse_id"] for h in opn})
+        t["yours"] = len({h["horse_id"] for h in opn if h["horse_id"] in my_horses})
+        t["scale"] = next((f["points"] for f in t["feeders"] if f["points"]), "")
+    sel = q.get("target")
+    for t in targets.values():
+        t["feeder_n"] = len(t["feeders"])
+    out = {"targets": sorted(({k: v for k, v in t.items() if k != "feeders"} for t in targets.values()), key=lambda t: ((t["next"] or {}).get("date") or 9e12, t["name"])), "now": gd}
+    if sel and sel in targets:
+        t = targets[sel]
+        for f in t["feeders"]:
+            runs = inst.get(f["src_cal"], [])
+            f["next"] = next((r for r in runs if r["date"] > gd), None)
+            f["last"] = next((r for r in reversed(runs) if r["date"] <= gd), None)
+        t["feeders"].sort(key=lambda f: ((f["next"] or {}).get("date") or 9e12))
+        opn = [h for h in hq if h["cal"] == sel and not h["closed"]]
+        st = {}
+        for h in opn:
+            e = st.setdefault(h["horse_id"], {"horse_id": h["horse_id"], "points": 0, "qualified": 0, "earned": []})
+            e["points"] += h["points"] or 0
+            e["qualified"] += h["type"] == "qualifier"
+            e["earned"].append({"source": h["source"], "race_id": h["race_id"], "date": h["date"], "points": h["points"], "type": h["type"]})
+        info = {r[0]: r[1:] for r in con.execute("select horse_horse_id, horse_name, horse_stable_id from horses where horse_horse_id in (%s)"
+                                                   % ",".join(str(int(k)) for k in st))} if st else {}
+        sn = name_map(con, "stables", "stable_stable_id", "stable_name", [v[1] for v in info.values()])
+        for e in st.values():
+            nm, sid = info.get(e["horse_id"], (None, None))
+            e.update(horse=nm, stable_id=sid, stable=sn.get(sid), yours=sid in mine)
+            e["earned"].sort(key=lambda x: x["date"] or 0)
+        t["standings"] = sorted(st.values(), key=lambda e: (-e["points"], -e["qualified"], e["horse"] or ""))
+        t["past_cycles"] = len({(h["horse_id"], h["date"]) for h in hq if h["cal"] == sel and h["closed"]})
+        out["target"] = t
+    return out
 
 
 # ------------------------------------------------------------------ ownership groups (16.3)
@@ -5375,6 +5593,9 @@ ROUTES = [
     (re.compile(r"^/api/stable_more/(-?\d+)$"), lambda con, m, q: api_stable_more(con, int(m.group(1)))),
     (re.compile(r"^/api/jockey_season/(-?\d+)$"), lambda con, m, q: api_jockey_season(con, int(m.group(1)), q)),
     (re.compile(r"^/api/alerts$"), lambda con, m, q: api_alerts(con)),
+    (re.compile(r"^/api/concepts$"), lambda con, m, q: api_concepts(con)),
+    (re.compile(r"^/api/concept/(-?\d+)$"), lambda con, m, q: api_concept(con, int(m.group(1)), q)),
+    (re.compile(r"^/api/qualifying$"), lambda con, m, q: api_qualifying(con, q)),
     (re.compile(r"^/api/horse_fans/(-?\d+)$"), lambda con, m, q: api_horse_fans(con, int(m.group(1)))),
     (re.compile(r"^/api/notes$"), lambda con, m, q: notes_detail(con) if q.get("detail") else notes_load()),
     (re.compile(r"^/api/people_overview$"), lambda con, m, q: api_people_overview(con, q)),
@@ -6453,7 +6674,7 @@ class Handler(BaseHTTPRequestHandler):
 
 # --------------------------------------------------------------------------- in-app updates
 
-VERSION = "16.5"
+VERSION = "16.6"
 BACKUP_DIR = os.path.join(APP_DIR, "backups")
 UPDATE_PENDING = os.path.join(DATA_DIR, "update_pending.json")
 UPDATE_RESULT = os.path.join(DATA_DIR, "update_result.json")

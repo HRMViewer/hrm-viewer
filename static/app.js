@@ -126,7 +126,7 @@ const icon = (k) => `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" 
 // and the pages inside the current section, grouped by what you want to do (results, coming up, breeding…).
 const SECTIONS = [
   { k: "home", label: "Home", ic: "home", href: "#/", routes: [""] },
-  { k: "racing", label: "Racing", ic: "flag", href: "#/meetings", routes: ["meetings", "meeting", "races", "race", "courses", "course"] },
+  { k: "racing", label: "Racing", ic: "flag", href: "#/meetings", routes: ["meetings", "meeting", "races", "race", "courses", "course", "concepts", "concept", "qualifying"] },
   { k: "horses", label: "Horses", ic: "horse", href: "#/horses", routes: ["horses", "horse", "horse-table", "pedigrees", "pedigree", "notes"] },
   { k: "stables", label: "Stables", ic: "barn", href: "#/stables", routes: ["stables", "stable", "stable-table", "stable-rankings"] },
   { k: "people", label: "People", ic: "user", href: "#/people-overview", routes: ["people-overview", "people", "person", "jockeys"] },
@@ -137,6 +137,7 @@ const SIDE = {
   home: null,   // filled in below: every other area's pages
   racing: [["Results", [["#/meetings", "list", "Meetings"], ["#/races", "flag", "All races"], ["#/races?type=G1", "trophy", "Group 1 results"]]],
     ["Coming up", [["#/meetings?when=upcoming", "clock", "Upcoming meetings"], ["#/races?when=upcoming", "flag", "Upcoming races"], ["#/races?when=upcoming&type=G1", "star", "Upcoming Group 1s"]]],
+    ["Series & qualifying", [["#/concepts", "trophy", "Concepts"], ["#/qualifying", "star", "Qualifying"]]],
     ["Places", [["#/courses", "pin", "Racecourses"]]]],
   horses: [["Horses", [["#/horses", "horse", "All horses"], ["#/horse-table", "table", "Horse table"], ["#/notes", "tag", "Notes & tags"]]],
     ["Breeding", [["#/pedigrees", "tree", "Top sires"], ["#/pedigrees?kind=dams", "tree", "Top dams"], ["#/pedigrees?kind=damsires", "tree", "Broodmare sires"]]]],
@@ -714,6 +715,7 @@ const PAGES = {
     { after: (r) => (r.parts[2] === "tree" ? tcInit() : r.parts[2] === "dynasty" ? dtInit() : null) }),
   courses: coursesPage, course: Object.assign((r) => coursePage(r.parts[1]), { after: (r) => coursePage.after && coursePage.after(r) }), tables: tablesPage,
   compare: Object.assign((r) => comparePage(r), { after: (r) => comparePage.after(r) }),
+  concepts: conceptsPage, concept: conceptPage, qualifying: qualifyingPage,
   pedigrees: pedigreesPage, pedigree: Object.assign((r) => pedigreePage(r.parts[1], r.q), { after: (r) => pedigreePage.after && pedigreePage.after(r) }), "horse-table": horseTablePage, "stable-table": stableTablePage, "stable-rankings": stableRankingsPage,
   versions: versionsPage, meetings: meetingsPage, awards: (r) => awardsPage(r.q || {}), settings: Object.assign(() => settingsPage(), { after: () => settingsPage.after() }), databases: Object.assign(() => databasesPage(), { after: () => databasesPage.after() }),
   shortcuts: Object.assign(() => shortcutsPage(), { after: () => shortcutsPage.after() }),
@@ -3013,13 +3015,98 @@ function bindRunnerToggles(root) {
 // ------------------------------------------------------------------ races
 // the same row of tabs at the top of every list page in a section
 const SECTION_TABS = {
-  racing: [["meetings", "#/meetings", "Meetings"], ["races", "#/races", "Races"], ["courses", "#/courses", "Racecourses"]],
+  racing: [["meetings", "#/meetings", "Meetings"], ["races", "#/races", "Races"], ["concepts", "#/concepts", "Concepts"], ["qualifying", "#/qualifying", "Qualifying"], ["courses", "#/courses", "Racecourses"]],
   horses: [["horses", "#/horses", "All horses"], ["horse-table", "#/horse-table", "Horse table"], ["pedigrees", "#/pedigrees", "Pedigrees"], ["notes", "#/notes", "Notes &amp; tags"]],
   stables: [["stables", "#/stables", "All stables"], ["stable-table", "#/stable-table", "Stable table"], ["stable-rankings", "#/stable-rankings", "Rankings"]],
 };
 function sectionTabs(sec, active) {
   return `<div class="subtabs">${(SECTION_TABS[sec] || []).map(([k, h, t]) => `<a href="${h}" class="${k === active ? "on" : ""}">${t}</a>`).join("")}</div>`;
 }
+// ------------------------------------------------------------------ 16.6: Racing → Concepts and Qualifying
+async function conceptsPage() {
+  const d = await api("concepts");
+  let html = raceSubTabs("concepts") + `<div class="page-head"><div><h1>Concepts</h1><div class="sub">Triple Crowns and other race series: win every race in one season to sweep it.
+    A season can run across the new year (December to March, say). A horse that has won every race run so far is marked <b>on for the sweep</b>.</div></div></div>`;
+  const status = (c) => {
+    const nx = c.next_season;
+    if (!c.season) return `<span class="muted small">Not started yet${nx ? `<br>first race ${fDate(nx.start)}` : ""}</span>`;
+    let out = "";
+    if (c.alive && c.alive.won === c.alive.of) out = `<span class="badge good">Swept</span><div class="small">by ${L.horse(c.alive.horse_id, c.alive.horse)}</div>`;
+    else if (c.alive && !c.season_done) out = `<span class="badge warn">On for the sweep</span><div class="small">${L.horse(c.alive.horse_id, c.alive.horse)} · ${fNum(c.alive.won)} of ${fNum(c.alive.of)} won</div>`;
+    else out = `<span class="muted small">${c.season_done ? "Not swept" : "No sweep this season"}</span>`;
+    return out + (c.season_done && nx ? `<div class="muted small">Next season starts ${fDate(nx.start)}</div>` : "");
+  };
+  html += panel(`Series <span class="muted small">${fNum(d.concepts.length)}</span>`, table([
+    { h: "Series", f: (c) => `<a href="#/concept/${c.id}"><b>${esc(c.name)}</b></a>${c.about ? `<div class="muted small">${esc(c.about)}</div>` : ""}` },
+    { h: "Season", cls: "nowrap", f: (c) => esc(c.season || (c.next_season ? c.next_season.label : "—")) },
+    { h: "Its races", f: (c) => `<ol class="cc-legs">${c.legs.map((l) => `<li>${l.race_id ? L.race(l.race_id, l.race) : esc(l.race)} <span class="muted small">${esc(l.course || "")}</span>
+        <div class="small">${l.winner ? `Won by ${L.horse(l.winner.horse_id, l.winner.horse)}` : l.date ? `<span class="muted">${fDate(l.date)}</span>` : '<span class="muted">Not run</span>'}</div></li>`).join("")}</ol>` },
+    { h: "This season", f: status },
+    { h: "Swept", cls: "num", f: (c) => (c.sweeps ? `${fNum(c.sweeps)}× <div class="muted small">last ${esc(c.last_sweep)}</div>` : '<span class="muted">never</span>') },
+  ], d.concepts, { empty: "No concepts in this save." }));
+  return html;
+}
+async function conceptPage(route) {
+  const id = route.parts[1], q = route.q || {};
+  const d = await api("concept/" + id);
+  const c = d.concept, seasons = d.seasons || [];
+  const run = seasons.filter((s) => s.started);
+  const S = seasons.find((s) => s.label === q.season) || run[0] || seasons[0];
+  let html = raceSubTabs("concepts") + `<div class="page-head"><div><div class="crumb"><a href="#/concepts">Concepts</a></div><h1>${esc(c.name)}</h1>
+    <div class="sub">${c.about ? esc(c.about) + " · " : ""}${fNum(d.legs.length)} races · win all of them in one season to sweep it${d.points_scale.length ? ` · points ${d.points_scale.map((p) => fNum(p)).join("–")} for the first ${d.points_scale.length} in each race` : ""}</div></div></div>`;
+  const swept = seasons.filter((s) => s.sweep);
+  const cur = run[0];
+  html += tiles([["Seasons run", fNum(run.length)], ["Swept", fNum(swept.length), swept.length ? `last by ${esc(swept[0].sweep.horse || "")} (${esc(swept[0].label)})` : "never"],
+    cur ? ["This season", esc(cur.label), cur.alive && cur.alive.won === cur.alive.of ? `Swept by ${esc(cur.alive.horse)}` : cur.alive && !cur.done ? `${esc(cur.alive.horse)} on for the sweep (${cur.alive.won} of ${cur.alive.of})` : cur.done ? "Not swept" : "No sweep possible"] : null]);
+  html += `<div style="margin-top:16px">${panel("Season by season", `<div class="tbl-wrap"><table class="data cc-grid"><thead><tr><th>Season</th>${d.legs.map((l, i) => `<th>${i + 1}. ${esc(l.race)}<div class="muted small">${esc(l.course || "")}</div></th>`).join("")}<th>Swept by</th></tr></thead><tbody>
+    ${seasons.map((s) => {
+      const ws = s.legs.map((l) => l.winner && l.winner.horse_id).filter(Boolean), dup = ws.filter((w, i) => ws.indexOf(w) !== i);
+      return `<tr class="${s.sweep ? "win" : ""}"><td class="nowrap"><a href="#/concept/${c.id}?season=${encodeURIComponent(s.label)}">${esc(s.label)}</a></td>${s.legs.map((l) => `<td>${l.winner ? `<span class="${dup.includes(l.winner.horse_id) ? "cc-dbl" : ""}">${L.horse(l.winner.horse_id, l.winner.horse)}</span><div class="muted small">${esc(l.winner.jockey || "")}</div>`
+        : l.race_id ? `<span class="muted small">${L.race(l.race_id, fDate(l.date))}</span>` : '<span class="muted">—</span>'}</td>`).join("")}
+        <td>${s.sweep ? `<b>${L.horse(s.sweep.horse_id, s.sweep.horse)}</b><div class="muted small">${L.stable(s.sweep.stable_id, s.sweep.stable)}</div>` : ""}</td></tr>`;
+    }).join("")}</tbody></table></div>`, "Highlighted: a horse that won more than one of the races that season · — : not run that season (or before the save began)")}</div>`;
+  if (S && d.points_scale.length) {
+    html += `<div style="margin-top:16px">${panel(`Points table, ${esc(S.label)}`, `<div class="filters" style="margin-bottom:8px">${select("season", { season: S.label }, seasons.filter((s) => s.started).map((s) => [s.label, s.label]))}</div>` + table([
+      { h: "#", cls: "num muted", f: (r) => r._n }, { h: "Horse", f: (r) => L.horse(r.horse_id, r.horse) },
+      { h: "Points", cls: "num", f: (r) => `<b>${fNum(r.points)}</b>` }, { h: "Wins", cls: "num", f: (r) => fNum(r.wins) }, { h: "Placed in", cls: "num", f: (r) => `${fNum(r.legs)} of ${fNum(d.legs.length)}` },
+    ], S.table.map((r, i) => Object.assign({ _n: i + 1 }, r)), { empty: "No races run that season yet." }), `${d.points_scale.map((p) => fNum(p)).join("–")} points for the first ${d.points_scale.length} in each race`)}</div>`;
+  }
+  return html;
+}
+async function qualifyingPage(route) {
+  const q = route.q || {};
+  const d = await api("qualifying" + (q.target ? "?target=" + encodeURIComponent(q.target) : ""));
+  let html = raceSubTabs("qualifying");
+  const typ = (t) => (t.type === "points" ? `Points <span class="muted small">${esc(t.scale || "")}</span>` : "Qualifiers");
+  if (d.target) {
+    const t = d.target, pts = t.type === "points";
+    const nx = t.next, ls = t.last;
+    html += `<div class="page-head"><div><div class="crumb"><a href="#/qualifying">Qualifying</a></div><h1>${esc(t.name)} ${grade(t.grade)}</h1>
+      <div class="sub">${t.course_id ? L.course(t.course_id, t.course) + " · " : ""}${pts ? `Places go to the horses with the most points from ${fNum(t.feeders.length)} races (points for the first five home; the scale differs by race)` : `Horses qualify by finishing in the places in ${fNum(t.feeders.length)} races`}
+      ${nx ? ` · next run ${L.race(nx.race_id, fDate(nx.date))}` : ""}${ls ? ` · last run ${L.race(ls.race_id, fDate(ls.date))}` : ""}</div></div></div>`;
+    html += `<div class="grid cols-2" style="margin-top:4px">${panel(`${pts ? "Points standings" : "Qualified so far"} <span class="muted small">${fNum(t.standings.length)}</span>`, table([
+      { h: "#", cls: "num muted", f: (r) => r._n }, { h: "Horse", f: (r) => L.horse(r.horse_id, r.horse) }, { h: "Stable", f: (r) => L.stable(r.stable_id, r.stable) },
+      pts ? { h: "Points", cls: "num", f: (r) => `<b>${fNum(r.points)}</b>` } : { h: "Qualified in", f: (r) => r.earned.filter((x) => x.type === "qualifier").map((x) => (x.race_id ? L.race(x.race_id, x.source) : esc(x.source))).join(", ") },
+      { h: "From", f: (r) => r.earned.map((x) => `${x.race_id ? L.race(x.race_id, x.source) : esc(x.source)}${pts ? ` <span class="muted small">${fNum(x.points)}</span>` : ""}`).join("<br>") },
+    ], t.standings.map((r, i) => Object.assign({ _n: i + 1 }, r)), { empty: "No one has earned a place yet this time round." }), t.past_cycles ? `This time round · ${fNum(t.past_cycles)} results from earlier years not counted` : "This time round")}
+      ${panel(`Races that lead to it <span class="muted small">${fNum(t.feeders.length)}</span>`, table([
+        { h: "Race", f: (f) => (f.last || f.next ? L.race((f.next || f.last).race_id, f.source) : esc(f.source)) }, { h: "Course", f: (f) => esc(String(f.course || "").replace(/\b\w/g, (x) => x.toUpperCase())) },
+        { h: pts ? "Points" : "Places", f: (f) => (pts ? esc(f.points || "") : `Top ${fNum(f.qualifiers || 1)}`) },
+        { h: "Next", cls: "num nowrap", f: (f) => (f.next ? fDate(f.next.date) : '<span class="muted">—</span>') },
+      ], t.feeders), pts ? "Points for the first five home" : "The first few home qualify")}</div>`;
+    return html;
+  }
+  html += `<div class="page-head"><div><h1>Qualifying</h1><div class="sub">Races you have to earn a place in: by points (like the Kentucky Derby) or by finishing in the places in certain races. Click one for the standings and the races that lead to it.</div></div></div>`;
+  html += panel(`Races <span class="muted small">${fNum(d.targets.length)}</span>`, table([
+    { h: "Race", f: (t) => `<a href="${hashFor(["qualifying"], { target: t.cal })}"><b>${esc(t.name)}</b></a> ${grade(t.grade)}` },
+    { h: "Course", f: (t) => (t.course_id ? L.course(t.course_id, t.course) : "—") }, { h: "How to get in", f: typ },
+    { h: "Races leading to it", cls: "num", f: (t) => fNum(t.feeder_n) }, { h: "Horses in so far", cls: "num", f: (t) => fNum(t.open) },
+    { h: "Yours", cls: "num", f: (t) => (t.yours ? `<span class="badge good">${fNum(t.yours)}</span>` : '<span class="muted">—</span>') },
+    { h: "Next run", cls: "num nowrap", f: (t) => (t.next ? L.race(t.next.race_id, fDate(t.next.date)) : '<span class="muted">—</span>') },
+  ], d.targets, { empty: "No qualifying races in this save." }));
+  return html;
+}
+
 function raceSubTabs(active) { return sectionTabs("racing", active); }
 async function racesPage(route) {
   return raceSubTabs("races") + await listPage({

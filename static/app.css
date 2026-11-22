@@ -1412,3 +1412,7 @@ html.dark body .anc-table .hits { background: rgba(255, 213, 74, .14); color: #f
 .sr-note .kind { color: #7a560c; text-transform: none; }
 
 .up { color: #1d7a48; font-weight: 600; } .dn { color: #b3322a; font-weight: 600; }
+/* 16.6 concepts and qualifying */
+.cc-legs { margin: 0; padding-left: 18px; } .cc-legs li { margin: 2px 0 6px; }
+.cc-grid th { vertical-align: bottom; } .cc-grid td { vertical-align: top; }
+.cc-dbl { background: #fff1c7; border-radius: 4px; padding: 0 3px; }
