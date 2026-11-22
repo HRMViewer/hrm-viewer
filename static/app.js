@@ -702,7 +702,7 @@ function hashFor(parts, q = {}) {
 function go(parts, q) { location.hash = hashFor(parts, q); }
 
 const PAGES = {
-  "": homePage, horses: horsesPage, notes: notesPage, tags: Object.assign(() => tagsPage(), { after: () => tagsPage.after() }), horse: (r) => (r.parts[2] === "awards" ? entityAwardsPage("horse", r) : r.parts[2] === "fans" ? horseFansPage(r.parts[1]) : horsePage(r.parts[1])), races: racesPage, race: Object.assign((r) => racePage(r.parts[1]), { after: () => {
+  "": homePage, horses: horsesPage, notes: notesPage, tags: Object.assign(() => tagsPage(), { after: () => tagsPage.after() }), horse: (r) => (r.parts[2] === "awards" ? entityAwardsPage("horse", r) : r.parts[2] === "fans" ? horseFansPage(r.parts[1]) : r.parts[2] === "training" ? horseTrainingPage(r.parts[1]) : horsePage(r.parts[1])), races: racesPage, race: Object.assign((r) => racePage(r.parts[1]), { after: () => {
     $$("[data-openall]", APP).forEach((b) => b.addEventListener("click", () => {
       const open = b.textContent.startsWith("Open");
       $$(".rtoggle", APP).forEach((t) => { if (t.classList.contains("open") !== open) t.click(); });
@@ -710,9 +710,10 @@ const PAGES = {
     }));
   } }),
   stables: stablesPage, stable: (r) => (r.parts[2] === "races" ? stableRacesPage(r) : r.parts[2] === "financials" ? stableFinancePage(r) : r.parts[2] === "horse-money" ? stableHorseMoneyPage(r) : r.parts[2] === "awards" ? stableAwardsPage(r) : stablePage(r.parts[1])), people: peoplePage, "people-overview": peopleOverviewPage, jockeys: careersPage, person: Object.assign((r) => (r.parts[2] === "awards" ? entityAwardsPage("person", r) : r.parts[2] === "family" ? personFamilyPage(r) : r.parts[2] === "tree" ? personTreePage(r)
-    : r.parts[2] === "dynasty" ? personDynastyPage(r) : r.parts[2] === "lifespans" ? personLifespansPage(r) : personPage(r.parts[1])),
+    : r.parts[2] === "dynasty" ? personDynastyPage(r) : r.parts[2] === "lifespans" ? personLifespansPage(r) : r.parts[2] === "season" ? jockeySeasonPage(r) : personPage(r.parts[1])),
     { after: (r) => (r.parts[2] === "tree" ? tcInit() : r.parts[2] === "dynasty" ? dtInit() : null) }),
   courses: coursesPage, course: Object.assign((r) => coursePage(r.parts[1]), { after: (r) => coursePage.after && coursePage.after(r) }), tables: tablesPage,
+  compare: Object.assign((r) => comparePage(r), { after: (r) => comparePage.after(r) }),
   pedigrees: pedigreesPage, pedigree: Object.assign((r) => pedigreePage(r.parts[1], r.q), { after: (r) => pedigreePage.after && pedigreePage.after(r) }), "horse-table": horseTablePage, "stable-table": stableTablePage, "stable-rankings": stableRankingsPage,
   versions: versionsPage, meetings: meetingsPage, awards: (r) => awardsPage(r.q || {}), settings: Object.assign(() => settingsPage(), { after: () => settingsPage.after() }), databases: Object.assign(() => databasesPage(), { after: () => databasesPage.after() }),
   shortcuts: Object.assign(() => shortcutsPage(), { after: () => shortcutsPage.after() }),
@@ -1755,7 +1756,7 @@ async function listPage(cfg, route) {
   const sort = q.sort || cfg.defaultSort, dir = q.dir || (cfg.ascDefault && cfg.ascDefault.includes(sort) ? "asc" : "desc");
   const expUrl = cfg.exportName ? `/api/export/${cfg.exportName}` : ["horses", "races", "stables", "people", "courses", "meetings"].includes(cfg.endpoint) ? `/api/export/list/${cfg.endpoint}` : null;
   const exp = expUrl ? `<a class="btn btn-csv" href="${expUrl}?${new URLSearchParams(q)}" download data-tip="Download every matching row (all pages, with your filters and sort) as a spreadsheet (CSV) file">${ICON_DL}Export CSV</a>` : "";
-  return `<div class="page-head"><div><h1>${cfg.title}</h1><div class="sub">${fNum(data.total)} ${data.total === 1 ? singular(cfg.noun) : cfg.noun}</div></div>${exp}</div>
+  return `<div class="page-head"><div><h1>${cfg.title}</h1><div class="sub">${fNum(data.total)} ${data.total === 1 ? singular(cfg.noun) : cfg.noun}</div></div>${exp}</div>${savedViewsBar()}
     <section class="panel"><div class="filters">${cfg.filters(q, data)}</div>${cfg.intro ? `<div class="note-line">${cfg.intro}</div>` : ""}
     ${table(cfg.cols, data.rows, { sort, dir, rowClass: cfg.rowClass, wide: cfg.wide, ascCols: cfg.ascDefault, empty: "No matches. Try a different search or filter.", ...(cfg.tableOpts || {}) })}
     ${pager(data)}</section>`;
@@ -1884,12 +1885,13 @@ document.addEventListener("click", (e) => {
 });
 
 async function homePage() {
-  const d = await api("home");
+  const [d, alerts] = await Promise.all([api("home"), api("alerts").catch(() => null)]);
   const m = STATUS.meta || {};
   const me = d.me, st = STATUS.player_stable;
   let html = updateBanner() + `<div class="page-head"><div><div class="crumb">Game date ${fDate(m.game_date)}</div>
     <h1>${me ? esc(me.name) : "Your save"}</h1>
-    <div class="sub">${me ? `${L.person(me.id, "Your profile")}` : ""}${st ? ` · ${L.stable(st.id, st.name)}` : ""}</div></div></div>`;
+    <div class="sub">${me ? `${L.person(me.id, "Your profile")}` : ""}${st ? ` · ${L.stable(st.id, st.name)}` : ""}${me ? ` · <a href="#/person/${me.id}/season">Your season</a>` : ""}</div></div></div>`;
+  html += alertsPanel(alerts);
   if (me) {
     html += tiles([
       ["Rides", fNum(me.jockey_starts)],
@@ -2024,6 +2026,8 @@ const TAG_ICONS = {
   heart: '<path d="M8 13.2S2.5 10 2.5 6.2A2.8 2.8 0 0 1 8 5a2.8 2.8 0 0 1 5.5 1.2C13.5 10 8 13.2 8 13.2z"/>',
   bus: '<rect x="2.5" y="3" width="11" height="8.5" rx="1.5"/><path d="M2.5 7.5h11M5 11.5v1.5M11 11.5v1.5"/><circle cx="5" cy="9.5" r=".5"/><circle cx="11" cy="9.5" r=".5"/>',
   badge: '<circle cx="8" cy="6" r="3.5"/><path d="M5.8 8.8 5 14l3-1.5 3 1.5-.8-5.2"/>',
+  mail: '<rect x="2" y="3.5" width="12" height="9" rx="1.5"/><path d="m2.5 4.5 5.5 4 5.5-4"/>',
+  flag: '<path d="M3.5 14V2.5"/><path d="M3.5 3h8l-1.6 2.5L11.5 8h-8"/>',
 };
 const tagIc = (k) => `<svg class="fic" viewBox="0 0 16 16" aria-hidden="true">${TAG_ICONS[k] || TAG_ICONS.tag}</svg>`;
 const tagChip = (t) => `<span class="tg ${t.color || "grey"}">${tagIc(t.icon || "tag")}${esc(t.name)}</span>`;
@@ -2228,6 +2232,7 @@ async function tagsPage() {
       <button class="btn sm" data-nt-del="${i}">Delete</button></div>`).join("");
   html += panel("New tag", `<div class="nt-add"><input type="text" id="nt-new" maxlength="40" placeholder="Tag name, e.g. Social media" aria-label="New tag name">${tagColourPick("nt", NT_COLOUR)}<button class="btn primary" id="nt-add">Create tag</button><span class="small muted" id="nt-state"></span></div>`);
   html += `<div style="margin-top:16px">${panel(`Your tags <span class="muted small">${fNum(NOTES.tags.length)}</span>`, `<div class="nt-list">${tagRows || '<div class="empty">No tags yet.</div>'}</div>`, "Rename one by typing over it · click a colour to change it")}</div>`;
+  html += notesBackupPanel();
   return html;
 }
 tagsPage.after = () => {
@@ -2291,8 +2296,331 @@ function horseHead(d, on) {
     · Foaled ${fDate(h.horse_birth_date)}${dead ? ` · Died ${fDate(h.horse_deceased_date)} ${esc(h.horse_death_cause || "")}` : ""}
     ${d.stable ? ` · ${L.stable(d.stable.id, d.stable.name)}` : ""}</div>${removedNote(d)}</div></div>
     <div style="display:flex;gap:8px"><button class="btn" data-gallery="${h.horse_horse_id}" data-gname="${esc(h.horse_name)}">${ICON_PHOTO}${pic ? "Gallery" : "Add photos"}</button></div></div>
-    <div class="subtabs"><a href="#/horse/${id}" class="${on === "overview" ? "on" : ""}">Overview</a><a href="#/horse/${id}/awards" class="${on === "awards" ? "on" : ""}">Awards${(d.awards || []).length ? ` <span class="tab-n">${fNum(d.awards.length)}</span>` : ""}</a><a href="#/horse/${id}/fans" class="${on === "fans" ? "on" : ""}">Fans, sponsors &amp; notes</a></div>`;
+    <div class="subtabs"><a href="#/horse/${id}" class="${on === "overview" ? "on" : ""}">Overview</a><a href="#/horse/${id}/awards" class="${on === "awards" ? "on" : ""}">Awards${(d.awards || []).length ? ` <span class="tab-n">${fNum(d.awards.length)}</span>` : ""}</a><a href="#/horse/${id}/fans" class="${on === "fans" ? "on" : ""}">Fans, sponsors &amp; notes</a><a href="#/horse/${id}/training" class="${on === "training" ? "on" : ""}">Training &amp; plans</a><a href="#/compare?kind=horse&a=${id}" class="st-cmp">Compare…</a></div>`;
 }
+// ------------------------------------------------------------------ 16.5: training, shoes, plans, rankings and syndicates on a horse
+const nice = (s) => String(s || "").replace(/_/g, " ").replace(/^./, (x) => x.toUpperCase());
+const pctTop = (v) => (isNum(v) ? (v <= 0.005 ? "Top 0.01%" : `Top ${v < 1 ? fNum(v, 2) : v < 10 ? fNum(v, 1) : fNum(v, 0)}%`) : "—");      // the game's "top x%" (lower is better)
+const pctBetter = (v) => (isNum(v) ? pctTop((1 - v) * 100) : "—");      // a 0–1 share of horses beaten, shown as "top x%"
+function effBar(v) {      // a training multiplier: 1.00 is neutral
+  if (!isNum(v)) return '<span class="muted">—</span>';
+  const d = v - 1, w = Math.min(50, Math.abs(d) * 250);
+  return `<span class="eff"><span class="eff-t"><i class="${d >= 0 ? "up" : "down"}" style="width:${w}%;${d >= 0 ? "left:50%" : `left:${50 - w}%`}"></i></span><b class="${d > 0.004 ? "up" : d < -0.004 ? "dn" : ""}">${d >= 0 ? "+" : "−"}${fNum(Math.abs(d) * 100, 1)}%</b></span>`;
+}
+function horseRankPanels(m, h) {
+  const rk = m.rankings || {}, sy = m.syndicates || [];
+  let out = "";
+  if (Object.keys(rk).length) {
+    out += panel("Rankings", tiles([
+      ["Career earnings", pctTop(rk.career), `of all horses · ${fMoneyShort(h.horse_career_earnings)}`],
+      isNum(rk.age_rank) ? ["Earnings for its age", pctBetter(rk.age_rank), "of horses the same age"] : null,
+      isNum(rk.offspring) ? ["Offspring earnings", pctTop(rk.offspring), fMoneyShort(rk.offspring_earnings)] : null,
+      isNum(rk.pedigree) ? ["Pedigree", pctBetter(rk.pedigree), `family earnings ${fMoneyShort(rk.pedigree_earnings)}`] : null,
+    ]), "Worked out by the game");
+  }
+  if (sy.length) {
+    const s = sy[0], owned = s.shares - (s.available || 0);
+    out += panel(`Syndicate${sy.length > 1 ? ` <span class="muted small">${sy.length} in all</span>` : ""}`, `<div class="small" style="margin-bottom:8px">
+      <span class="badge ${s.status === "active" ? "good" : s.status === "open" ? "warn" : ""}">${esc(nice(s.status))}</span> Managed by ${L.stable(s.stable_id, s.stable)} ·
+      ${fNum(s.shares)} shares at ${fMoney(s.price)} · ${fNum(owned)} sold, ${fNum(s.available)} left · ${fNum(s.fee, 1)}% management fee · since ${fDate(s.created)}
+      ${s.distributed ? ` · ${fMoney(s.distributed)} paid out` : ""}</div>` + table([
+      { h: "Shareholder", f: (r) => L.person(r.person_id, r.person) },
+      { h: "Shares", cls: "num", f: (r) => `${fNum(r.shares)} <span class="muted small">${fNum(100 * r.shares / s.shares, 1)}%</span>` },
+      { h: "Paid", cls: "num", f: (r) => fMoney(r.paid) }, { h: "Bought", cls: "num nowrap", f: (r) => fDate(r.date) },
+    ], s.holders || [], { empty: "No shareholders yet." }), "Shares in this horse sold to people");
+  }
+  return out ? `<div class="grid cols-2" style="margin-top:16px">${out}</div>` : "";
+}
+const HQP_TYPE = { qualifier: "Qualifier", points: "Points" };
+async function horseTrainingPage(id) {
+  const [d, m] = await Promise.all([api("horse/" + id), api("horse_more/" + id)]);
+  let html = horseHead(d, "training");
+  const t = m.training, sh = m.shoes;
+  html += `<div class="grid cols-2" style="margin-top:4px">`;
+  html += panel("Training", t ? `${kvList([["Programme", esc(t.type || "—")], ["Food", esc(t.food || "—")], ["Care", esc(t.care || "—")]])}
+    <table class="data eff-tbl" style="margin-top:10px"><thead><tr><th>Effect on training</th><th></th></tr></thead><tbody>
+    ${[["Speed", t.speed], ["Stamina", t.stamina], ["Strength", t.strength], ["Acceleration", t.acceleration], ["Trainer", t.trainer], ["Head trainer", t.head_trainer], ["Stablehand", t.stablehand]]
+      .map(([k, v]) => `<tr><td>${k}</td><td>${effBar(v)}</td></tr>`).join("")}</tbody></table>` : '<div class="empty">No training set up.</div>', "How this horse is trained, fed and cared for");
+  html += `<div>${panel("Shoes", sh ? kvList([["Material", esc(nice(sh.material))], ["Fitted", sh.position === "all" ? "All four" : esc(nice(sh.position))],
+      ["Quality", fNum(sh.quality)], ["Durability left", fNum(sh.durability)], ["Fitted on", fDate(sh.applied)]]) : '<div class="empty">No shoes recorded.</div>')}
+    <div style="margin-top:16px">${panel("Yearly schedule", m.schedule ? `<b>${esc(m.schedule.name)}</b><div class="small muted" style="margin-top:4px">${esc(m.schedule.about || "")}</div>
+      <div class="small" style="margin-top:6px">${fNum(m.schedule.pre)} days' preparation before a race · ${fNum(m.schedule.recovery)} days' recovery after</div>` : '<div class="empty">No yearly schedule.</div>')}</div></div></div>`;
+  const p = m.plan;
+  html += `<div style="margin-top:16px">${panel("Race plan", p ? `<div style="margin-bottom:8px"><b>${esc(p.name)}</b>${p.since ? ` <span class="muted small">since ${fDate(p.since)}</span>` : ""}</div>` + table([
+      { h: "#", cls: "num", f: (r) => fNum(r.n) }, { h: "Month", f: (r) => (r.month ? new Date(2000, r.month - 1, 1).toLocaleString("en-NZ", { month: "long" }) : "—") },
+      { h: "Races", f: (r) => [r.grades ? esc(r.grades) : "", r.surface ? esc(r.surface) : "", r.dmin || r.dmax ? `${r.dmin ? fDist(r.dmin) : ""}–${r.dmax ? fDist(r.dmax) : ""}` : "", r.purse ? `purse ${fMoneyShort(r.purse)}+` : "", r.countries ? esc(r.countries) : ""].filter(Boolean).join(" · ") || "Any" },
+      { h: "How", f: (r) => esc(nice(r.kind)) },
+    ], p.legs || [], { empty: "No steps." }) : '<div class="empty">This horse has no race plan.</div>', "The races the game aims it at")}</div>`;
+  html += `<div class="grid cols-2" style="margin-top:16px">${panel("Campaigns suggested", table([
+      { h: "Season", cls: "num", f: (r) => esc(r.year) }, { h: "Campaign", f: (r) => esc(r.concept || "—") },
+      { h: "Stage", f: (r) => esc(nice(r.stage)) }, { h: "Status", f: (r) => `<span class="badge ${r.status === "accepted" ? "good" : ""}">${esc(nice(r.status))}</span>` }, { h: "Date", cls: "num nowrap", f: (r) => fDate(r.date) },
+    ], m.campaigns, { empty: "No campaign suggestions." }), "Triple Crowns and the like")}
+    ${panel("Qualifying", table([
+      { h: "For", f: (r) => esc(r.target) }, { h: "Type", f: (r) => esc(HQP_TYPE[r.type] || nice(r.type)) }, { h: "Points", cls: "num", f: (r) => fNum(r.points) },
+      { h: "Earned in", f: (r) => (r.race_id ? L.race(r.race_id, r.source) : esc(r.source || "")) }, { h: "Date", cls: "num nowrap", f: (r) => fDate(r.date) },
+      { h: "", f: (r) => (r.closed ? '<span class="muted small">closed</span>' : '<span class="badge good">open</span>') },
+    ], m.qualifying, { empty: "Not qualified for anything yet." }), "Places earned in races that lead to bigger ones")}</div>`;
+  html += horseRankPanels(m, d.horse);
+  return html;
+}
+function kvList(kv) {
+  return `<dl class="kvl">${kv.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("")}</dl>`;
+}
+
+// ------------------------------------------------------------------ 16.5: a stable's facilities and farm sponsors; a course's sponsors
+function sponsorTable(list, extra) {
+  return table([
+    { h: "Sponsor", f: (r) => `<b>${esc(r.brand)}</b>${r.current ? ' <span class="badge good">Now</span>' : ""}` }, { h: "Industry", f: (r) => esc(r.industry || "—") },
+    ...(extra || []),
+    { h: "A month", cls: "num", f: (r) => fMoney(r.monthly) }, { h: "From", cls: "num nowrap", f: (r) => fDate(r.start) }, { h: "To", cls: "num nowrap", f: (r) => fDate(r.end) },
+    { h: "Paid", cls: "num", f: (r) => fMoney(r.paid) },
+  ], list, { empty: "No sponsors." });
+}
+function stableMorePanels(m) {
+  const f = m.facilities || [], sp = m.sponsors || [];
+  if (!f.length && !sp.length) return "";
+  const daily = f.reduce((a, x) => a + (x.daily || 0) * (x.n || 0), 0);
+  return `<div class="grid cols-2" style="margin-top:16px">${panel(`Facilities <span class="muted small">${fNum(f.reduce((a, x) => a + x.n, 0))}</span>`, table([
+      { h: "Facility", f: (r) => `<span data-tip="${esc(r.about || "")}">${esc(nice(r.type))}</span>${r.n > 1 ? ` <span class="muted small">×${fNum(r.n)}</span>` : ""}${r.working < r.n ? ' <span class="badge warn">not working</span>' : ""}` },
+      { h: "Built", cls: "num nowrap", f: (r) => fDate(r.first) + (r.n > 1 && r.last !== r.first ? `<div class="muted small">latest ${fDate(r.last)}</div>` : "") },
+      { h: "Cost to build", cls: "num", f: (r) => fMoneyShort(r.cost) }, { h: "A day", cls: "num", f: (r) => fMoney((r.daily || 0) * (r.n || 1)) },
+    ], f, { empty: "None built." }), f.length ? `Running costs ${fMoney(daily)} a day · point at one for what it does` : "")}
+    ${panel("Farm sponsors", sponsorTable(sp), "Sponsors of the stable itself")}</div>`;
+}
+
+// ------------------------------------------------------------------ 16.5: languages and syndicate shares on a person
+function personMorePanels(d) {
+  const sh = d.syndicate_shares || [];
+  return sh.length ? `<div style="margin-top:16px">${panel(`Syndicate shares <span class="muted small">${fNum(sh.length)}</span>`, table([
+    { h: "Horse", f: (r) => `${L.horse(r.horse_id, r.horse)}${r.died ? ' <span class="badge dead">Dead</span>' : ""}` },
+    { h: "Shares", cls: "num", f: (r) => `${fNum(r.shares)} <span class="muted small">of ${fNum(r.of)}</span>` }, { h: "Paid", cls: "num", f: (r) => fMoney(r.paid) },
+    { h: "Bought", cls: "num nowrap", f: (r) => fDate(r.date) }, { h: "Managed by", f: (r) => L.stable(r.stable_id, r.stable) },
+    { h: "Syndicate", f: (r) => `<span class="badge ${r.status === "active" ? "good" : ""}">${esc(nice(r.status))}</span>` },
+  ], sh), "Horses they hold syndicate shares in")}</div>` : "";
+}
+const langChips = (l) => (l || []).map((x) => `<span class="lang" data-tip="${esc(x.language)} · skill ${fNum(x.skill, 0)}"><i style="width:${Math.max(4, Math.min(100, x.skill || 0))}%"></i>${esc(x.language)}</span>`).join("");
+
+// ------------------------------------------------------------------ 16.5: a jockey's season
+const SEASON_DELTA = (a, b, fmt, pctPts) => {
+  if (!isNum(a) || !isNum(b)) return "";
+  const d = a - b;
+  if (Math.abs(d) < 1e-9) return '<span class="muted">same as then</span>';
+  return `<span class="${d > 0 ? "up" : "dn"}">${d > 0 ? "▲" : "▼"} ${pctPts ? fNum(Math.abs(d) * 100, 1) + " pts" : fmt(Math.abs(d))}</span>`;
+};
+async function jockeySeasonPage(route) {
+  const id = route.parts[1], q = route.q || {};
+  const [d, s] = await Promise.all([api("person/" + id), api(`jockey_season/${id}` + (q.year ? "?year=" + q.year : ""))]);
+  let html = personHead(d, "season");
+  const n = s.now, pv = s.prev, ps = s.prev_same;
+  const cmp = ps || pv, cmpLab = ps ? `this time last season` : `last season`;
+  html += `<div class="filters" style="margin:4px 0 12px">${select("year", q, (s.years || []).map((y) => [String(y), `Season ${y}`]))}
+    <span class="small muted">Seasons are calendar years · compared with ${ps ? "the same point of " : ""}${s.year - 1}</span></div>`;
+  html += tiles([
+    ["Rides", fNum(n.rides), SEASON_DELTA(n.rides, cmp.rides, fNum) + ` <span class="muted small">vs ${fNum(cmp.rides)} ${cmpLab}</span>`],
+    ["Wins", fNum(n.wins), SEASON_DELTA(n.wins, cmp.wins, fNum) + ` <span class="muted small">vs ${fNum(cmp.wins)}</span>`],
+    ["Strike rate", isNum(n.strike) ? fNum(n.strike * 100, 1) + "%" : "—", SEASON_DELTA(n.strike, cmp.strike, null, true) + (isNum(cmp.strike) ? ` <span class="muted small">vs ${fNum(cmp.strike * 100, 1)}%</span>` : "")],
+    ["Placed (top 3)", isNum(n.place_rate) ? fNum(n.place_rate * 100, 1) + "%" : "—", `${fNum(n.places)} rides` + (isNum(cmp.place_rate) ? ` · <span class="muted small">vs ${fNum(cmp.place_rate * 100, 1)}%</span>` : "")],
+    ["Prize money", fMoneyShort(n.prize), SEASON_DELTA(n.prize, cmp.prize, fMoneyShort) + ` <span class="muted small">vs ${fMoneyShort(cmp.prize)}</span>`],
+    ["Group & Listed wins", fNum(n.stakes), `vs ${fNum(cmp.stakes)} ${cmpLab}`],
+  ]);
+  const grp = (title, list, first, note) => panel(title, table([
+    { h: first, f: (r) => r.label_html || esc(r.label || "—") },
+    { h: "Rides", cls: "num", f: (r) => fNum(r.rides) }, { h: "Wins", cls: "num", f: (r) => fNum(r.wins) },
+    { h: "Strike", cls: "num", f: (r) => `<span class="${r.strike >= (n.strike || 0) + 0.05 ? "up" : r.strike <= (n.strike || 0) - 0.05 ? "dn" : ""}">${fNum((r.strike || 0) * 100, 0)}%</span>` },
+    { h: "Placed", cls: "num", f: (r) => `${fNum(100 * r.places / r.rides, 0)}%` }, { h: "Prize", cls: "num", f: (r) => fMoneyShort(r.prize) },
+  ], list, { empty: "No rides." }), note || "");
+  (s.by_course || []).forEach((r) => (r.label_html = L.course(r.key, r.label)));
+  (s.trainers || []).forEach((r) => (r.label_html = L.person(r.key, r.label)));
+  (s.horses || []).forEach((r) => (r.label_html = L.horse(r.key, r.label)));
+  (s.stables || []).forEach((r) => (r.label_html = L.stable(r.key, r.label)));
+  html += `<div class="grid cols-2" style="margin-top:16px">${grp("By course", s.by_course, "Course", "Green: well above your strike rate · red: well below")}
+    <div>${grp("By distance", s.by_distance, "Distance")}<div style="margin-top:16px">${grp("By track", s.by_track, "Track")}</div></div></div>`;
+  html += `<div class="grid cols-3" style="margin-top:16px">${grp("Best partnerships: trainers", s.trainers, "Trainer")}${grp("Horses", s.horses, "Horse")}${grp("Stables", s.stables, "Stable")}</div>`;
+  if ((s.months || []).length) {
+    const mx = Math.max(...s.months.map((m) => m.rides), 1);
+    html += `<div style="margin-top:16px">${panel("Month by month", `<div class="ms-bars">${s.months.map((m) => `<div class="ms-m" data-tip="${fNum(m.rides)} rides · ${fNum(m.wins)} wins">
+      <div class="ms-col"><i class="r" style="height:${100 * m.rides / mx}%"></i><i class="w" style="height:${100 * m.wins / mx}%"></i></div>
+      <span>${new Date(2000, m.month - 1, 1).toLocaleString("en-NZ", { month: "short" })}</span></div>`).join("")}</div>
+      <div class="small muted" style="margin-top:6px"><span class="ms-key r"></span> rides <span class="ms-key w"></span> wins</div>`)}</div>`;
+  }
+  html += `<div class="grid cols-2" style="margin-top:16px">${panel(`Booked rides <span class="muted small">${fNum((s.upcoming || []).length)}</span>`, table([
+      { h: "Date", cls: "nowrap", f: (r) => fDate(r.race_time) }, { h: "Race", f: (r) => `${L.race(r.race_id, r.race_name)} ${grade(r.race_type)}` },
+      { h: "Course", f: (r) => L.course(r.course_id, r.course) }, { h: "Horse", f: (r) => L.horse(r.horse_id, r.horse) }, { h: "For", f: (r) => L.stable(r.stable_id, r.stable) },
+    ], s.upcoming || [], { empty: "No rides booked." }), "Races they're down to ride in")}
+    ${panel(`Ride offers <span class="muted small">${fNum((s.offers || []).length)}</span>`, table([
+      { h: "Offered", cls: "nowrap", f: (r) => fDate(r.offered) }, { h: "Race", f: (r) => (r.race_id ? L.race(r.race_id, r.race) : "—") }, { h: "Horse", f: (r) => L.horse(r.horse_id, r.horse) },
+      { h: "Stable", f: (r) => L.stable(r.stable_id, r.stable) }, { h: "Fee", cls: "num", f: (r) => fMoney(r.fee) },
+      { h: "Win chance", cls: "num", f: (r) => (isNum(r.win_pct) ? fNum(r.win_pct, 1) + "%" : "—") },
+      { h: "Status", f: (r) => `<span class="badge ${/accept/.test(r.status) ? "good" : /pend|open|offer/.test(r.status) ? "warn" : ""}">${esc(nice(r.status))}</span>` },
+    ], s.offers || [], { empty: "No ride offers." }), "Offers from stables to ride their horses")}</div>`;
+  return html;
+}
+
+// ------------------------------------------------------------------ 16.5: compare two horses or two people side by side
+async function comparePage(route) {
+  const q = route.q || {}, kind = q.kind === "person" ? "person" : "horse";
+  const ids = [q.a, q.b].map((x) => (x && /^-?\d+$/.test(x) ? x : ""));
+  const load = (id) => (id ? (kind === "horse" ? Promise.all([api("horse/" + id), api("horse_more/" + id).catch(() => ({})), api("horse_fans/" + id).catch(() => ({}))]) : api("person/" + id)) : Promise.resolve(null));
+  const [A, B] = await Promise.all(ids.map(load));
+  let html = `<div class="page-head"><div><h1>Compare ${kind === "horse" ? "horses" : "people"}</h1><div class="sub">Pick two to see them side by side · ${seg("kind", q, [["horse", "Horses"], ["person", "People"]], "horse")}</div></div></div>`;
+  const pick = (slot, data) => {
+    const name = data ? (kind === "horse" ? data[0].horse.horse_name : data.person.person_full_name) : "";
+    return `<div class="cmp-pick" data-slot="${slot}"><input type="text" class="cmp-in" placeholder="Search ${kind === "horse" ? "horses" : "people"}…" value="${esc(name)}" aria-label="Choose ${slot === "a" ? "the first" : "the second"}"><div class="cmp-res"></div></div>`;
+  };
+  const rowsH = (d) => {
+    if (!d) return null;
+    const [x, m, f] = d, h = x.horse, res = x.results || [], w = res.filter((r) => r.rank === 1).length, pl = res.filter((r) => r.rank && r.rank <= 3).length;
+    const rk = (m || {}).rankings || {};
+    return {
+      head: L.horse(h.horse_horse_id, h.horse_name),
+      v: [["Sex", esc(h.horse_gender || "")], ["Age", fNum(age(h.horse_birth_date, h.horse_deceased_date))], ["Stable", x.stable ? L.stable(x.stable.id, x.stable.name) : "—"],
+        ["Sire", x.sire ? L.horse(x.sire.id, x.sire.name) : "—"], ["Dam", x.dam ? L.horse(x.dam.id, x.dam.name) : "—"],
+        ["Rating", h.horse_international_rating, fNum], ["Peak rating", h.horse_peak_rating, fNum], ["Starts", res.length, fNum], ["Wins", w, fNum],
+        ["Strike rate", res.length ? w / res.length : null, (v) => fNum(v * 100, 1) + "%"], ["Placed", res.length ? pl / res.length : null, (v) => fNum(v * 100, 1) + "%"],
+        ["G1 wins", h.horse_g1_wins, fNum], ["Earnings", h.horse_career_earnings, fMoneyShort], ["Value", h.horse_value_calculated, fMoneyShort],
+        ["Speed", h.horse_speed, (v) => fNum(v, 1)], ["Stamina", h.horse_stamina, (v) => fNum(v, 1)], ["Acceleration", h.horse_acceleration, (v) => fNum(v, 1)], ["Strength", h.horse_strength, (v) => fNum(v, 1)],
+        ["Intelligence", h.horse_intelligence, (v) => fNum(v, 1)], ["Temperament", h.horse_temperament, (v) => fNum(v, 1)],
+        ["Fans", (f || {}).fans, fShortN], ["World rank by fans", (f || {}).rank, (v) => "#" + fNum(v), true],
+        ["Earnings rank", rk.career, pctTop, true], ["Pedigree", rk.pedigree, pctBetter], ["Foals", x.offspring_total, fNum]],
+    };
+  };
+  const rowsP = (d) => {
+    if (!d) return null;
+    const p = d.person, j = (d.jobs || []).find((x) => !x.end);
+    const st = p.person_jockey_starts, wn = p.person_jockey_wins;
+    return {
+      head: L.person(p.person_person_id, p.person_full_name),
+      v: [["Age", fNum(age(p.person_birth_date, p.person_deceased_date))], ["Job now", j ? `${esc(j.role)} at ${L.stable(j.stable_id, j.stable)}` : "—"],
+        ["Fame", p.person_fame_calculated, (v) => fNum(v, 0)], ["Reputation", p.person_reputation, (v) => fNum(v, 1)],
+        ["Rides", st, fNum], ["Wins as jockey", wn, fNum], ["Strike rate", st ? wn / st : null, (v) => fNum(v * 100, 1) + "%"], ["Jockey prize money", p.person_jockey_winnings, fMoneyShort],
+        ["Jockey skill", p.person_jockey_skill, (v) => fNum(v, 1)], ["Trainer wins", p.person_trainer_wins, fNum], ["Trainer skill", p.person_trainer_skill, (v) => fNum(v, 1)],
+        ["Head trainer wins", p.person_head_trainer_wins, fNum], ["Manager skill", p.person_manager_skill, (v) => fNum(v, 1)],
+        ["Awards", (d.awards || []).length, fNum], ["Languages", (d.languages || []).map((l) => esc(l.language)).join(", ") || "—"],
+        ["Owns", (d.owns || []).map((s) => L.stable(s.id, s.name)).join(", ") || "—"]],
+    };
+  };
+  const R = [A, B].map(kind === "horse" ? rowsH : rowsP);
+  let body = `<div class="cmp-grid"><div></div><div>${pick("a", A)}</div><div>${pick("b", B)}</div>`;
+  if (R[0] || R[1]) {
+    const base = (R[0] || R[1]).v;
+    body += `<div></div><div class="cmp-h">${R[0] ? R[0].head : ""}</div><div class="cmp-h">${R[1] ? R[1].head : ""}</div>`;
+    base.forEach((row, i) => {
+      const [lab, , fmt, lowBetter] = row;
+      const va = R[0] ? R[0].v[i][1] : null, vb = R[1] ? R[1].v[i][1] : null;
+      const cell = (v, o) => {
+        if (!fmt) return v ?? "—";
+        if (!isNum(v)) return '<span class="muted">—</span>';
+        const better = isNum(o) && v !== o && (lowBetter ? v < o : v > o);
+        return `<span class="${better ? "cmp-best" : ""}">${fmt(v)}</span>`;
+      };
+      body += `<div class="cmp-l">${lab}</div><div>${cell(va, vb)}</div><div>${cell(vb, va)}</div>`;
+    });
+  }
+  body += `</div>`;
+  html += panel("Side by side", body, "The better figure of the two is in bold green");
+  return html;
+}
+comparePage.after = (route) => {
+  const q = route.q || {}, kind = q.kind === "person" ? "person" : "horse";
+  $$(".cmp-pick").forEach((box) => {
+    const inp = $(".cmp-in", box), res = $(".cmp-res", box);
+    let t = null;
+    inp.addEventListener("input", () => {
+      clearTimeout(t);
+      t = setTimeout(async () => {
+        const v = inp.value.trim();
+        if (v.length < 2) { res.innerHTML = ""; return; }
+        const r = ((await api("search?q=" + encodeURIComponent(v))).results || []).filter((x) => x.type === kind);
+        res.innerHTML = r.slice(0, 8).map((x) => `<button type="button" data-id="${x.id}">${esc(x.name)} <span class="muted small">${esc(x.extra || "")}</span></button>`).join("") || '<div class="muted small">No matches.</div>';
+      }, 200);
+    });
+    res.addEventListener("click", (e) => {
+      const b = e.target.closest("button[data-id]");
+      if (b) go(["compare"], { ...q, kind, [box.dataset.slot]: b.dataset.id });
+    });
+  });
+};
+
+// ------------------------------------------------------------------ 16.5: saved views on lists (kept as favourites)
+function savedViewsBar() {
+  const path = (location.hash.replace(/^#/, "").split("?")[0] || "/");
+  const mine = getFavs().filter((f) => normHash(f.h).replace(/^#/, "").split("?")[0] === path && normHash(f.h).includes("?"));
+  return `<div class="sv-bar">${mine.map((f) => `<a class="sv-chip${normHash(f.h) === normHash(location.hash) ? " on" : ""}" href="${esc(f.h)}">${esc(f.t)}</a>`).join("")}
+    <button type="button" class="btn sm" data-save-view data-tip="Keep these filters and this sort as a saved view in your favourites">☆ Save this view</button></div>`;
+}
+document.addEventListener("click", (e) => {
+  const b = e.target.closest("[data-save-view]");
+  if (!b) return;
+  const bar = b.closest(".sv-bar");
+  if ($(".sv-new", bar)) return;
+  const wrap = document.createElement("span");
+  wrap.className = "sv-new";
+  wrap.innerHTML = `<input type="text" maxlength="80" placeholder="Name this view, e.g. My stallions" aria-label="Name for this view"><button type="button" class="btn sm primary">Save</button>`;
+  b.replaceWith(wrap);
+  const inp = $("input", wrap);
+  inp.focus();
+  const save = () => {
+    const name = inp.value.trim() || pageTitle();
+    const h = normHash(location.hash), list = getFavs().filter((f) => normHash(f.h) !== h);
+    list.push({ h, t: name, ic: favIcon(h) });
+    setFavs(list);
+    toast(`<span class="fav-star-t">★</span> Saved <b>${esc(name)}</b>: it's in your favourites`, null, 4000);
+    render();
+  };
+  $("button", wrap).addEventListener("click", save);
+  inp.addEventListener("keydown", (ev) => { if (ev.key === "Enter") save(); else if (ev.key === "Escape") render(); });
+});
+
+// ------------------------------------------------------------------ 16.5: alerts on Home
+const ALERT_META = {
+  offer: ["Ride offer to answer", "mail"], ride: ["Riding soon", "flag"], sponsor_end: ["Sponsor deal ending", "badge"], farm_sponsor_end: ["Farm sponsor ending", "badge"],
+  fan: ["Fan milestone", "users"], qualified: ["Qualified", "trophy"],
+};
+function alertsPanel(a) {
+  const list = (a && a.alerts) || [];
+  if (!list.length) return "";
+  const now = a.now;
+  const when = (t) => { const d = Math.floor(t / 86400) - Math.floor(now / 86400); return d === 0 ? "today" : d > 0 ? `in ${d} day${d === 1 ? "" : "s"}` : `${-d} day${d === -1 ? "" : "s"} ago`; };
+  const line = (x) => {
+    switch (x.kind) {
+      case "offer": return `${L.horse(x.horse_id, x.horse)} in ${x.race_id ? L.race(x.race_id, x.race) : "a race"} · ${fMoney(x.fee)} fee · answer ${when(x.date)}`;
+      case "ride": return `${L.horse(x.horse_id, x.horse)} in ${L.race(x.race_id, x.race)} ${grade(x.grade)} · ${when(x.date)} (${fDate(x.date)})`;
+      case "sponsor_end": return `${L.horse(x.horse_id, x.horse)}'s deal with <b>${esc(x.brand)}</b> (${fMoneyShort(x.monthly)}/mo) ends ${when(x.date)}`;
+      case "farm_sponsor_end": return `${L.stable(x.stable_id, x.stable)}'s deal with <b>${esc(x.brand)}</b> (${fMoneyShort(x.monthly)}/mo) ends ${when(x.date)}`;
+      case "fan": return `${L.horse(x.horse_id, x.horse)}: ${esc(x.subject || "")} · ${when(x.date)} · <a href="#/horse/${x.horse_id}/fans">fans</a>`;
+      case "qualified": return `${L.horse(x.horse_id, x.horse)} ${x.type === "qualifier" ? "qualified for" : "earned points towards"} <b>${esc(x.target)}</b> in ${esc(x.source || "")} · ${when(x.date)}`;
+      default: return "";
+    }
+  };
+  return `<section class="panel alerts"><div class="panel-head"><h2>For you <span class="muted small">${fNum(list.length)}</span></h2><span class="note">Rides, offers, sponsor deals ending in the next 60 days, fan milestones and qualifying in the last month or two</span></div>
+    <ul class="al-list">${list.slice(0, 14).map((x) => `<li class="al-${x.kind}"><span class="al-ic">${tagIc((ALERT_META[x.kind] || ["", "tag"])[1])}</span><b class="al-k">${(ALERT_META[x.kind] || [x.kind])[0]}</b><span class="al-t">${line(x)}</span></li>`).join("")}</ul>
+    ${list.length > 14 ? `<div class="small muted">and ${fNum(list.length - 14)} more</div>` : ""}</section>`;
+}
+
+// ------------------------------------------------------------------ 16.5: back up and bring back your notes and tags (Settings → Tags)
+function notesBackupPanel() {
+  return `<div style="margin-top:16px">${panel("Back up your notes and tags", `<div class="nb">
+    <a class="btn" href="/api/notes/export" download>Download a backup</a>
+    <label class="btn">Bring back a backup…<input type="file" id="nb-file" accept=".json,application/json" hidden></label>
+    <label class="small"><input type="checkbox" id="nb-replace"> Replace what's here (otherwise the backup is added to your notes)</label>
+    <span class="small muted" id="nb-state"></span></div>
+    <p class="small muted" style="margin:8px 0 0">The backup is one file with every tag, note and date. Bringing one back never doubles up a note you already have.</p>`)}</div>`;
+}
+document.addEventListener("change", async (e) => {
+  if (e.target.id !== "nb-file" || !e.target.files.length) return;
+  const st = $("#nb-state"), f = e.target.files[0];
+  st.textContent = "Reading…";
+  try {
+    const data = JSON.parse(await f.text());
+    const r = await fetch("/api/notes/import", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ data, mode: $("#nb-replace").checked ? "replace" : "merge" }) });
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error || "Couldn't bring that back.");
+    await loadNotes();
+    st.textContent = `Done: ${fNum(j.notes_added)} note${j.notes_added === 1 ? "" : "s"} added from ${fNum(j.horses)} horse${j.horses === 1 ? "" : "s"}.`;
+  } catch (er) { st.textContent = er instanceof SyntaxError ? "That isn't an HRM Viewer notes backup." : er.message; }
+  e.target.value = "";
+});
+
 // a horse's Fans, sponsors & notes tab: what the save records about its fans and sponsors, and your own notes and tags
 const FAN_KIND = { website: ["Fan website", "globe"], club: ["Supporters' club", "users"], trips: ["Fan club trip", "bus"], superfans: ["Superfans", "heart"], fans: ["Fans", "users"], merch: ["Merchandise deal", "bag"] };
 async function horseFansPage(id) {
@@ -2349,7 +2677,7 @@ async function horseFansPage(id) {
   return html;
 }
 async function horsePage(id) {
-  const d = await api("horse/" + id);
+  const [d, more] = await Promise.all([api("horse/" + id), api("horse_more/" + id).catch(() => ({}))]);
   const h = d.horse;
   const res = d.results || [];
   const wins = res.filter((r) => r.rank === 1).length, seconds = res.filter((r) => r.rank === 2).length, thirds = res.filter((r) => r.rank === 3).length;
@@ -2524,6 +2852,7 @@ async function horsePage(id) {
     { h: "G1 wins", cls: "num", f: (r) => fNum(r.g1) }, { h: "Earnings", cls: "num", f: (r) => fMoney(r.earnings) },
   ], d.offspring, { empty: "No offspring." }), (d.offspring_total > d.offspring.length ? `Top ${d.offspring.length} of ${fNum(d.offspring_total)} by earnings` : `${fNum(d.offspring_total)} foals`) +
     (d.offspring_total ? ` · <a href="#/horse-table?${h.horse_sex === "Female" ? "dam" : "sire"}=${h.horse_horse_id}&status=all">Open in Horse table</a>` : ""), "tall")}</div>`;
+  html += horseRankPanels(more || {}, h);
   html += `<div style="margin-top:16px">${allFields(h)}</div>`;
   return html;
 }
@@ -3034,7 +3363,7 @@ function stableHead(d, on) {
 const STABLE_LOG = { scale: "auto", logC: 1000, yFmt: fMoneyShort, tipFmt: fMoney };
 
 async function stablePage(id) {
-  const d = await api("stable/" + id);
+  const [d, more] = await Promise.all([api("stable/" + id), api("stable_more/" + id).catch(() => ({}))]);
   const s = d.stable, lf = d.latest_finance || {};
   let html = stableHead(d, "overview");
   html += tiles([
@@ -3072,6 +3401,7 @@ async function stablePage(id) {
       { h: "Race", f: (r) => `${L.race(r.race_id, r.race_name, '<span class="muted">Historic</span>')} ${grade(r.race_type)}` },
       { h: "Jockey", f: (r) => L.person(r.jockey_id, r.jockey) }, { h: "Pos", f: (r) => pos(r.rank) }, { h: "Prize", cls: "num", f: (r) => fMoney(r.prize) },
     ], d.recent_results, { rowClass: (r) => (r.rank === 1 ? "win" : ""), empty: "No results." }), `Last 100 · <a href="#/stable/${s.stable_stable_id}/races">every race</a>`, "tall")}</div>`;
+  html += stableMorePanels(more || {});
   html += `<div style="margin-top:16px">${allFields(s)}</div>`;
   return html;
 }
@@ -4302,11 +4632,14 @@ document.addEventListener("click", (e) => {
 document.addEventListener("input", (e) => { const f = e.target.closest(".hm-filter"); if (f) hmApply(f.closest(".panel")); });
 
 // ------------------------------------------------------------------ people
+let LANGS = null;
 async function peoplePage(route) {
+  if (!LANGS) LANGS = (await api("people?meta=1&lang=__none__").catch(() => ({}))).languages || [];
   return listPage({
     title: "People", noun: "people", endpoint: "people", defaultSort: "fame", ascDefault: ["name"],
     filters: (q) => searchBox(q, "Search people") + statusSeg("person", q, "alive") +
-      select("role", q, [["", "Any role"], ["Jockey", "Jockeys"], ["Trainer", "Trainers"], ["Head trainer", "Head trainers"], ["Manager", "Managers"], ["Assistant manager", "Assistant managers"], ["Scout", "Scouts"], ["Stablehand", "Stablehands"]]),
+      select("role", q, [["", "Any role"], ["Jockey", "Jockeys"], ["Trainer", "Trainers"], ["Head trainer", "Head trainers"], ["Manager", "Managers"], ["Assistant manager", "Assistant managers"], ["Scout", "Scouts"], ["Stablehand", "Stablehands"]]) +
+      (LANGS && LANGS.length ? select("lang", q, [["", "Any language"]].concat(LANGS.map((l) => [l, "Speaks " + l]))) : ""),
     cols: [
       { h: "Name", sort: "name", f: (r) => `${L.person(r.id, r.name)}${r.died ? ' <span class="badge dead">Dead</span>' : ""}${r.id === (STATUS.player || {}).id ? ' <span class="badge good">You</span>' : ""}` },
       { h: "Role", f: (r) => esc(r.role || "—") },
@@ -4317,6 +4650,7 @@ async function peoplePage(route) {
       { h: "Jockey prize money", cls: "num", sort: "jockey_winnings", f: (r) => fMoneyShort(r.jockey_winnings) },
       { h: "Reputation", cls: "num", sort: "reputation", f: (r) => fNum(r.reputation, 1) },
       { h: "Fame", cls: "num", sort: "fame", f: (r) => fNum(r.fame, 0) },
+      { h: "Languages", f: (r) => ((r.languages || []).length ? esc(r.languages.join(", ")) : '<span class="muted">—</span>') },
     ],
   }, route);
 }
@@ -4457,9 +4791,10 @@ function personHead(d, on) {
     <h1>${esc(p.person_full_name)} ${dead ? '<span class="badge dead">Deceased</span>' : ""}${removedBadge(d)}${p.person_is_player === "true" ? ' <span class="badge good">You</span>' : ""}</h1>
     <div class="sub">${fNum(age(p.person_birth_date, p.person_deceased_date))} years old · ${esc(p.person_sex || "")}${d.city ? ` · ${esc(d.city.city)}, ${esc(d.city.country)}` : ""}
     ${current.length ? " · " + current.map((j) => `${esc(j.role)} at ${L.stable(j.stable_id, j.stable)}`).join(", ") : ""}
-    ${d.owns && d.owns.length ? " · Owns " + d.owns.map((s) => L.stable(s.id, s.name)).join(", ") : ""}</div>${removedNote(d)}</div></div>
+    ${d.owns && d.owns.length ? " · Owns " + d.owns.map((s) => L.stable(s.id, s.name)).join(", ") : ""}</div>
+    ${(d.languages || []).length ? `<div class="sub langs">Speaks ${langChips(d.languages)}</div>` : ""}${removedNote(d)}</div></div>
     <div class="subtabs"><a href="#/person/${id}" class="${on === "overview" ? "on" : ""}">Overview</a><a href="#/person/${id}/awards" class="${on === "awards" ? "on" : ""}">Awards</a>
-      <a href="#/person/${id}/family" class="${on === "family" ? "on" : ""}">Family tree</a><a href="#/person/${id}/tree" class="${on === "tree" ? "on" : ""}">Tree chart</a><a href="#/person/${id}/lifespans" class="${on === "lifespans" ? "on" : ""}">Lifespans</a><a href="#/person/${id}/dynasty" class="${on === "dynasty" ? "on" : ""}">${esc(p.person_last_name || "Family")} dynasty</a></div>`;
+      <a href="#/person/${id}/family" class="${on === "family" ? "on" : ""}">Family tree</a><a href="#/person/${id}/tree" class="${on === "tree" ? "on" : ""}">Tree chart</a><a href="#/person/${id}/lifespans" class="${on === "lifespans" ? "on" : ""}">Lifespans</a><a href="#/person/${id}/dynasty" class="${on === "dynasty" ? "on" : ""}">${esc(p.person_last_name || "Family")} dynasty</a>${p.person_jockey_starts > 0 || on === "season" ? `<a href="#/person/${id}/season" class="${on === "season" ? "on" : ""}">Jockey season</a>` : ""}<a href="#/compare?kind=person&a=${id}" class="st-cmp">Compare…</a></div>`;
 }
 // ------------------------------------------------------------------ a person's Overview tab
 // Part 1: one section per role (jockey, trainer, manager), all drawn by roleRecordSection().
@@ -4572,6 +4907,7 @@ async function personPage(id) {
     { h: "From", cls: "nowrap", f: (r) => fDate(r.start) }, { h: "To", cls: "nowrap", f: (r) => (r.end ? fDate(r.end) : "Now") }, { h: "Salary", cls: "num", f: (r) => fMoney(r.salary) },
   ], d.jobs, { empty: "No jobs on record." }))}
     ${panel("Traits", chips(d.traits))}</div>`;
+  html += personMorePanels(d);
   html += `<div style="margin-top:16px">${allFields(p)}</div>`;
   return html;
 }
@@ -4621,6 +4957,7 @@ async function coursePage(id) {
     ${panel("Feature races", table([
       { h: "Race", f: (r) => `${L.race(r.race_id, r.name)} ${grade(r.race_type)}` }, { h: "Distance", cls: "num", f: (r) => fDist(r.distance) },
     ], d.big_races, { empty: "No group or listed races." }), "", "span-2")}</div>`;
+  if ((d.sponsors || []).length) html += `<div style="margin-top:16px">${panel("Sponsors", sponsorTable(d.sponsors, [{ h: "Deal", f: (r) => esc(nice(r.type)) }]), "Companies sponsoring this racecourse")}</div>`;
   html += `<div style="margin-top:16px">${allFields(c)}</div>`;
   return html;
 }
@@ -5112,7 +5449,7 @@ async function horseTablePage(route) {
   if (q.stable) chip += `<span class="chip">Stable #${esc(q.stable)} <a href="${hashFor(["horse-table"], { ...q, stable: "" })}">✕</a></span>`;
   return listPage({
     title: "Horse table", noun: "horses", endpoint: "horse_table", defaultSort: "earnings",
-    ascDefault: ["name", "gender", "stable", "sire", "dam"], exportName: "horse_table", wide: true,
+    ascDefault: ["name", "gender", "stable", "sire", "dam", "earn_pct"], exportName: "horse_table", wide: true,
     intro: "Click any column heading to sort. Export CSV downloads every matching horse, not just this page.",
     filters: (q) => searchBox(q, "Search horses") + searchBox(q, "Search stables", "stableq") + statusSeg("horse", q, "alive") +
       select("gender", q, [["", "Any sex"], ["Colt", "Colts"], ["Filly", "Fillies"], ["Stallion", "Stallions"], ["Mare", "Mares"], ["Gelding", "Geldings"]]) +
@@ -5148,6 +5485,8 @@ async function horseTablePage(route) {
       { h: "Fans", sort: "fans", cls: "num grp-start", f: (r) => fShortN(r.fans) },
       { h: `<span data-tip="Best world fan ranking it has reached: Fan website (top 100), Supporters' club (top 50), Fan club trips (top 20), Superfans (top 10), No. 1">Fan level</span>`, f: (r) => { const st = fanStep(r.fan_band); if (!st) return '<span class="muted">—</span>'; const a = r.auto || {}, was = fanWas(st[0], a.rank, r.died); return esc(st[1]) + (was ? ` <span class="muted small" data-tip="It reached the top ${st[0]} but isn't there any more">(${was})</span>` : ""); } },
       { h: "Sponsor", sort: "sponsor_pay", f: (r) => (r.sponsor ? `${esc(r.sponsor)} <span class="muted small">${fMoneyShort(r.sponsor_pay)}/mo</span>` : '<span class="muted">—</span>') },
+      { h: `<span data-tip="Where its career earnings rank among all horses, as the game works it out">Earnings rank</span>`, sort: "earn_pct", cls: "num", f: (r) => (isNum(r.earn_pct) ? pctTop(r.earn_pct) : '<span class="muted">—</span>') },
+      { h: `<span data-tip="How its family's earnings compare with other horses'">Pedigree</span>`, sort: "ped_pct", cls: "num", f: (r) => (isNum(r.ped_pct) ? pctBetter(r.ped_pct) : '<span class="muted">—</span>') },
       { h: "Colour", f: (r) => esc(r.color || "") },
     ],
   }, route);
@@ -5271,7 +5610,7 @@ const runSearch = debounce(async () => {
     const d = await api("search?q=" + encodeURIComponent(v));
     if (searchInput.value.trim() !== v) return;
     searchBoxEl.innerHTML = d.results.length ? d.results.map((r) =>
-      `<a href="#/${r.type}/${r.id}"><span>${esc(r.name)}</span><span class="kind">${r.type === "course" ? "racecourse" : r.type}${r.extra ? " · " + esc(r.extra) : ""}</span></a>`).join("")
+      `<a href="#/${r.type}/${r.id}${r.note ? "/fans" : ""}"${r.note ? ' class="sr-note"' : ""}><span>${esc(r.name)}</span><span class="kind">${r.note ? "" : (r.type === "course" ? "racecourse" : r.type)}${r.extra ? (r.note ? "" : " · ") + esc(r.extra) : ""}</span></a>`).join("")
       : `<div class="empty" style="padding:10px 12px">No matches</div>`;
     searchBoxEl.classList.add("open"); searchSel = -1;
   } catch (e) { closeSearch(); }

@@ -1,5 +1,23 @@
 [
   {
+    "version": "16.5",
+    "date": "2026-11-23",
+    "title": "Training, syndicates, your season, compare, saved views and more",
+    "changes": [
+      "New Training & plans tab on every horse: training programme, food and care with each one's effect on speed, stamina, strength and acceleration; shoes; yearly schedule; race plan; suggested campaigns; and the races it has qualified for.",
+      "Horse Overview: Rankings (career earnings, earnings for its age, offspring earnings and pedigree, as the game's top x%) and its Syndicate, with every shareholder. The Horse table has Earnings rank and Pedigree columns.",
+      "Stables: Facilities (what's built, cost to build, running costs a day) and Farm sponsors. Racecourses: their sponsors.",
+      "People: the languages they speak (on their page, as a column, and a Speaks… filter in People) and any syndicate shares they hold.",
+      "New Jockey season tab (and Your season on Home): this season against the same point last season, strike rate by course, distance and track, best partnerships with trainers, horses and stables, month by month, rides booked and ride offers.",
+      "New Compare: Compare… on any horse or person puts two side by side, with the better figure of each pair in green.",
+      "Saved views: ☆ Save this view on any list keeps your filters and sort under a name in your favourites, shown as chips above the list.",
+      "Home has a new For you panel: rides coming up, ride offers to answer, sponsor deals ending in the next 60 days, recent fan milestones and new qualifying runs.",
+      "The search box also finds horses by your notes and tags.",
+      "Settings → Tags: download a backup of your notes and tags, and bring one back (added to yours, or replacing them). Notes already there are never doubled up.",
+      "Sorting the Horse table by Fans or Sponsor no longer relies on SQLite working out a shortcut on its own: there's now a proper lookup for sponsors (plus ones for all the new data)."
+    ]
+  },
+  {
     "version": "16.4",
     "date": "2026-11-22",
     "title": "Whole group financials load quickly",

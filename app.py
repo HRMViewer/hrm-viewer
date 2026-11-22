@@ -67,6 +67,23 @@ INDEXES = [
     ("race_participants", "race_participant_race_id"),
     ("race_participants", "race_participant_horse_id"),
     ("race_participants", "race_participant_person_jockey_id"),
+    # 16.5: sponsors, rankings, syndicates, languages, facilities, plans and ride offers
+    ("horse_sponsors", "sponsor_horse_id"),
+    ("horse_pedigree_percentiles", "pedigree_horse_id"),
+    ("horse_earnings_percentiles", "percentile_horse_id"),
+    ("horse_syndications", "syndication_horse_id"),
+    ("horse_syndicate_shareholders", "shareholder_syndication_id"),
+    ("horse_syndicate_shareholders", "shareholder_person_id"),
+    ("person_languages", "person_id"),
+    ("constructed_facilities", "constructed_facility_entity_id"),
+    ("farm_sponsors", "fs_stable_id"),
+    ("venue_sponsors", "vs_venue_id"),
+    ("horse_qualification_points", "hqp_horse_id"),
+    ("campaign_suggestions", "cs_horse_id"),
+    ("ride_offers", "ride_offer_person_id"),
+    ("horse_training", "ht_horse_id"),
+    ("horse_shoes", "shoe_horse_id"),
+    ("horse_yearly_schedule", "hys_horse_id"),
     ("staff", "staff_stable_id"),
     ("staff", "staff_person_id"),
     ("horse_stats_snapshots", "snapshot_horse_id"),
@@ -1787,6 +1804,8 @@ def api_search(con, q):
         group by coalesce(nullif(x.races_calendar_id,''), x.races_race_name || '@' || d.raceday_racecourse_id || '@' || coalesce(x.races_type_of_race,''))
         order by min(coalesce(x.races_grade,9)) limit 6""", (like, META.get("game_date") or 4e9)):
         res.append({"type": "race", **r})
+    have = {(r["type"], r["id"]) for r in res}
+    res += [r for r in notes_search(con, term) if ("horse", r["id"]) not in have]
     return {"results": res}
 
 
@@ -2110,6 +2129,315 @@ def api_stables(con, q):
         left join hrmv_stable_stats t on t.stable_id=s.stable_stable_id""" + w +
                 " order by %s limit %d offset %d" % (order_sql(sort, d), page_size(), off), params)
     return {"total": total, "page": page, "page_size": page_size(), "rows": data}
+
+
+# ------------------------------------------------------------------ 16.5: training, shoes, plans, rankings, syndicates, facilities, sponsors, languages
+def _t(con, t):
+    return has_table(con, t)
+
+
+def api_horse_more(con, hid):
+    """A horse's Training & plans tab, and the rankings and syndicate panels on its Overview."""
+    out = {"training": None, "shoes": None, "schedule": None, "plan": None, "campaigns": [], "qualifying": [], "rankings": {}, "syndicates": []}
+    if _t(con, "horse_training"):
+        out["training"] = one(con, """select ht_training_type as type, ht_food as food, ht_care as care, ht_trainer_effect as trainer, ht_head_trainer_effect as head_trainer,
+            ht_stablehand_effect as stablehand, ht_speed_training_effect as speed, ht_stamina_training_effect as stamina, ht_strength_training_effect as strength,
+            ht_acceleration_training_effect as acceleration from horse_training where ht_horse_id=? order by ht_training_id desc limit 1""", (hid,))
+    if _t(con, "horse_shoes"):
+        out["shoes"] = one(con, """select shoe_material as material, shoe_position as position, shoe_durability as durability, shoe_quality as quality,
+            shoe_applied_date as applied, shoe_applied_by as by_id from horse_shoes where shoe_horse_id=? order by shoe_id desc limit 1""", (hid,))
+    if _t(con, "horse_yearly_schedule") and _t(con, "yearly_schedules"):
+        out["schedule"] = one(con, """select y.ys_name as name, y.ys_description as about, y.ys_pre_race_days as pre, y.ys_recovery_days as recovery
+            from horse_yearly_schedule s join yearly_schedules y on y.ys_id=s.hys_schedule_id where s.hys_horse_id=? order by s.hys_id desc limit 1""", (hid,))
+    if _t(con, "race_plans") and "horse_race_plan_id" in columns(con, "horses"):
+        p = one(con, """select p.rp_id as id, p.rp_name as name, p.rp_stage as stage, h.horse_race_plan_date as since from horses h join race_plans p on p.rp_id=h.horse_race_plan_id
+            where h.horse_horse_id=?""", (hid,))
+        if p:
+            p["legs"] = rows(con, """select rpl_order as n, rpl_month as month, rpl_kind as kind, rpl_grades as grades, rpl_distance_min as dmin, rpl_distance_max as dmax,
+                rpl_surface as surface, rpl_min_purse as purse, rpl_countries as countries from race_plan_legs where rpl_plan_id=? order by rpl_order""", (p["id"],)) if _t(con, "race_plan_legs") else []
+        out["plan"] = p
+    if _t(con, "campaign_suggestions"):
+        out["campaigns"] = rows(con, """select c.cs_season_year as year, c.cs_stage as stage, c.cs_status as status, c.cs_verdict as verdict, c.cs_date as date, k.concept_name as concept
+            from campaign_suggestions c left join concepts k on k.concept_id=c.cs_concept_id where c.cs_horse_id=? order by c.cs_date desc""", (hid,)) if _t(con, "concepts") else []
+    if _t(con, "horse_qualification_points"):
+        out["qualifying"] = rows(con, """select hqp_target_race_name as target, hqp_type as type, hqp_points as points, hqp_source_race_name as source, hqp_source_race_id as race_id,
+            hqp_date_earned as date, hqp_cycle_closed as closed from horse_qualification_points where hqp_horse_id=? order by hqp_date_earned desc""", (hid,))
+    rk = {}
+    if _t(con, "horse_earnings_rankings"):
+        r = one(con, "select career_percentile as career, offspring_earnings as offspring_earnings, offspring_percentile as offspring from horse_earnings_rankings where horse_id=?", (hid,))
+        if r:
+            rk.update(r)
+    if _t(con, "horse_earnings_percentiles"):
+        r = one(con, "select percentile_age_group as age_group, percentile_rank as age_rank from horse_earnings_percentiles where percentile_horse_id=? order by percentile_id desc limit 1", (hid,))
+        if r:
+            rk.update(r)
+    if _t(con, "horse_pedigree_percentiles"):
+        r = one(con, "select pedigree_rank as pedigree, pedigree_combined_earnings as pedigree_earnings from horse_pedigree_percentiles where pedigree_horse_id=? order by pedigree_percentile_id desc limit 1", (hid,))
+        if r:
+            rk.update(r)
+    out["rankings"] = rk
+    if _t(con, "horse_syndications"):
+        sy = rows(con, """select y.syndication_id as id, y.syndication_managing_stable_id as stable_id, s.stable_name as stable, y.syndication_total_shares as shares,
+            y.syndication_available_shares as available, y.syndication_price_per_share as price, y.syndication_management_fee_pct as fee, y.syndication_status as status,
+            y.syndication_created_date as created, y.syndication_closed_date as closed, y.syndication_dissolved_date as dissolved,
+            y.syndication_total_distributed as distributed, y.syndication_total_costs_charged as costs
+            from horse_syndications y left join stables s on s.stable_stable_id=y.syndication_managing_stable_id where y.syndication_horse_id=? order by y.syndication_created_date desc""", (hid,))
+        if sy and _t(con, "horse_syndicate_shareholders"):
+            ids = ",".join(str(int(x["id"])) for x in sy)
+            sh = rows(con, """select h.shareholder_syndication_id as sid, h.shareholder_person_id as person_id, p.person_full_name as person, h.shareholder_shares_owned as shares,
+                h.shareholder_total_paid as paid, h.shareholder_purchase_date as date from horse_syndicate_shareholders h left join persons p on p.person_person_id=h.shareholder_person_id
+                where h.shareholder_syndication_id in (%s) order by h.shareholder_shares_owned desc""" % ids)
+            for x in sy:
+                x["holders"] = [r for r in sh if r["sid"] == x["id"]]
+        out["syndicates"] = sy
+    return out
+
+
+def api_stable_more(con, sid):
+    """A stable's facilities and farm sponsors."""
+    out = {"facilities": [], "sponsors": []}
+    if _t(con, "constructed_facilities") and _t(con, "facility_types"):
+        out["facilities"] = rows(con, """select f.facility_type_name as type, f.facility_type_description as about, f.facility_type_daily_cost as daily, f.facility_type_base_cost as cost,
+            count(*) as n, min(c.constructed_facility_construction_date) as first, max(c.constructed_facility_construction_date) as last, sum(c.constructed_facility_is_operational) as working
+            from constructed_facilities c join facility_types f on f.facility_type_id=c.constructed_facility_type_id
+            where c.constructed_facility_entity_type='stable' and c.constructed_facility_entity_id=? group by f.facility_type_id order by min(c.constructed_facility_construction_date)""", (sid,))
+    if _t(con, "farm_sponsors"):
+        gd = META.get("game_date") or time.time()
+        out["sponsors"] = rows(con, """select fs_brand_name as brand, fs_industry as industry, fs_monthly_payment as monthly, fs_contract_start_date as start, fs_contract_end_date as end,
+            fs_total_payments_made as paid from farm_sponsors where fs_stable_id=? order by fs_contract_start_date desc""", (sid,))
+        for r in out["sponsors"]:
+            r["current"] = bool(r["start"] and r["start"] <= gd and (not r["end"] or r["end"] > gd))
+    return out
+
+
+def course_sponsors(con, cid):
+    if not _t(con, "venue_sponsors"):
+        return []
+    gd = META.get("game_date") or time.time()
+    out = rows(con, """select vs_brand_name as brand, vs_industry as industry, vs_monthly_payment as monthly, vs_per_event_bonus as bonus, vs_sponsorship_type as type,
+        vs_contract_start_date as start, vs_contract_end_date as end, vs_total_payments_made as paid, vs_events_during_contract as events
+        from venue_sponsors where vs_venue_type='racecourse' and vs_venue_id=? order by vs_contract_start_date desc""", (cid,))
+    for r in out:
+        r["current"] = bool(r["start"] and r["start"] <= gd and (not r["end"] or r["end"] > gd))
+    return out
+
+
+def person_more(con, pid):
+    """Languages and syndicate shares, for a person's Overview."""
+    out = {"languages": [], "syndicate_shares": []}
+    if _t(con, "person_languages"):
+        out["languages"] = rows(con, "select language, skill from person_languages where person_id=? order by skill desc", (pid,))
+    if _t(con, "horse_syndicate_shareholders") and _t(con, "horse_syndications"):
+        out["syndicate_shares"] = rows(con, """select y.syndication_horse_id as horse_id, h.horse_name as horse, h.horse_deceased_date as died, s.shareholder_shares_owned as shares,
+            y.syndication_total_shares as of, s.shareholder_total_paid as paid, s.shareholder_purchase_date as date, y.syndication_status as status,
+            y.syndication_managing_stable_id as stable_id, st.stable_name as stable
+            from horse_syndicate_shareholders s join horse_syndications y on y.syndication_id=s.shareholder_syndication_id
+            left join horses h on h.horse_horse_id=y.syndication_horse_id left join stables st on st.stable_stable_id=y.syndication_managing_stable_id
+            where s.shareholder_person_id=? order by s.shareholder_purchase_date desc""", (pid,))
+    return out
+
+
+def language_list(con):
+    return [r[0] for r in con.execute("select language from person_languages group by 1 order by count(*) desc")] if _t(con, "person_languages") else []
+
+
+# ------------------------------------------------------------------ 16.5: a jockey's season
+DIST_BANDS = [(0, 1300, "Sprint (up to 1,300 m)"), (1300, 1700, "Mile (1,300–1,700 m)"), (1700, 2100, "Middle (1,700–2,100 m)"),
+              (2100, 2700, "Classic (2,100–2,700 m)"), (2700, 99999, "Staying (2,700 m+)")]
+
+
+def api_jockey_season(con, pid, q):
+    """Season summary for a jockey: this season against the one before, and where and with whom they win."""
+    gd = META.get("game_date") or time.time()
+    years = [r[0] for r in con.execute("""select distinct cast(strftime('%Y', race_result_date, 'unixepoch') as int) from race_results
+        where race_result_person_jockey_id=? order by 1 desc""", (pid,))]
+    now_y = int(time.strftime("%Y", time.gmtime(gd)))
+    year = to_int(q.get("year"), None) or (years[0] if years else now_y)
+    def span(y):
+        return (calendar.timegm((y, 1, 1, 0, 0, 0)), calendar.timegm((y + 1, 1, 1, 0, 0, 0)))
+    def runs(y, extra=""):
+        a, b = span(y)
+        return rows(con, """select r.race_result_rank as rank, r.race_result_cash_received as prize, r.race_result_horse_id as horse_id, r.race_result_trainer_id as trainer_id,
+            r.race_result_stable_id as stable_id, r.race_result_date as date, r.race_result_race_id as race_id, x.races_distance as dist, x.races_track as track,
+            x.races_type_of_race as grade, d.raceday_racecourse_id as course_id
+            from race_results r join races x on x.races_race_id=r.race_result_race_id left join race_days d on d.raceday_race_day_id=x.races_race_day_id
+            where r.race_result_person_jockey_id=? and r.race_result_date>=? and r.race_result_date<?""", (pid, a, b))
+    def summary(rs, upto=None):
+        if upto is not None:
+            rs = [r for r in rs if (r["date"] or 0) <= upto]
+        n = len(rs)
+        w = sum(1 for r in rs if r["rank"] == 1)
+        pl = sum(1 for r in rs if r["rank"] and r["rank"] <= 3)
+        return {"rides": n, "wins": w, "places": pl, "strike": (w / n) if n else None, "place_rate": (pl / n) if n else None,
+                "prize": sum(r["prize"] or 0 for r in rs), "stakes": sum(1 for r in rs if r["rank"] == 1 and r["grade"] in ("G1", "G2", "G3", "listed"))}
+    cur, prev = runs(year), runs(year - 1)
+    # the same point last season, when this season isn't over
+    a, _ = span(year)
+    upto = (gd - a) + span(year - 1)[0] if year == now_y else None
+    def group(rs, key, label):
+        g = {}
+        for r in rs:
+            k = key(r)
+            if k is None:
+                continue
+            s = g.setdefault(k, {"key": k, "rides": 0, "wins": 0, "places": 0, "prize": 0})
+            s["rides"] += 1
+            s["wins"] += r["rank"] == 1
+            s["places"] += bool(r["rank"] and r["rank"] <= 3)
+            s["prize"] += r["prize"] or 0
+        out = sorted(g.values(), key=lambda s: (-s["wins"], -s["rides"]))
+        for s in out:
+            s["strike"] = s["wins"] / s["rides"] if s["rides"] else None
+            s["label"] = label(s["key"])
+        return out
+    def band(d):
+        for lo, hi, lab in DIST_BANDS:
+            if d is not None and lo <= d < hi:
+                return lab
+        return None
+    cn = name_map(con, "racecourses", "racecourse_racecourse_id", "racecourse_name", [r["course_id"] for r in cur])
+    pn = name_map(con, "persons", "person_person_id", "person_full_name", [r["trainer_id"] for r in cur])
+    hn = name_map(con, "horses", "horse_horse_id", "horse_name", [r["horse_id"] for r in cur])
+    sn = name_map(con, "stables", "stable_stable_id", "stable_name", [r["stable_id"] for r in cur])
+    out = {"year": year, "years": years, "now": summary(cur), "prev": summary(prev), "prev_same": summary(prev, upto) if upto else None,
+           "by_course": group(cur, lambda r: r["course_id"], lambda k: cn.get(k)),
+           "by_distance": sorted(group(cur, lambda r: band(r["dist"]), lambda k: k), key=lambda s: [b[2] for b in DIST_BANDS].index(s["key"])),
+           "by_track": group(cur, lambda r: r["track"], lambda k: k),
+           "trainers": group(cur, lambda r: r["trainer_id"], lambda k: pn.get(k))[:15],
+           "horses": group(cur, lambda r: r["horse_id"], lambda k: hn.get(k))[:15],
+           "stables": group(cur, lambda r: r["stable_id"], lambda k: sn.get(k))[:15]}
+    months = {}
+    for r in cur:
+        m = int(time.strftime("%m", time.gmtime(r["date"])))
+        s = months.setdefault(m, {"month": m, "rides": 0, "wins": 0})
+        s["rides"] += 1
+        s["wins"] += r["rank"] == 1
+    out["months"] = [months[m] for m in sorted(months)]
+    # rides booked ahead, and ride offers
+    out["upcoming"] = rows(con, """select %s, c.racecourse_name as course, c.racecourse_racecourse_id as course_id, p.race_participant_horse_id as horse_id, h.horse_name as horse,
+        h.horse_stable_id as stable_id, s.stable_name as stable
+        from race_participants p join races x on x.races_race_id=p.race_participant_race_id
+        left join race_days d on d.raceday_race_day_id=x.races_race_day_id left join racecourses c on c.racecourse_racecourse_id=d.raceday_racecourse_id
+        left join horses h on h.horse_horse_id=p.race_participant_horse_id left join stables s on s.stable_stable_id=h.horse_stable_id
+        where p.race_participant_person_jockey_id=? and x.races_race_date_time>? order by x.races_race_date_time limit 100""" % RACE_COLS, (pid, gd)) if _t(con, "race_participants") else []
+    out["offers"] = rows(con, """select o.ride_offer_race_id as race_id, x.races_race_name as race, x.races_race_date_time as date, o.ride_offer_horse_id as horse_id, h.horse_name as horse,
+        o.ride_offer_stable_id as stable_id, s.stable_name as stable, o.ride_offer_fee as fee, o.ride_offer_created_date as offered, o.ride_offer_expires_date as expires,
+        o.ride_offer_status as status, o.ride_offer_win_percentage as win_pct
+        from ride_offers o left join races x on x.races_race_id=o.ride_offer_race_id left join horses h on h.horse_horse_id=o.ride_offer_horse_id
+        left join stables s on s.stable_stable_id=o.ride_offer_stable_id where o.ride_offer_person_id=? order by o.ride_offer_created_date desc""", (pid,)) if _t(con, "ride_offers") else []
+    return out
+
+
+# ------------------------------------------------------------------ 16.5: alerts on Home
+def api_alerts(con):
+    """Things worth a look for you: sponsor deals ending soon, new fan milestones, rides coming up, ride offers to answer, qualifying races."""
+    pid, ps = META.get("player_id"), META.get("player_stable_id")
+    gd = META.get("game_date") or time.time()
+    day = 86400
+    out = []
+    mine = [s["id"] for s in my_stables(con, pid, ps) if s["mine"]] if pid else []
+    mk = ",".join(str(int(x)) for x in mine) or "0"
+    if _t(con, "horse_sponsors"):
+        for r in rows(con, """select s.sponsor_horse_id as horse_id, h.horse_name as horse, s.sponsor_brand_name as brand, s.sponsor_contract_end_date as end, s.sponsor_monthly_payment as monthly
+                from horse_sponsors s join horses h on h.horse_horse_id=s.sponsor_horse_id where h.horse_stable_id in (%s) and h.horse_deceased_date is null
+                and s.sponsor_contract_start_date<=? and s.sponsor_contract_end_date>? and s.sponsor_contract_end_date<=? order by s.sponsor_contract_end_date""" % mk, (gd, gd, gd + 60 * day)):
+            out.append(dict(r, kind="sponsor_end", date=r["end"]))
+    if _t(con, "farm_sponsors"):
+        for r in rows(con, """select fs_stable_id as stable_id, fs_brand_name as brand, fs_contract_end_date as end, fs_monthly_payment as monthly from farm_sponsors
+                where fs_stable_id in (%s) and fs_contract_start_date<=? and fs_contract_end_date>? and fs_contract_end_date<=?""" % mk, (gd, gd, gd + 60 * day)):
+            out.append(dict(r, kind="farm_sponsor_end", date=r["end"], stable=dict(con.execute("select stable_stable_id, stable_name from stables where stable_stable_id=?", (r["stable_id"],)).fetchall()).get(r["stable_id"])))
+    for hid, ms in fan_inbox(con).items():
+        for m in ms:
+            if m["date"] and gd - 30 * day <= m["date"] <= gd and m["kind"] != "merch":
+                out.append({"kind": "fan", "horse_id": hid, "date": m["date"], "subject": m["subject"], "step": m["kind"]})
+    if pid and _t(con, "race_participants"):
+        for r in rows(con, """select x.races_race_id as race_id, x.races_race_name as race, x.races_race_date_time as date, x.races_type_of_race as grade, p.race_participant_horse_id as horse_id,
+                h.horse_name as horse from race_participants p join races x on x.races_race_id=p.race_participant_race_id left join horses h on h.horse_horse_id=p.race_participant_horse_id
+                where p.race_participant_person_jockey_id=? and x.races_race_date_time>? and x.races_race_date_time<=? order by x.races_race_date_time""", (pid, gd, gd + 14 * day)):
+            out.append(dict(r, kind="ride"))
+    if pid and _t(con, "ride_offers"):
+        for r in rows(con, """select o.ride_offer_race_id as race_id, x.races_race_name as race, o.ride_offer_horse_id as horse_id, h.horse_name as horse, o.ride_offer_fee as fee,
+                o.ride_offer_expires_date as date from ride_offers o left join races x on x.races_race_id=o.ride_offer_race_id left join horses h on h.horse_horse_id=o.ride_offer_horse_id
+                where o.ride_offer_person_id=? and o.ride_offer_status in ('pending','open','offered') and o.ride_offer_expires_date>?""", (pid, gd)):
+            out.append(dict(r, kind="offer"))
+    if _t(con, "horse_qualification_points"):
+        for r in rows(con, """select q.hqp_horse_id as horse_id, h.horse_name as horse, q.hqp_target_race_name as target, q.hqp_source_race_name as source, q.hqp_date_earned as date, q.hqp_type as type
+                from horse_qualification_points q join horses h on h.horse_horse_id=q.hqp_horse_id where h.horse_stable_id in (%s) and q.hqp_cycle_closed=0 and q.hqp_date_earned>=?
+                order by q.hqp_date_earned desc limit 10""" % mk, (gd - 60 * day,)):
+            out.append(dict(r, kind="qualified"))
+    hn = name_map(con, "horses", "horse_horse_id", "horse_name", [a["horse_id"] for a in out if a.get("horse_id") and not a.get("horse")])
+    for a in out:
+        if a.get("horse_id") and not a.get("horse"):
+            a["horse"] = hn.get(a["horse_id"])
+    order = {"offer": 0, "ride": 1, "sponsor_end": 2, "farm_sponsor_end": 2, "fan": 3, "qualified": 4}
+    out.sort(key=lambda a: (order.get(a["kind"], 9), a.get("date") or 0))
+    return {"alerts": out, "now": gd}
+
+
+# ------------------------------------------------------------------ 16.5: your notes in the search box; backing up your notes
+def notes_search(con, term):
+    d = notes_load()
+    t = term.lower()
+    tagn = {x["id"]: x["name"] for x in d.get("tags", [])}
+    hits = []
+    for k, it in d.get("items", {}).items():
+        if not k.startswith("horse:"):
+            continue
+        texts = [n.get("text") or "" for n in it.get("log") or []]
+        tags = [tagn.get(x, "") for x in it.get("tags") or []]
+        found = next((x for x in texts if t in x.lower()), None)
+        tag = next((x for x in tags if t in x.lower()), None)
+        if found or tag:
+            hits.append((it.get("updated") or 0, int(k[6:]), found, tag))
+    hits.sort(reverse=True)
+    hits = hits[:6]
+    names = name_map(con, "horses", "horse_horse_id", "horse_name", [h[1] for h in hits])
+    out = []
+    for _, hid, found, tag in hits:
+        if found:
+            i = found.lower().find(t)
+            snip = ("…" if i > 30 else "") + found[max(0, i - 30): i + len(t) + 40].replace("\n", " ") + ("…" if i + len(t) + 40 < len(found) else "")
+            extra = "Your note: " + snip
+        else:
+            extra = "Your tag: " + tag
+        out.append({"type": "horse", "id": hid, "name": names.get(hid) or "Horse #%d" % hid, "extra": extra, "note": True})
+    return out
+
+
+def notes_import(data):
+    """Bring back a notes backup: merge (add to what's there) or replace."""
+    mode = data.get("mode") or "merge"
+    src = data.get("data")
+    if not isinstance(src, dict) or not isinstance(src.get("items"), dict):
+        return {"error": "That isn't an HRM Viewer notes backup."}, 400
+    with NOTES_LOCK:
+        cur = notes_load()
+        if mode == "replace":
+            cur = {"v": 2, "tags": [], "items": {}}
+        have = {t["id"]: t for t in cur.get("tags", [])}
+        for t in src.get("tags") or []:
+            if isinstance(t, dict) and t.get("id") and t["id"] not in have and len(cur["tags"]) < TAGS_MAX:
+                cur["tags"].append({k: t.get(k) for k in ("id", "name", "color", "icon")})
+                have[t["id"]] = t
+        added = 0
+        for k, it in src["items"].items():
+            if not isinstance(it, dict) or not re.match(r"^horse:-?\d+$", k):
+                continue
+            mine = cur["items"].setdefault(k, {"tags": [], "log": []})
+            log = mine.setdefault("log", [])
+            seen = {(n.get("text"), n.get("at")) for n in log}
+            nmax = max([to_int(str(n.get("id", ""))[1:], 0) for n in log] + [0])
+            for n in it.get("log") or ([{"text": it["note"], "at": it.get("updated")}] if it.get("note") else []):
+                if (n.get("text"), n.get("at")) in seen or not n.get("text"):
+                    continue
+                nmax += 1
+                log.append({"id": "n%d" % nmax, "text": str(n["text"])[:NOTE_MAX], "at": n.get("at") or time.time(), "gd": n.get("gd"), "edited": n.get("edited")})
+                added += 1
+            mine["tags"] = sorted(set(mine.get("tags") or []) | {x for x in it.get("tags") or [] if x in have})
+            mine["updated"] = max(mine.get("updated") or 0, it.get("updated") or 0) or time.time()
+        write_json(notes_path(), cur)
+    NOTES_REV[0] += 1
+    return {"ok": True, "notes_added": added, "horses": len(src["items"]), "tags": len(cur["tags"])}, 200
 
 
 # ------------------------------------------------------------------ ownership groups (16.3)
@@ -2783,6 +3111,9 @@ def api_people(con, q):
     if role:
         join = " join staff f on f.staff_person_id=p.person_person_id and f.staff_end_date is null and f.staff_current_role=?"
         params.insert(0, role)
+    if q.get("lang") and has_table(con, "person_languages"):      # speaks this language (16.5)
+        where.append("p.person_person_id in (select person_id from person_languages where language=?)")
+        params.append(q["lang"])
     sort, d = sort_args(q, PEOPLE_SORTS, "fame")
     page, off = page_args(q)
     w = (" where " + " and ".join(where)) if where else ""
@@ -2796,7 +3127,16 @@ def api_people(con, q):
     sn = name_map(con, "stables", "stable_stable_id", "stable_name", [r["stable_id"] for r in data])
     for r in data:
         r["stable_name"] = sn.get(r["stable_id"])
-    return {"total": total, "page": page, "page_size": page_size(), "rows": data}
+    if has_table(con, "person_languages") and data:
+        lg = {}
+        for pid, lang in con.execute("select person_id, language from person_languages where person_id in (%s) order by skill desc" % ",".join(str(int(r["id"])) for r in data)):
+            lg.setdefault(pid, []).append(lang)
+        for r in data:
+            r["languages"] = lg.get(r["id"], [])
+    out = {"total": total, "page": page, "page_size": page_size(), "rows": data}
+    if q.get("meta") == "1":
+        out["languages"] = language_list(con)
+    return out
 
 
 # People → Jockeys: every person's jockey, trainer and stable (management) numbers side by side
@@ -3711,6 +4051,7 @@ def api_person(con, pid):
             a["label"] = award_label(a["category"], concepts)
     out["roles"] = person_roles(con, pid, p)
     out["owned_groups"] = person_owned_groups(con, pid)
+    out.update(person_more(con, pid))
     return out
 
 
@@ -3773,6 +4114,7 @@ def api_course(con, cid):
         from races x join race_days d on d.raceday_race_day_id=x.races_race_day_id
         where d.raceday_racecourse_id=? and x.races_type_of_race in ('G1','G2','G3','listed')
         group by x.races_race_name order by min(x.races_grade), x.races_race_name""", (cid,))
+    out["sponsors"] = course_sponsors(con, cid)
     return out
 
 
@@ -3990,6 +4332,7 @@ def gwins(alias_h, alias_s, g):
 
 HT_SORTS = {
     "fans": "coalesce(fans,0)", "sponsor_pay": "coalesce(sponsor_pay,0)",
+    "earn_pct": "coalesce(earn_pct,101)", "ped_pct": "coalesce(ped_pct,-1)",
     "name": "h.horse_name", "gender": "h.horse_gender", "birth": "h.horse_birth_date", "stable": "st.stable_name",
     "sire": "sp.horse_name", "dam": "dp.horse_name", "rating": "h.horse_international_rating", "peak": "h.horse_peak_rating",
     "starts": "coalesce(s.starts,0)", "wins": "coalesce(s.wins,0)", "seconds": "coalesce(s.seconds,0)", "thirds": "coalesce(s.thirds,0)",
@@ -4040,6 +4383,16 @@ def horse_table_query(con, q):
     else:
         base += " left join (select null as sponsor_id, null as sponsor_monthly_payment) hs on 0"
         sp_sel = "null as sponsor, null as sponsor_pay"
+    # 16.5: the game's earnings and pedigree rankings (top x% by career earnings; how a horse's pedigree compares)
+    if has_table(con, "horse_earnings_rankings"):
+        base += " left join horse_earnings_rankings er on er.horse_id=h.horse_horse_id"
+        sp_sel += ", er.career_percentile as earn_pct"
+    else:
+        sp_sel += ", null as earn_pct"
+    if has_table(con, "horse_pedigree_percentiles"):
+        sp_sel += ", (select pp.pedigree_rank from horse_pedigree_percentiles pp where pp.pedigree_horse_id=h.horse_horse_id order by pp.pedigree_percentile_id desc limit 1) as ped_pct"
+    else:
+        sp_sel += ", null as ped_pct"
     w = (" where " + " and ".join(where)) if where else ""
     sel = """select h.horse_horse_id as id, h.horse_name as name, h.horse_gender as gender, h.horse_birth_date as birth,
         h.horse_deceased_date as died, h.horse_stable_id as stable_id, st.stable_name as stable,
@@ -5010,6 +5363,10 @@ ROUTES = [
     (re.compile(r"^/api/family/(-?\d+)$"), lambda con, m, q: api_family(con, int(m.group(1)))),
     (re.compile(r"^/api/dynasty/(-?\d+)$"), lambda con, m, q: api_dynasty(con, int(m.group(1)))),
     (re.compile(r"^/api/lifespans/(-?\d+)$"), lambda con, m, q: api_lifespans(con, int(m.group(1)))),
+    (re.compile(r"^/api/horse_more/(-?\d+)$"), lambda con, m, q: api_horse_more(con, int(m.group(1)))),
+    (re.compile(r"^/api/stable_more/(-?\d+)$"), lambda con, m, q: api_stable_more(con, int(m.group(1)))),
+    (re.compile(r"^/api/jockey_season/(-?\d+)$"), lambda con, m, q: api_jockey_season(con, int(m.group(1)), q)),
+    (re.compile(r"^/api/alerts$"), lambda con, m, q: api_alerts(con)),
     (re.compile(r"^/api/horse_fans/(-?\d+)$"), lambda con, m, q: api_horse_fans(con, int(m.group(1)))),
     (re.compile(r"^/api/notes$"), lambda con, m, q: notes_detail(con) if q.get("detail") else notes_load()),
     (re.compile(r"^/api/people_overview$"), lambda con, m, q: api_people_overview(con, q)),
@@ -5546,6 +5903,17 @@ class Handler(BaseHTTPRequestHandler):
             return self.handle_api(lambda con: api_status(con, q), allow_empty=True)
         if path == "/api/import/progress":
             return self.send_json(job_snapshot())
+        if path == "/api/notes/export":       # a backup of your notes and tags (16.5)
+            if not notes_path():
+                return self.send_json({"error": "Load a database first."}, 409)
+            body = json.dumps(dict(notes_load(), backup="HRM Viewer notes", made=time.time()), ensure_ascii=False, indent=1).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Disposition", 'attachment; filename="hrm-viewer-notes-%s.json"' % time.strftime("%Y-%m-%d"))
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
         if path == "/api/dbs":
             return self.send_json(api_dbs())
         if path == "/api/auto":
@@ -5868,6 +6236,18 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 open_outside(os.path.dirname(p))
             return self.send_json({"ok": True})
+        if path == "/api/notes/import":
+            length = to_int(self.headers.get("Content-Length"), 0)
+            if length > 64 * 1024 * 1024:
+                return self.send_json({"error": "That file is too big to be a notes backup."}, 413)
+            if not notes_path():
+                return self.send_json({"error": "Load a database first."}, 409)
+            try:
+                data = json.loads(self.rfile.read(length) or b"{}") if length else {}
+            except ValueError:
+                return self.send_json({"error": "That isn't an HRM Viewer notes backup."}, 400)
+            out, code = notes_import(data if isinstance(data, dict) else {}) if isinstance(data, dict) else ({"error": "That isn't an HRM Viewer notes backup."}, 400)
+            return self.send_json(out, code)
         if path in ("/api/notes/item", "/api/notes/tags"):
             length = to_int(self.headers.get("Content-Length"), 0)
             if length > 512 * 1024:
@@ -6065,7 +6445,7 @@ class Handler(BaseHTTPRequestHandler):
 
 # --------------------------------------------------------------------------- in-app updates
 
-VERSION = "16.4"
+VERSION = "16.5"
 BACKUP_DIR = os.path.join(APP_DIR, "backups")
 UPDATE_PENDING = os.path.join(DATA_DIR, "update_pending.json")
 UPDATE_RESULT = os.path.join(DATA_DIR, "update_result.json")
