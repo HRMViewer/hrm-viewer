@@ -4917,7 +4917,7 @@ def api_horse_fans(con, hid):
 # ------------------------------------------------------------------ your own notes and tags (15.7)
 # Kept with each database (its folder), so they stay when you load a newer save into it. Keys are "horse:<id>".
 NOTES_LOCK = threading.Lock()
-TAG_COLORS = ("blue", "rose", "amber", "green", "purple", "teal", "grey")
+TAG_COLORS = ("blue", "rose", "amber", "green", "purple", "teal", "red", "orange", "navy", "grey")
 TAG_PRESETS = [{"id": "website", "name": "Website", "color": "blue", "icon": "globe"},
                {"id": "fanclub", "name": "Fan club", "color": "rose", "icon": "users"},
                {"id": "merch", "name": "Merchandise", "color": "amber", "icon": "bag"}]

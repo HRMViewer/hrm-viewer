@@ -1306,3 +1306,10 @@ table.data.wide .tgs { flex-wrap: nowrap; }
 .fl-not { display: inline-block; font-size: var(--fs-xs); font-weight: 600; color: #a5481f; background: #fbe9e1; border-radius: 999px; padding: 0 7px; margin-left: 4px; }
 .fl-step.was .fl-dot { background: #fdf8ec; border-style: dashed; }
 .tile .hint .fl-not { margin-left: 0; }
+.tg.red { background: #fbe4e2; color: #9a2a22; } .tg.orange { background: #fdebdc; color: #94460f; } .tg.navy { background: #e1e6f2; color: #1f2f5c; }
+.tg-tog.on.red { background: #fbe4e2; color: #9a2a22; border-color: #eba59f; } .tg-tog.on.orange { background: #fdebdc; color: #94460f; border-color: #efb98d; }
+.tg-tog.on.navy { background: #e1e6f2; color: #1f2f5c; border-color: #a6b2d2; }
+.nt-c.red { background: #d0453a; } .nt-c.orange { background: #e07b2a; } .nt-c.navy { background: #2f4580; }
+.tc-pick { display: inline-flex; gap: 3px; align-items: center; }
+.hn-new .tc-pick .nt-c { width: 18px; height: 18px; }
+.nt-add .tc-pick { margin: 0 4px; }

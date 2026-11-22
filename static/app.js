@@ -1997,7 +1997,7 @@ async function loadNotes() {
 }
 const noteOf = (id) => NOTES.items["horse:" + id] || null;
 const tagById = (t) => NOTES.tags.find((x) => x.id === t);
-const TAG_COLOURS = [["blue", "Blue"], ["rose", "Pink"], ["amber", "Amber"], ["green", "Green"], ["purple", "Purple"], ["teal", "Teal"], ["grey", "Grey"]];
+const TAG_COLOURS = [["blue", "Blue"], ["rose", "Pink"], ["amber", "Amber"], ["green", "Green"], ["purple", "Purple"], ["teal", "Teal"], ["red", "Red"], ["orange", "Orange"], ["navy", "Navy"], ["grey", "Grey"]];
 const TAG_ICONS = {
   globe: '<circle cx="8" cy="8" r="5.5"/><path d="M2.5 8h11M8 2.5c2.2 2.2 2.2 8.8 0 11M8 2.5c-2.2 2.2-2.2 8.8 0 11"/>',
   users: '<circle cx="6" cy="5.5" r="2.2"/><path d="M2 13a4 4 0 0 1 8 0"/><circle cx="11.2" cy="6" r="1.8"/><path d="M10.6 9.4A3.6 3.6 0 0 1 14 13"/>',
@@ -2012,13 +2012,13 @@ const TAG_ICONS = {
 const tagIc = (k) => `<svg class="fic" viewBox="0 0 16 16" aria-hidden="true">${TAG_ICONS[k] || TAG_ICONS.tag}</svg>`;
 const tagChip = (t) => `<span class="tg ${t.color || "grey"}">${tagIc(t.icon || "tag")}${esc(t.name)}</span>`;
 // a horse's tags (and a note icon you can point at) for lists and its page heading
-function horseTagsHtml(id, withNote = true) {
-  const it = noteOf(id);
-  if (!it) return "";
+function horseTagsHtml(id, withNote = true, auto = null) {
+  const it = noteOf(id), extra = autoTagsInner(auto);
+  if (!it) return extra ? `<span class="tgs">${extra}</span>` : "";
   const chips = (it.tags || []).map(tagById).filter(Boolean).map(tagChip).join("");
   const txt = (it.note || "").trim();
   const note = withNote && txt ? `<a class="tg-note" href="#/horse/${id}/fans" data-tip="${esc(txt.slice(0, 240))}${txt.length > 240 ? "…" : ""}" aria-label="Your note">${tagIc("note")}</a>` : "";
-  return chips || note ? `<span class="tgs">${chips}${note}</span>` : "";
+  return chips || note || extra ? `<span class="tgs">${chips}${note}${extra}</span>` : "";
 }
 async function notesPost(path, body) {
   const r = await fetch("/api/notes/" + path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
@@ -2051,7 +2051,7 @@ function fShortN(n) {
   return a >= 1e6 ? (n / 1e6).toFixed(a >= 1e7 ? 1 : 2).replace(/\.?0+$/, "") + "M" : a >= 1e4 ? Math.round(n / 1e3) + "k" : fNum(n, 0);
 }
 // the automatic chips (outlined, so they read differently from your own tags)
-function autoTagsHtml(a) {
+function autoTagsInner(a) {
   if (!a) return "";
   const st = fanStep(a.band), out = [];
   if (st) {
@@ -2061,14 +2061,30 @@ function autoTagsHtml(a) {
   }
   if (a.sponsor) out.push(`<span class="tg auto spon" data-tip="Sponsored by ${esc(a.sponsor)}${isNum(a.pay) ? " · " + fMoneyShort(a.pay) + " a month" : ""}">${tagIc("badge")}Sponsored</span>`);
   if (a.merch) out.push(`<span class="tg auto merch" data-tip="Offered a merchandise deal (from your inbox)">${tagIc("bag")}Merch</span>`);
-  return out.length ? `<span class="tgs">${out.join("")}</span>` : "";
+  return out.join("");
 }
+// colour swatches for a new tag
+let HN_COLOUR = "", NT_COLOUR = "";
+const nextColour = () => { const used = NOTES.tags.map((t) => t.color); return (TAG_COLOURS.find(([c]) => !used.includes(c)) || TAG_COLOURS[NOTES.tags.length % TAG_COLOURS.length])[0]; };
+function tagColourPick(kind, cur) {
+  const c0 = cur || nextColour();
+  return `<span class="nt-cols tc-pick" role="radiogroup" aria-label="Colour for the new tag">${TAG_COLOURS.map(([c, n]) =>
+    `<button type="button" class="nt-c ${c}${c === c0 ? " on" : ""}" data-tc="${kind}" data-c="${c}" role="radio" aria-checked="${c === c0}" aria-label="${n}" title="${n}"></button>`).join("")}</span>`;
+}
+document.addEventListener("click", (e) => {
+  const b = e.target.closest("[data-tc]");
+  if (!b) return;
+  e.preventDefault();
+  $$(".nt-c", b.parentNode).forEach((x) => { x.classList.toggle("on", x === b); x.setAttribute("aria-checked", x === b); });
+  if (b.dataset.tc === "hn") HN_COLOUR = b.dataset.c; else NT_COLOUR = b.dataset.c;
+});
+const pickedColour = (root) => { const on = root && $(".tc-pick .nt-c.on", root); return on ? on.dataset.c : nextColour(); };
 // the panel on a horse's Fans, sponsors & notes tab
 function horseNotesPanel(id) {
   const it = noteOf(id) || {}, on = new Set(it.tags || []);
   const chips = NOTES.tags.map((t) => `<button class="tg-tog ${t.color || "grey"}${on.has(t.id) ? " on" : ""}" data-hn-tag="${esc(t.id)}" aria-pressed="${on.has(t.id)}">${tagIc(t.icon || "tag")}${esc(t.name)}</button>`).join("");
-  return `<section class="panel hn-panel" id="hn-panel" data-hn="${id}"><div class="panel-head"><h2>Your notes &amp; tags</h2><span class="note">Only you see these · kept with this database · <a href="#/notes">All notes &amp; tags</a></span></div>
-    <div class="hn-tags">${chips}<span class="hn-new"><input type="text" maxlength="40" placeholder="New tag" aria-label="New tag name"><button class="btn sm" data-hn-add>Add tag</button></span></div>
+  return `<section class="panel hn-panel" id="hn-panel" data-hn="${id}"><div class="panel-head"><h2>Your notes &amp; tags</h2><span class="note">Only you see these · kept with this database · <a href="#/notes">Rename or recolour tags</a></span></div>
+    <div class="hn-tags">${chips}<span class="hn-new"><input type="text" maxlength="40" placeholder="New tag" aria-label="New tag name">${tagColourPick("hn", HN_COLOUR)}<button class="btn sm" data-hn-add>Add tag</button></span></div>
     <textarea class="hn-text" rows="4" maxlength="20000" placeholder="Anything about this horse: its website, fan club, merchandise, plans, reminders…" aria-label="Your notes about this horse">${esc(it.note || "")}</textarea>
     <div class="hn-foot small muted"><span class="hn-state">${it.updated ? "Last changed " + fDate(it.updated) : "Saves as you type"}</span></div></section>`;
 }
@@ -2100,7 +2116,8 @@ async function hnAddTag(box) {
   let t = NOTES.tags.find((x) => x.name.toLowerCase() === name.toLowerCase());
   try {
     if (!t) {
-      await saveTagList(NOTES.tags.concat([{ name }]));
+      await saveTagList(NOTES.tags.concat([{ name, color: pickedColour(box) }]));
+      HN_COLOUR = "";
       t = NOTES.tags.find((x) => x.name.toLowerCase() === name.toLowerCase());
     }
     const it = noteOf(id) || {};
@@ -2150,7 +2167,7 @@ async function notesPage(route) {
       <a class="small" href="${hashFor(["notes"], { tag: t.id })}">${fNum(count[t.id] || 0)} horse${count[t.id] === 1 ? "" : "s"}</a>
       <button class="btn sm" data-nt-del="${i}">Delete</button></div>`).join("");
   html += panel("Your tags", `<div class="nt-list">${tagRows || '<div class="empty">No tags yet.</div>'}</div>
-    <div class="nt-add"><input type="text" id="nt-new" maxlength="40" placeholder="New tag, e.g. Social media" aria-label="New tag name"><button class="btn" id="nt-add">Add tag</button><span class="small muted" id="nt-state"></span></div>`,
+    <div class="nt-add"><input type="text" id="nt-new" maxlength="40" placeholder="New tag, e.g. Social media" aria-label="New tag name">${tagColourPick("nt", NT_COLOUR)}<button class="btn" id="nt-add">Add tag</button><span class="small muted" id="nt-state"></span></div>`,
     "Rename one by typing over it · tick a horse's tags on its Fans, sponsors & notes tab");
   // the horses
   const text = (q.q || "").trim().toLowerCase(), tag = q.tag || "";
@@ -2183,7 +2200,7 @@ notesPage.after = () => {
     if (!b.dataset.sure) { b.dataset.sure = "1"; b.classList.add("danger"); b.textContent = n ? `Remove from ${n} horse${n === 1 ? "" : "s"}?` : "Click again to delete"; return; }
     const t = copy(); t.splice(i, 1); save(t, "Deleted.");
   }));
-  const add = () => { const inp = $("#nt-new"), v = inp.value.trim(); if (!v) return inp.focus(); if (NOTES.tags.some((t) => t.name.toLowerCase() === v.toLowerCase())) return say("You already have that tag."); save(copy().concat([{ name: v }]), "Added."); };
+  const add = () => { const inp = $("#nt-new"), v = inp.value.trim(); if (!v) return inp.focus(); if (NOTES.tags.some((t) => t.name.toLowerCase() === v.toLowerCase())) return say("You already have that tag."); NT_COLOUR = ""; save(copy().concat([{ name: v, color: pickedColour($(".nt-add")) }]), "Added."); };
   const ab = $("#nt-add");
   if (ab) ab.addEventListener("click", add);
   const ni = $("#nt-new");
@@ -2196,7 +2213,7 @@ async function horsesPage(route) {
     filters: (q) => searchBox(q, "Search horses") + statusSeg("horse", q, "alive") +
       select("gender", q, [["", "Any sex"], ["Colt", "Colts"], ["Filly", "Fillies"], ["Stallion", "Stallions"], ["Mare", "Mares"], ["Gelding", "Geldings"]]) + select("tag", q, tagFilterOpts()),
     cols: [
-      { h: "Name", sort: "name", f: (r) => `${horseThumb(r.id)}${L.horse(r.id, r.name)}${r.died ? ' <span class="badge dead">Dead</span>' : ""}${horseTagsHtml(r.id)}${autoTagsHtml(r.auto)}` },
+      { h: "Name", sort: "name", f: (r) => `${horseThumb(r.id)}${L.horse(r.id, r.name)}${r.died ? ' <span class="badge dead">Dead</span>' : ""}${horseTagsHtml(r.id, true, r.auto)}` },
       { h: "Sex", f: (r) => esc(r.gender) },
       { h: "Age", cls: "num", sort: "birth", f: (r) => fNum(age(r.birth, r.died)) },
       { h: "Stable", f: (r) => L.stable(r.stable_id, r.stable_name) },
@@ -5003,7 +5020,7 @@ async function horseTablePage(route) {
       rangeBox("Age", `<input type="number" min="0" data-q="agemin" value="${esc(q.agemin || "")}" placeholder="any" aria-label="Youngest age">`,
         `<input type="number" min="0" data-q="agemax" value="${esc(q.agemax || "")}" placeholder="any" aria-label="Oldest age">`) + chip,
     cols: [
-      { h: "Horse", sort: "name", f: (r) => `${horseThumb(r.id)}${L.horse(r.id, r.name)}${horseTagsHtml(r.id)}${autoTagsHtml(r.auto)}` },
+      { h: "Horse", sort: "name", f: (r) => `${horseThumb(r.id)}${L.horse(r.id, r.name)}${horseTagsHtml(r.id, true, r.auto)}` },
       { h: "Sex", sort: "gender", f: (r) => esc(r.gender) },
       { h: "Age", sort: "birth", cls: "num", f: (r) => fNum(age(r.birth, r.died)) },
       { h: "Stable", sort: "stable", f: (r) => L.stable(r.stable_id, r.stable) },
