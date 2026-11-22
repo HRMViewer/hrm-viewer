@@ -1,5 +1,17 @@
 [
   {
+    "version": "16.2",
+    "date": "2026-11-22",
+    "title": "Horse and concept awards for managers and staff",
+    "changes": [
+      "A person's Awards tab now includes the horse and concept awards of horses they worked with: Horse of the Year, Champion Male, the age and sex champions, Hall of Fame nominations and concept awards such as Weight for Age Triple Crown (New Zealand) and Autumn Triple Crown (Japan). Each shows the horse and their role: Manager, Head trainer, Trainer, Jockey or Caretaker (or several, e.g. Manager & Trainer).",
+      "Managers share in every horse award and Group/Listed race win won while they managed the horse's stable. The game writes only one manager on each award, so before, a co-manager (or you) could miss out; this is the same fix 15.6 made for race wins.",
+      "Group 2, Group 3 and Listed wins on the Awards tab now count every role too (head trainer and manager, not just jockey).",
+      "New tiles on the person Awards tab: Own awards, Horse & concept awards, Group & Listed wins, and one for each role. The filter has Own awards, Horse awards, Race wins and As manager / trainer / jockey… options.",
+      "These awards also appear in the person's Latest awards (with the horse and role) and count in the award totals on the Lifespans, Dynasty and family pages."
+    ]
+  },
+  {
     "version": "16.1",
     "date": "2026-11-22",
     "title": "Softer family tree highlights in dark mode",

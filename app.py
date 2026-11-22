@@ -1441,6 +1441,45 @@ AWARD_ROLE_COLS = [("award_jockey_id", "Jockey"), ("award_trainer_id", "Trainer"
                    ("award_stable_manager_id", "Manager"), ("award_caretaker_id", "Caretaker")]
 
 
+AWARD_ROLE_ORDER = ["Manager", "Head trainer", "Trainer", "Jockey", "Caretaker"]
+
+
+def person_horse_awards(con, pids, races=False):
+    """Horse awards (season and concept awards; with races=True also Group/Listed race-win awards) that these people share in:
+    as the horse's jockey, trainer, head trainer, manager or caretaker that the game wrote on the award, or as anyone who managed
+    the horse's stable on the award date (the game writes one manager only, as on race results).
+    {person: [award row + "roles": [...]]}"""
+    pids = {p for p in pids if p}
+    out = {p: [] for p in pids}
+    if not pids or not has_table(con, "awards"):
+        return out
+    acols = columns(con, "awards")
+    roles = [(c, r) for c, r in AWARD_ROLE_COLS if c in acols]
+    by_st, _ = manager_tenures(con)
+    race_cats = ("g1_race", "g2_race", "g3_race", "listed_race")
+    sql = """select a.award_id as id, a.award_category as cat, a.award_year as year, a.award_date as date, a.award_rank as rank,
+        a.award_value as value, a.award_description as description, a.award_race_id as race_id, a.award_entity_type as etype,
+        a.award_entity_id as eid, coalesce(a.award_horse_id, a.award_entity_id) as horse_id, a.award_stable_id as stable_id,
+        a.award_jockey_id as jockey_id%s from awards a where a.award_entity_type='horse'""" % "".join(", a.%s as %s" % (c, c) for c, _ in roles)
+    if not races:
+        sql += " and a.award_category not in ('g1_race','g2_race','g3_race','listed_race')"
+    for r in rows(con, sql):
+        got = {}
+        for c, role in roles:
+            if r.get(c) in pids:
+                got.setdefault(r[c], set()).add(role)
+        if r["stable_id"] and r["date"] is not None:
+            for a, b, pid in by_st.get(r["stable_id"], ()):
+                if pid in pids and a <= r["date"] <= b:
+                    got.setdefault(pid, set()).add("Manager")
+        if not got:
+            continue
+        base = {k: v for k, v in r.items() if not k.startswith("award_")}
+        for pid, rs in got.items():
+            out[pid].append(dict(base, roles=[x for x in AWARD_ROLE_ORDER if x in rs]))
+    return out
+
+
 def api_awards_of(con, kind, eid):
     """The Awards tab of a horse or a person: every season award, and every Group/Listed race win.
     A person's race wins are the ones they rode, trained, managed or looked after (the role is given)."""
@@ -1459,23 +1498,46 @@ def api_awards_of(con, kind, eid):
             r["horse_id"] = r["horse_id"] or eid
     else:
         data = rows(con, sel % "" + " where a.award_entity_type='person' and a.award_entity_id=?", (eid,))
-        if roles:     # race wins they took part in
-            role_case = "case " + " ".join("when a.%s=?1 then '%s'" % (c, r) for c, r in roles) + " end"
-            data += rows(con, sel % (", %s as role" % role_case) + " where a.award_category in ('g1_race','g2_race','g3_race','listed_race') and ("
-                         + " or ".join("a.%s=?1" % c for c, _ in roles) + ")", (eid,))
+        # horse awards and Group/Listed race wins they shared in, with their role(s)
+        for r in person_horse_awards(con, [eid], races=True)[eid]:
+            r["role"] = " & ".join(r.pop("roles"))
+            r["horse_award"] = r["cat"] not in AWARD_RACE_CATS.values()
+            data.append(r)
     # Group 2/3 and Listed wins the awards table doesn't hold, from the results (for a person: the races they rode)
     have = {r["race_id"] for r in data if r.get("race_id")}
-    who = "r.race_result_horse_id=?" if kind == "horse" else "r.race_result_person_jockey_id=?"
+    rcols = set(columns(con, "race_results")) if has_table(con, "race_results") else set()
+    params = [eid]
+    if kind == "horse":
+        who = "r.race_result_horse_id=?"
+    else:     # rode, head-trained or managed (by the result, or by managing the stable that day)
+        who = "(" + " or ".join("r.%s=?1" % c for c in ("race_result_person_jockey_id", "race_result_stable_head_trainer_id", "race_result_stable_manager_id") if c in rcols)
+        mgr = [(st, a, b) for st, a, b in manager_tenures(con)[1].get(eid, ())]
+        if mgr:
+            who += " or r.race_result_stable_id in (%s)" % ",".join(str(int(st)) for st in {m[0] for m in mgr})
+        who += ")"
+    extra = ", r.race_result_stable_head_trainer_id as ht_id" if "race_result_stable_head_trainer_id" in rcols else ", null as ht_id"
+    extra += ", r.race_result_stable_manager_id as mg_id" if "race_result_stable_manager_id" in rcols else ", null as mg_id"
     for w in rows(con, """select r.race_result_date as date, r.race_result_cash_received as value, x.races_race_name as description,
             x.races_race_id as race_id, x.races_type_of_race as race_type, r.race_result_horse_id as horse_id,
-            r.race_result_person_jockey_id as jockey_id, r.race_result_stable_id as stable_id
+            r.race_result_person_jockey_id as jockey_id, r.race_result_stable_id as stable_id%s
             from race_results r join races x on x.races_race_id=r.race_result_race_id
-            where %s and r.race_result_rank=1 and x.races_type_of_race in ('G1','G2','G3','listed')""" % who, (eid,)) if has_table(con, "race_results") and "race_result_stable_id" in columns(con, "race_results") else []:
+            where %s and r.race_result_rank=1 and x.races_type_of_race in ('G1','G2','G3','listed')""" % (extra, who), params) if "race_result_stable_id" in rcols else []:
         if w["race_id"] in have:
             continue
+        ht, mg = w.pop("ht_id"), w.pop("mg_id")
+        if kind == "person":
+            rs = set()
+            if mg == eid or any(st == w["stable_id"] and a <= (w["date"] or 0) <= b for st, a, b in mgr):
+                rs.add("Manager")
+            if ht == eid:
+                rs.add("Head trainer")
+            if w["jockey_id"] == eid:
+                rs.add("Jockey")
+            if not rs:
+                continue
+            w["role"] = " & ".join(x for x in AWARD_ROLE_ORDER if x in rs)
         yr = (datetime.datetime(1970, 1, 1) + datetime.timedelta(seconds=w["date"])).year if w["date"] is not None else None
-        data.append(dict(w, id=None, cat=AWARD_RACE_CATS[w.pop("race_type")], year=yr, rank=None, etype=kind, eid=eid,
-                         role="Jockey" if kind == "person" else None))
+        data.append(dict(w, id=None, cat=AWARD_RACE_CATS[w.pop("race_type")], year=yr, rank=None, etype=kind, eid=eid))
     hn = name_map(con, "horses", "horse_horse_id", "horse_name", [r["horse_id"] for r in data])
     sn = name_map(con, "stables", "stable_stable_id", "stable_name", [r["stable_id"] for r in data])
     pn = name_map(con, "persons", "person_person_id", "person_full_name", [r["jockey_id"] for r in data])
@@ -1484,6 +1546,7 @@ def api_awards_of(con, kind, eid):
         r["label"] = award_label(r["cat"], concepts) if r["kind"] == "season" else None
         r["horse"], r["stable"], r["jockey"] = hn.get(r["horse_id"]), sn.get(r["stable_id"]), pn.get(r["jockey_id"])
         r.setdefault("role", None)
+        r.setdefault("horse_award", False)
     data.sort(key=lambda r: (r["date"] or 0, -(r["rank"] or 0)), reverse=True)
     return {"awards": data}
 
@@ -3174,6 +3237,20 @@ def life_facts(con, ids):
                 won = r["cat"] not in ("worst_overall", "hall_of_fame_nominee") and (r["rank"] in (None, 0, 1))
                 if won:
                     out[r["id"]]["awards"].append({"year": r["year"], "date": r["date"], "label": award_label(r["cat"], concepts), "cat": r["cat"]})
+        hn = {}
+        for pid, lst in person_horse_awards(con, list(out)).items():
+            for r in lst:
+                if r["cat"] in ("worst_overall", "hall_of_fame_nominee") or r["rank"] not in (None, 0, 1):
+                    continue
+                hn.setdefault(r["horse_id"], None)
+                out[pid]["awards"].append({"year": r["year"], "date": r["date"], "label": award_label(r["cat"], concepts), "cat": r["cat"],
+                                           "horse_id": r["horse_id"], "roles": r["roles"]})
+        names = name_map(con, "horses", "horse_horse_id", "horse_name", list(hn))
+        for f in out.values():
+            for a in f["awards"]:
+                if a.get("horse_id"):
+                    a["label"] = "%s · %s, as %s" % (a["label"], names.get(a["horse_id"]) or "a horse", " & ".join(a["roles"]).lower())
+            f["awards"].sort(key=lambda a: (a["year"] or 0, a["date"] or 0))
     for f in out.values():
         f["wins"] = sum(f["by_year"].values())      # different races won, in any role
     return out
@@ -3454,6 +3531,12 @@ def api_person(con, pid):
     out["events"] = entity_events(con, pid, "person")
     out["awards"] = rows(con, """select award_category as category, award_year as year, award_date as date, award_rank as rank, award_value as value,
         award_description as description from awards where award_entity_id=? and award_entity_type='person' order by award_date desc""", (pid,)) if has_table(con, "awards") else []
+    ha = person_horse_awards(con, [pid])[pid] if has_table(con, "awards") else []
+    if ha:
+        names = name_map(con, "horses", "horse_horse_id", "horse_name", [r["horse_id"] for r in ha])
+        out["awards"] += [{"category": r["cat"], "year": r["year"], "date": r["date"], "rank": r["rank"], "value": r["value"], "description": r["description"],
+                           "horse_id": r["horse_id"], "horse": names.get(r["horse_id"]), "role": " & ".join(r["roles"])} for r in ha]
+        out["awards"].sort(key=lambda a: a["date"] or 0, reverse=True)
     if out["awards"]:
         concepts = dict(con.execute("select concept_id, concept_name from concepts").fetchall()) if has_table(con, "concepts") else {}
         for a in out["awards"]:
@@ -5813,7 +5896,7 @@ class Handler(BaseHTTPRequestHandler):
 
 # --------------------------------------------------------------------------- in-app updates
 
-VERSION = "16.1"
+VERSION = "16.2"
 BACKUP_DIR = os.path.join(APP_DIR, "backups")
 UPDATE_PENDING = os.path.join(DATA_DIR, "update_pending.json")
 UPDATE_RESULT = os.path.join(DATA_DIR, "update_result.json")
