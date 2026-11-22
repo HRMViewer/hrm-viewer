@@ -1,5 +1,15 @@
 [
   {
+    "version": "16.0",
+    "date": "2026-11-22",
+    "title": "Your stables stand out in every table",
+    "changes": [
+      "The gold highlight from Top sires and dams is now in every table that isn't about stables: rows for horses (and people) in stables you own are gold with a bar down the left, and a small key under the table explains it. That includes All horses, the Horse table, race results and entries, people and jockey lists, the home page, and the race records and offspring on horse and person pages.",
+      "Stables you own include ones your stables own; ones you only manage or hold shares in aren't highlighted. A race result shows the stable each horse ran for that day.",
+      "The stable pages and stable lists (All stables, Stable table, Rankings) aren't highlighted, and nor is a table where every row is yours (your own horse's race record, say), since there'd be nothing to pick out."
+    ]
+  },
+  {
     "version": "15.9",
     "date": "2026-11-22",
     "title": "Your sires and dams stand out",

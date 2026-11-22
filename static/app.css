@@ -1345,3 +1345,6 @@ table.data.wide tr.own td:first-child { background: #fff6dc; box-shadow: inset 3
 table.data tbody tr.own:hover td { background: #fbeec4; }
 .own-key { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-sm); color: #6b7385; }
 .own-key i { width: 14px; height: 14px; border-radius: 3px; background: #fff6dc; box-shadow: inset 3px 0 0 #d4a72c, 0 0 0 1px #ecd9a4; }
+table.data tr.own td { background: #fff6dc; }
+table.data tr.win.own td { background: var(--win); }
+.own-foot { margin-top: 6px; }

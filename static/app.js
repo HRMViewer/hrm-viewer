@@ -750,8 +750,23 @@ async function render() {
 }
 
 // ------------------------------------------------------------------ shared rendering
+// rows for horses (and people) in stables you own are highlighted in every table, except on the stable pages themselves
+let OWN_MEMO = { st: undefined, set: new Set() };
+function ownedSet() {
+  if (OWN_MEMO.st !== STATUS) OWN_MEMO = { st: STATUS, set: new Set(((STATUS && STATUS.my_stables) || []).filter((s) => s.mine && !/^(Manager|Assistant manager)$/.test(s.role)).map((s) => s.id)) };
+  return OWN_MEMO.set;
+}
+const OWN_OFF_ROUTES = ["stable", "stables", "stable-table", "stable-rankings"];
+const ownHlOn = () => !OWN_OFF_ROUTES.includes(parseHash().parts[0] || "");
+const isOwnRow = (r) => { const sid = r && (r.stable_id ?? r.horse_stable_id); return sid != null && ownedSet().has(+sid); };
+const OWN_KEY = `<div class="own-foot"><span class="own-key"><i></i>In a stable you own</span></div>`;
 function table(cols, rows, opts = {}) {
   if (!rows || !rows.length) return `<div class="empty">${opts.empty || "Nothing to show."}</div>`;
+  // (not when every row is yours, e.g. your own horse's race record: then there's nothing to pick out)
+  let ownOn = !opts.noOwn && ownHlOn();
+  if (ownOn && rows.length > 1 && rows.every(isOwnRow)) ownOn = false;
+  let owns = 0;
+  const rowCls = (r) => { const c = opts.rowClass ? opts.rowClass(r) : ""; if (ownOn && isOwnRow(r)) { owns++; return (c + " own").trim(); } return c; };
   const head = cols.map((c) => {
     const cls = [c.cls || "", c.sort ? "sortable" : "", c.sort && opts.sort === c.sort ? "sorted" : ""].join(" ");
     const arrow = c.sort && opts.sort === c.sort ? (opts.dir === "asc" ? " ▲" : " ▼") : "";
@@ -760,10 +775,11 @@ function table(cols, rows, opts = {}) {
   }).join("");
   // optional row of group headings above the column headings: [[label, columns spanned, class], ...]
   const groups = opts.groups ? `<tr class="grp-row">${opts.groups.map(([t, n, c]) => `<th colspan="${n}" class="grp ${c || ""}">${t}</th>`).join("")}</tr>` : "";
-  const body = rows.map((r) => `<tr class="${opts.rowClass ? opts.rowClass(r) : ""}">${cols.map((c) => `<td class="${c.cls || ""}">${c.f(r)}</td>`).join("")}</tr>`).join("");
+  const body = rows.map((r) => `<tr class="${rowCls(r)}">${cols.map((c) => `<td class="${c.cls || ""}">${c.f(r)}</td>`).join("")}</tr>`).join("");
   const tcls = opts.tcls ? " " + opts.tcls : "";
-  return opts.wide ? `<div class="wide-wrap"><table class="data wide${tcls}"><thead>${groups}<tr>${head}</tr></thead><tbody>${body}</tbody></table></div>`
-    : `<div class="tbl-wrap"><table class="data${tcls}"><thead>${groups}<tr>${head}</tr></thead><tbody>${body}</tbody></table></div>`;
+  const key = owns ? OWN_KEY : "";
+  return opts.wide ? `<div class="wide-wrap"><table class="data wide${tcls}"><thead>${groups}<tr>${head}</tr></thead><tbody>${body}</tbody></table></div>${key}`
+    : `<div class="tbl-wrap"><table class="data${tcls}"><thead>${groups}<tr>${head}</tr></thead><tbody>${body}</tbody></table></div>${key}`;
 }
 const PAGE_SIZES = [25, 50, 100, 250, 500, 1000, 2500, 5000];
 function prefPageSize() { try { const v = parseInt(localStorage.getItem("hrm.pageSize"), 10); return PAGE_SIZES.includes(v) ? v : null; } catch (e) { return null; } }
@@ -2523,6 +2539,8 @@ function runnerTable(race, rows, kind) {
     ? `<th>Pos</th><th>Horse</th><th>Form</th><th class="num">Career</th><th class="num">Win / Place</th><th class="num">Rtg</th><th class="num">Time</th><th class="num">Margin</th><th class="num">SP</th><th class="num">Prize</th><th></th>`
     : `<th class="num">Bar.</th><th>Horse</th><th>Form</th><th class="num">Career</th><th class="num">Win / Place</th><th>Last start</th><th class="num">Rating</th><th></th>`;
   const cols = kind === "results" ? 11 : 8;
+  const ownOn = ownHlOn();
+  let owns = 0;
   const body = rows.map((x, i) => {
     const c = x.career || [0, 0, 0, 0];
     const wp = c[0] ? `${Math.round((100 * c[1]) / c[0])}% / ${Math.round((100 * (c[1] + c[2] + c[3])) / c[0])}%` : "—";
@@ -2532,7 +2550,9 @@ function runnerTable(race, rows, kind) {
     const horse = `<div class="rname">${L.horse(x.horse_id, x.horse)} <span class="bar">(${isNum(x.gate) ? x.gate : "–"})</span></div><div class="rsub">${sub}</div>`;
     const form = `<span class="form">${esc(x.form || "") || '<span class="muted">first start</span>'}</span>`;
     const arrow = `<button class="rtoggle" data-i="${i}" title="Show form">▸</button>`;
-    const cls = kind === "results" ? (x.rank === 1 ? "win" : x.jockey_id === myId ? "me" : "") : x.jockey_id === myId ? "me" : "";
+    const own = ownOn && isOwnRow(x);
+    if (own) owns++;
+    const cls = (kind === "results" ? (x.rank === 1 ? "win" : x.jockey_id === myId ? "me" : "") : x.jockey_id === myId ? "me" : "") + (own ? " own" : "");
     const cells = kind === "results"
       ? `<td>${pos(x.rank)}</td><td class="rhorse">${horse}</td><td>${form}</td><td class="num">${rec(x.career)}</td><td class="num">${wp}</td>
          <td class="num">${fNum(x.rating)}</td><td class="num">${fTime(x.time)}</td><td class="num">${wt && isNum(x.time) && x.rank > 1 ? "+" + (x.time - wt).toFixed(2) + "s" : ""}</td>
@@ -2542,7 +2562,7 @@ function runnerTable(race, rows, kind) {
          <td class="num"><span class="box">${fNum(x.rating)}</span></td><td>${arrow}</td>`;
     return `<tr class="rline ${cls}">${cells}</tr><tr class="rdetail" hidden><td colspan="${cols}"><div class="rpanel" data-race="${race.race_id}" data-horse="${x.horse_id}"></div></td></tr>`;
   }).join("");
-  return `<div class="tbl-wrap"><table class="data runners"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>`;
+  return `<div class="tbl-wrap"><table class="data runners"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>${owns ? OWN_KEY : ""}`;
 }
 function ring(w, p) {
   const R = 30, C = 2 * Math.PI * R, pw = Math.max(0, Math.min(1, w)), pp = Math.max(0, Math.min(1, p));
@@ -4735,8 +4755,7 @@ async function pedigreesPage(route) {
       select("osex", q, [["", "Any sex of foal"], ["Male", "Colts only"], ["Female", "Fillies only"]]) +
       select("minrunners", q, [["", "Any runners"], ["1", "1+ runners"], ["5", "5+ runners"], ["10", "10+ runners"], ["25", "25+ runners"], ["50", "50+ runners"], ["100", "100+ runners"]]) +
       rangeBox(`${offspring} foaled`, select("from", q, years), select("to", q, years)) +
-      (owned.size ? select("mine", q, [["", "Any stable"], ["1", "Your stables only"]]) + `<span class="own-key"><i></i>In a stable you own</span>` : ""),
-    rowClass: (r) => (owned.has(r.stable_id) ? "me own" : ""),
+      (owned.size ? select("mine", q, [["", "Any stable"], ["1", "Your stables only"]]) : ""),
     cols: [
       { h: KIND_LABEL[kind].replace(/s$/, ""), sort: "name", f: (r) => `${L.horse(r.id, r.name)} <a class="small" href="#/pedigree/${r.id}" title="Family tree">tree</a>${tablesLink(r)}` },
       { h: "Born", sort: "birth", cls: "num", f: (r) => yr(r.birth) },
