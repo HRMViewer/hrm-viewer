@@ -572,182 +572,6 @@ def fdate(ts):
         return "unknown date"
 
 
-# --------------------------------------------------------------------------- compact stored data (16.7)
-# Optional (Settings -> Stored data), off unless switched on. Applied on every load while it is on:
-#  - tables the viewer never shows (rating_history, race_replays) and the story events' hidden "data" text are dropped,
-#    as are the game's "Yearly Summary" story events (they have no text and appear nowhere)
-#  - other people's horses' raw race positions are dropped once their sectionals are worked out (the sectionals are kept)
-#  - big tables are rebuilt without the extra UNIQUE index the game puts on their INTEGER PRIMARY KEY (a copy of the key)
-#  - with "thin": other people's horses' stat and value snapshots are kept to one per quarter (charts get fewer points)
-# Your stables, your family and every horse that has raced for, been bred or traded by your stables or ridden by you
-# (and those horses' parents) are never thinned; that set only grows (meta "compact_keep").
-COMPACT_DROP = ("rating_history", "race_replays")
-COMPACT_REBUILD_ROWS = 100000          # rebuild a table without its duplicate key index from this many rows
-COMPACT_THIN = (("horse_stats_snapshots", "snapshot_id", "snapshot_horse_id", "snapshot_date"),
-                ("horse_valuation_history", "valuation_history_id", "valuation_history_horse_id", "valuation_history_date"))
-COMPACT_BUCKET = 90 * 86400
-COMPACT_DUP_KEY = re.compile(r"(\bINTEGER\s+PRIMARY\s+KEY(?:\s+NOT\s+NULL)?)\s+UNIQUE\b", re.I)
-
-
-def compact_settings():
-    c = read_json(CONFIG_FILE, {}).get("compact") or {}
-    on = bool(c.get("on"))
-    return {"on": on, "thin": on and bool(c.get("thin"))}
-
-
-def compact_keep_sets(con, prior):
-    """Fill temp.ck_p / temp.ck_s / temp.ck_h with the people, stables and horses that are never thinned."""
-    prior = prior or {}
-    for t in ("ck_p", "ck_s", "ck_h"):
-        con.execute("drop table if exists temp.%s" % t)
-        con.execute("create temp table %s (id integer primary key)" % t)
-
-    def add(t, sql):
-        try:
-            con.execute("insert or ignore into temp.%s %s" % (t, sql))
-        except sqlite3.Error as e:
-            print("compact: skipped a keep-set query (%s)" % e)
-
-    for t, key in (("ck_p", "persons"), ("ck_s", "stables"), ("ck_h", "horses")):
-        con.executemany("insert or ignore into temp.%s values (?)" % t, [(int(i),) for i in prior.get(key) or []])
-    if "person_is_player" in columns(con, "persons"):
-        add("ck_p", "select person_person_id from persons where person_is_player in ('true',1,'1')")
-    if has_table(con, "children"):
-        add("ck_p", "select child_parent_1_id from children where child_person_id in (select id from temp.ck_p) and child_parent_1_id is not null")
-        add("ck_p", "select child_parent_2_id from children where child_person_id in (select id from temp.ck_p) and child_parent_2_id is not null")
-    for _ in range(3):      # spouses, children and grandchildren
-        if has_table(con, "marriages"):
-            add("ck_p", "select marriage_person_2_id from marriages where marriage_person_1_id in (select id from temp.ck_p)")
-            add("ck_p", "select marriage_person_1_id from marriages where marriage_person_2_id in (select id from temp.ck_p)")
-        if has_table(con, "children"):
-            add("ck_p", "select child_person_id from children where child_parent_1_id in (select id from temp.ck_p) or child_parent_2_id in (select id from temp.ck_p)")
-    add("ck_s", "select stable_stable_id from stables where stable_owner_id in (select id from temp.ck_p)")
-    if has_table(con, "settings"):
-        add("ck_s", "select cast(settings_value as integer) from settings where settings_name='player_active_stable_id' and settings_value is not null")
-    add("ck_h", "select horse_horse_id from horses where horse_stable_id in (select id from temp.ck_s)")
-    for table, col, idcol in (("race_results", "race_result_stable_id", "race_result_horse_id"),
-                              ("race_participants", "race_participant_stable_id", "race_participant_horse_id"),
-                              ("breeding", "breeding_stable_id", "breeding_horse_id"),
-                              ("horse_financial_history", "hfh_stable_id", "hfh_horse_id")):
-        if has_table(con, table) and {col, idcol} <= set(columns(con, table)):
-            add("ck_h", "select %s from %s where %s in (select id from temp.ck_s) and %s is not null" % (idcol, table, col, idcol))
-    if has_table(con, "race_results") and "race_result_person_jockey_id" in columns(con, "race_results"):
-        add("ck_h", "select race_result_horse_id from race_results where race_result_person_jockey_id in (select id from temp.ck_p)")
-    if has_table(con, "trades"):
-        add("ck_h", """select trades_entity_id from trades where trades_entity_type='horse'
-            and (trades_seller_stable_id in (select id from temp.ck_s) or trades_buyer_stable_id in (select id from temp.ck_s))""")
-    if {"horse_breeding_parent_mare_id", "horse_breeding_parent_stallion_id"} <= set(columns(con, "horses")):
-        add("ck_h", "select horse_breeding_parent_mare_id from horses where horse_horse_id in (select id from temp.ck_h) and horse_breeding_parent_mare_id is not null")
-        add("ck_h", "select horse_breeding_parent_stallion_id from horses where horse_horse_id in (select id from temp.ck_h) and horse_breeding_parent_stallion_id is not null")
-    return {k: [r[0] for r in con.execute("select id from temp.%s order by id" % t)] for k, t in (("persons", "ck_p"), ("stables", "ck_s"), ("horses", "ck_h"))}
-
-
-def compact_rebuild(con, t):
-    """Rebuild a table without the extra UNIQUE index the game puts on its INTEGER PRIMARY KEY (it only copies the key).
-    The table's other indexes and triggers are made again. Returns True if it was rebuilt."""
-    r = con.execute("select sql from sqlite_master where type='table' and name=?", (t,)).fetchone()
-    if not r or not r[0] or not COMPACT_DUP_KEY.search(r[0]):
-        return False
-    if not con.execute("select 1 from sqlite_master where type='index' and tbl_name=? and name like 'sqlite_autoindex%'", (t,)).fetchone():
-        return False
-    new = COMPACT_DUP_KEY.sub(r"\1", r[0], count=1)
-    new = re.sub(r"^\s*CREATE\s+TABLE\s+(?:\"[^\"]+\"|`[^`]+`|\[[^\]]+\]|\S+?)(?=\s*\()", "CREATE TABLE hrmv_compact_new", new, count=1, flags=re.I)
-    if "hrmv_compact_new" not in new:
-        return False
-    extra = [x[0] for x in con.execute("select sql from sqlite_master where tbl_name=? and type in ('index','trigger') and sql is not null", (t,))]
-    con.commit()
-    try:
-        con.execute("begin")
-        con.execute("drop table if exists hrmv_compact_new")
-        con.execute(new)
-        con.execute("insert into hrmv_compact_new select * from %s" % qident(t))
-        con.execute("drop table %s" % qident(t))
-        con.execute("alter table hrmv_compact_new rename to %s" % qident(t))
-        for sql in extra:
-            con.execute(sql)
-        con.commit()
-        return True
-    except sqlite3.Error as e:
-        con.rollback()
-        print("compact: left %s as it was (%s)" % (t, e))
-        return False
-
-
-def compact_pre(con, thin, prior_keep):
-    """The compacting that can be done before the stats are worked out. Returns what to remember in meta.json."""
-    info = {"thin": thin, "events": 0, "snapshots": 0, "rebuilt": []}
-    set_job(step="Compacting the stored data (1 of 3)", pct=56)
-    info["keep"] = compact_keep_sets(con, prior_keep)
-    for t in COMPACT_DROP:
-        con.execute("drop table if exists %s" % qident(t))
-    if has_table(con, "story_events"):
-        before = con.total_changes
-        con.execute("delete from story_events where event_type='Yearly Summary'")
-        info["events"] = con.total_changes - before
-        if "event_data" in columns(con, "story_events"):
-            con.execute("update story_events set event_data=NULL where event_data is not null")
-    if thin:
-        for tbl, idc, hc, dc in COMPACT_THIN:
-            if has_table(con, tbl) and {idc, hc, dc} <= set(columns(con, tbl)):
-                before = con.total_changes
-                con.execute("""delete from %s where %s not in (select id from temp.ck_h) and %s not in
-                    (select max(%s) from %s group by %s, cast(%s / %d as int))""" % (tbl, hc, idc, idc, tbl, hc, dc, COMPACT_BUCKET))
-                info["snapshots"] += con.total_changes - before
-    con.commit()
-    set_job(step="Compacting the stored data (2 of 3)", pct=58)
-    big = []
-    for (t,) in con.execute("""select distinct tbl_name from sqlite_master where type='index' and name like 'sqlite_autoindex%'
-            and tbl_name not like 'hrmv_%'""").fetchall():
-        if con.execute("select count(*) from (select 1 from %s limit %d)" % (qident(t), COMPACT_REBUILD_ROWS)).fetchone()[0] >= COMPACT_REBUILD_ROWS:
-            big.append(t)
-    for t in big:
-        if compact_rebuild(con, t):
-            info["rebuilt"].append(t)
-    return info
-
-
-def carry_sectionals(con, carry):
-    """Bring the sectionals (and section records) already worked out for the stored data into incoming.db, so a load
-    only adds the new races instead of working them all out again. Returns (sectionals carried, records carried)."""
-    same = META.get("derived_version") == DERIVED_VERSION
-    must = bool(META.get("compact_keep"))       # compacted: other horses' race positions are gone, so these are the only copy
-    if not carry or not os.path.exists(CURRENT_DB):
-        return False, False
-    if has_table(con, "hrmv_sectionals"):       # "add older records" and Compact now start from a copy of the stored data
-        if same or must:
-            return True, same and has_table(con, "hrmv_section_records")
-        con.executescript("drop table if exists hrmv_sectionals; drop table if exists hrmv_section_records;")
-        return False, False
-    if not (same or must):
-        return False, False
-    con.execute("attach database ? as prev", (CURRENT_DB,))
-    try:
-        if not has_table_in(con, "prev", "hrmv_sectionals"):
-            return False, False
-        con.execute("create table hrmv_sectionals as select * from prev.hrmv_sectionals")
-        rec = same and has_table_in(con, "prev", "hrmv_section_records")
-        if rec:
-            con.execute("create table hrmv_section_records as select * from prev.hrmv_section_records")
-        return True, rec
-    finally:
-        con.commit()
-        con.execute("detach database prev")
-
-
-def compact_post(con, info):
-    """After the sectionals are worked out: other people's horses' raw race positions, then give the space back."""
-    if has_table(con, "race_position_snapshots"):
-        set_job(step="Compacting the stored data (3 of 3)", pct=88)
-        con.execute("delete from race_position_snapshots where race_position_horse_id not in (select id from temp.ck_h)")
-        con.commit()
-    page = con.execute("pragma page_size").fetchone()[0]
-    free = con.execute("pragma freelist_count").fetchone()[0] * page
-    info["freed"] = free
-    if free >= 32 * 1024 * 1024:
-        set_job(step="Giving the space back (a minute or so)", pct=90)
-        con.execute("vacuum")
-
-
 def process_incoming(source_label, source_path, decision=None, validated=False):
     """Validate data/incoming.db, merge with the stored data, add indexes and stats, then swap it in.
 
@@ -764,9 +588,7 @@ def process_incoming(source_label, source_path, decision=None, validated=False):
         older = same and new["game_date"] is not None and old["game_date"] is not None and new["game_date"] < old["game_date"]
         # each database follows one player: a different player name (or a different save) means asking first
         player_changed = bool(old.get("player")) and bool(new.get("player")) and old["player"] != new["player"]
-        if decision == "compact":
-            mode = "compact"        # Compact now: the stored data itself, copied to incoming.db
-        elif decision is None:
+        if decision is None:
             if not same:
                 set_job(state="confirm", step="Waiting for your choice", pending={"label": source_label, "path": source_path}, confirm={
                     "kind": "different",
@@ -807,15 +629,8 @@ def process_incoming(source_label, source_path, decision=None, validated=False):
             os.replace(WORK_DB, INCOMING_DB)
 
     con = sqlite3.connect(INCOMING_DB)
-    cset = compact_settings()
-    carry = mode != "fresh"
-    compact_info = None
     try:
         ensure_removed_table(con)
-        size_before = os.path.getsize(CURRENT_DB) if carry and os.path.exists(CURRENT_DB) else os.path.getsize(INCOMING_DB)
-        carried, carried_rec = carry_sectionals(con, carry)
-        if cset["on"]:
-            compact_info = compact_pre(con, cset["thin"], META.get("compact_keep") if carry else None)
         todo = []
         for table, col in INDEXES:
             if has_table(con, table) and col in columns(con, table):
@@ -826,9 +641,7 @@ def process_incoming(source_label, source_path, decision=None, validated=False):
         con.commit()
 
         set_job(step="Working out career and stable stats", pct=84)
-        build_derived(con, carried, carried_rec)
-        if compact_info:
-            compact_post(con, compact_info)
+        build_derived(con)
 
         set_job(step="Counting rows", pct=93)
         tables = [r[0] for r in con.execute("select name from sqlite_master where type='table' and name not like 'sqlite_%' and name not like 'hrmv_%' order by name")]
@@ -867,14 +680,6 @@ def process_incoming(source_label, source_path, decision=None, validated=False):
         "history": history[-50:],
         "derived_version": DERIVED_VERSION,
     }
-    if compact_info:
-        meta["compact_keep"] = compact_info.pop("keep")
-        compact_info.update(at=time.time(), before=size_before, after=os.path.getsize(INCOMING_DB))
-        meta["compact"] = compact_info
-    elif carry and META.get("compact_keep"):
-        meta["compact_keep"] = META["compact_keep"]     # its other horses' race positions are still gone
-        if META.get("compact"):
-            meta["compact"] = META["compact"]
 
     set_job(step="Saving", pct=97)
     DB_LOCK.acquire_write()
@@ -1032,7 +837,7 @@ def ensure_derived(progress=None):
         progress()
     con = sqlite3.connect(CURRENT_DB)
     try:
-        build_derived(con, carried_sectionals=bool(META.get("compact_keep")))
+        build_derived(con)
     finally:
         con.close()
     meta = read_json(META_FILE, {})
@@ -1408,16 +1213,6 @@ def run_import(kind, path=None, decision=None, label=None):
                 load_meta_keep_cache()
         elif kind == "decision":
             done = process_incoming(label, path, decision, validated=True)
-        elif kind == "compact":
-            set_job(step="Copying the stored data", pct=5)
-            keep = {k: META.get(k) for k in ("source_sig", "file_size", "loaded_at") if META.get(k) is not None}
-            shutil.copyfile(CURRENT_DB, INCOMING_DB)
-            done = process_incoming(META.get("source") or "stored data", META.get("source_path"), "compact", validated=True)
-            if done and keep:       # still the same save file: the automatic updates shouldn't load it again
-                meta = read_json(META_FILE, {})
-                meta.update(keep)
-                write_json(META_FILE, meta)
-                load_meta_keep_cache()
         else:
             done = process_incoming(label or "uploaded file", None, decision)
         if done:
@@ -1859,8 +1654,7 @@ def api_status(con, q):
            "db": {"id": ACTIVE["id"], "name": slot_name(ACTIVE["id"]), "legacy": ACTIVE["id"] == LEGACY_ID},
            "legacy": legacy_present(), "db_count": len(list_slots()), "desktop": os.environ.get("HRMV_DESKTOP") == "1",
            "has_exe": os.path.exists(os.path.join(APP_DIR, DESKTOP_EXE)), "platform": PLATFORM, "windowed": WINDOWED,
-           "window_problem": os.environ.get("HRMV_WINDOW_PROBLEM") or None, "compact": compact_settings(),
-           "db_size": os.path.getsize(CURRENT_DB) if os.path.exists(CURRENT_DB) else None}
+           "window_problem": os.environ.get("HRMV_WINDOW_PROBLEM") or None}
     if con:
         if meta.get("player_id"):
             out["player"] = one(con, "select person_person_id as id, person_full_name as name from persons where person_person_id=?", (meta["player_id"],))
@@ -4685,9 +4479,8 @@ DERIVED_VERSION = 6
 YEAR = 365.2425 * 86400
 
 
-def build_derived(con, carried_sectionals=False, carried_records=False):
-    """Precompute per-horse race records and per-stable totals into hrmv_* tables.
-    carried_sectionals / carried_records: see build_sectionals."""
+def build_derived(con):
+    """Precompute per-horse race records and per-stable totals into hrmv_* tables."""
     ensure_removed_table(con)
     if "race_result_trainer_id" in columns(con, "race_results"):
         con.execute("create index if not exists hrmv_race_results_race_result_trainer_id on race_results(race_result_trainer_id)")
@@ -4774,99 +4567,48 @@ def build_derived(con, carried_sectionals=False, carried_records=False):
         select * from p where prev_best is null or time < prev_best;
         create index hrmv_track_records_course on hrmv_track_records(course_id);
     """)
-    build_sectionals(con, carried_sectionals, carried_records)
+    build_sectionals(con)
     con.commit()
 
 
-SECTION_RECORDS_SQL = """
-    with s as (
-        select d.raceday_racecourse_id as course_id, x.races_track as track, cast(round(x.races_distance) as integer) as distance,
-            x.races_race_date_time as date, s.race_id, s.horse_id, s.t1, s.t2, s.t3, s.t4, s.t5
-        from %(src)s s join races x on x.races_race_id=s.race_id
-        join race_days d on d.raceday_race_day_id=x.races_race_day_id),
-    u as (
-        select course_id, track, distance, 1 as sec, t1 as time, horse_id, race_id, date from s where t1>0
-        union all select course_id, track, distance, 2, t2-t1, horse_id, race_id, date from s where t2>t1 and t1>0
-        union all select course_id, track, distance, 3, t3-t2, horse_id, race_id, date from s where t3>t2 and t2>0
-        union all select course_id, track, distance, 4, t4-t3, horse_id, race_id, date from s where t4>t3 and t3>0
-        union all select course_id, track, distance, 5, t5-t4, horse_id, race_id, date from s where t5>t4 and t4>0),
-    rk as (
-        select *, row_number() over (partition by course_id, track, distance, sec order by time, date) as rn,
-            count(*) over (partition by course_id, track, distance, sec) as runs
-        from u)
-    select course_id, track, distance, sec, time, horse_id, race_id, date, runs from rk where rn=1"""
-
-
-def update_section_records(con):
-    """Fold the sectionals in temp.sect_added into the stored records instead of ranking every stored sectional again:
-    a group's record is replaced only by a strictly better time (or the same time earlier), and its run count grows."""
-    con.execute("drop table if exists temp.rec_best")
-    con.execute("create temp table rec_best as " + SECTION_RECORDS_SQL % {"src": "temp.sect_added"})
-    con.execute("drop table if exists temp.rec_win")
-    better = "r.rowid is null or b.time<r.time or (b.time=r.time and b.date<r.date)"
-    con.execute("""create temp table rec_win as select r.rowid as rid, b.course_id, b.track, b.distance, b.sec,
-        case when %(w)s then b.time else r.time end as time,
-        case when %(w)s then b.horse_id else r.horse_id end as horse_id,
-        case when %(w)s then b.race_id else r.race_id end as race_id,
-        case when %(w)s then b.date else r.date end as date,
-        coalesce(r.runs, 0) + b.runs as runs
-        from temp.rec_best b left join hrmv_section_records r on r.course_id is b.course_id and r.track is b.track
-            and r.distance is b.distance and r.sec=b.sec""" % {"w": better})
-    con.execute("delete from hrmv_section_records where rowid in (select rid from temp.rec_win where rid is not null)")
-    con.execute("""insert into hrmv_section_records (course_id, track, distance, sec, time, horse_id, race_id, date, runs)
-        select course_id, track, distance, sec, time, horse_id, race_id, date, runs from temp.rec_win""")
-    con.execute("drop table temp.rec_best")
-    con.execute("drop table temp.rec_win")
-
-
-def build_sectionals(con, keep_existing=False, carried_records=False):
-    """Sectional times from the race position snapshots (taken at 25%, 50%, 75%, 90% and 100% of the race).
-
-    keep_existing: hrmv_sectionals was carried over from the stored data; only races not in it yet are added from the
-    race positions, and stored rows are never replaced (compacted data no longer holds other horses' positions).
-    carried_records: hrmv_section_records was carried over too and is only updated with the new sectionals, instead of
-    ranking every stored sectional again (that took 10-15 seconds on a big save)."""
-    keep_existing = keep_existing and has_table(con, "hrmv_sectionals")
-    carried_records = keep_existing and carried_records and has_table(con, "hrmv_section_records")
-    con.executescript(("" if carried_records else "drop table if exists hrmv_section_records;") + ("" if keep_existing else "drop table if exists hrmv_sectionals;"))
-    have_positions = has_table(con, "race_position_snapshots")
-    if not have_positions and not keep_existing:
+def build_sectionals(con):
+    """Sectional times from the race position snapshots (taken at 25%, 50%, 75%, 90% and 100% of the race)."""
+    con.executescript("drop table if exists hrmv_sectionals; drop table if exists hrmv_section_records;")
+    if not has_table(con, "race_position_snapshots"):
         return
     pick = lambda col, name: ", ".join("max(case when k=%d then %s end) as %s%d" % (k, col, name, k) for k in range(1, 6))
-    if have_positions:
-        con.execute("drop table if exists temp.sect_new")
-        con.executescript("""
-            create table %s as
-            select race_position_race_id as race_id, race_position_horse_id as horse_id, %s, %s, %s, %s, %s,
-                max(case when k=5 then race_position_stamina_percentage end) as stamina
-            from (select *, case when race_position_completion_percentage between 0.24 and 0.26 then 1
-                                 when race_position_completion_percentage between 0.49 and 0.51 then 2
-                                 when race_position_completion_percentage between 0.74 and 0.76 then 3
-                                 when race_position_completion_percentage between 0.89 and 0.91 then 4
-                                 when race_position_completion_percentage >= 0.99 then 5 end as k
-                  from race_position_snapshots not indexed)
-            where k is not null group by 1, 2;
-        """ % (("temp.sect_new" if keep_existing else "hrmv_sectionals"), pick("race_position_snapshot_time", "t"), pick("race_position_current_rank", "r"),
-               pick("race_position_meters_from_leader", "m"), pick("race_position_current_speed", "v"), pick("race_position_distance_completed", "d")))
-        if keep_existing:
-            # add what is new; a race the save only has some positions for must not replace a complete stored row
-            con.execute("create index if not exists hrmv_sectionals_race on hrmv_sectionals(race_id)")
-            con.execute("drop table if exists temp.sect_added")
-            con.execute("""create temp table sect_added as select n.* from temp.sect_new n left join hrmv_sectionals s
-                on s.race_id=n.race_id and s.horse_id=n.horse_id where s.race_id is null""")
-            con.execute("insert into hrmv_sectionals select * from temp.sect_added")
-            con.execute("drop table temp.sect_new")
-    con.execute("create index if not exists hrmv_sectionals_race on hrmv_sectionals(race_id)")
-    if carried_records:
-        if have_positions:
-            update_section_records(con)
-            con.execute("drop table if exists temp.sect_added")
-        con.execute("create index if not exists hrmv_section_records_course on hrmv_section_records(course_id)")
-        return
-    con.execute("drop table if exists temp.sect_added")
-    con.execute("drop table if exists hrmv_section_records")
-    con.execute("create table hrmv_section_records as " + SECTION_RECORDS_SQL % {"src": "hrmv_sectionals"})
-    con.execute("create index hrmv_section_records_course on hrmv_section_records(course_id)")
+    con.executescript("""
+        create table hrmv_sectionals as
+        select race_position_race_id as race_id, race_position_horse_id as horse_id, %s, %s, %s, %s, %s,
+            max(case when k=5 then race_position_stamina_percentage end) as stamina
+        from (select *, case when race_position_completion_percentage between 0.24 and 0.26 then 1
+                             when race_position_completion_percentage between 0.49 and 0.51 then 2
+                             when race_position_completion_percentage between 0.74 and 0.76 then 3
+                             when race_position_completion_percentage between 0.89 and 0.91 then 4
+                             when race_position_completion_percentage >= 0.99 then 5 end as k
+              from race_position_snapshots not indexed)
+        where k is not null group by 1, 2;
+        create index hrmv_sectionals_race on hrmv_sectionals(race_id);
+        create table hrmv_section_records as
+        with s as (
+            select d.raceday_racecourse_id as course_id, x.races_track as track, cast(round(x.races_distance) as integer) as distance,
+                x.races_race_date_time as date, s.race_id, s.horse_id, s.t1, s.t2, s.t3, s.t4, s.t5
+            from hrmv_sectionals s join races x on x.races_race_id=s.race_id
+            join race_days d on d.raceday_race_day_id=x.races_race_day_id),
+        u as (
+            select course_id, track, distance, 1 as sec, t1 as time, horse_id, race_id, date from s where t1>0
+            union all select course_id, track, distance, 2, t2-t1, horse_id, race_id, date from s where t2>t1 and t1>0
+            union all select course_id, track, distance, 3, t3-t2, horse_id, race_id, date from s where t3>t2 and t2>0
+            union all select course_id, track, distance, 4, t4-t3, horse_id, race_id, date from s where t4>t3 and t3>0
+            union all select course_id, track, distance, 5, t5-t4, horse_id, race_id, date from s where t5>t4 and t4>0),
+        rk as (
+            select *, row_number() over (partition by course_id, track, distance, sec order by time, date) as rn,
+                count(*) over (partition by course_id, track, distance, sec) as runs
+            from u)
+        select course_id, track, distance, sec, time, horse_id, race_id, date, runs from rk where rn=1;
+        create index hrmv_section_records_course on hrmv_section_records(course_id);
+    """ % (pick("race_position_snapshot_time", "t"), pick("race_position_current_rank", "r"), pick("race_position_meters_from_leader", "m"),
+           pick("race_position_current_speed", "v"), pick("race_position_distance_completed", "d")))
 
 
 def gwins(alias_h, alias_s, g):
@@ -6026,10 +5768,6 @@ def horse_auto(con, ids):
     out = {}
     if not ids:
         return out
-    if len(ids) > 500:      # a whole-list export: SQLite takes only so many ? at once
-        for i in range(0, len(ids), 500):
-            out.update(horse_auto(con, ids[i:i + 500]))
-        return out
     hc = set(columns(con, "horses"))
     gd = META.get("game_date") or time.time()
     mk = ",".join("?" * len(ids))
@@ -6861,29 +6599,6 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json({"ok": True})
         if path.startswith("/api/dbs/"):
             return self.handle_dbs(path[len("/api/dbs/"):])
-        if path == "/api/compact":
-            length = to_int(self.headers.get("Content-Length"), 0)
-            try:
-                data = json.loads(self.rfile.read(length) or b"{}") if length else {}
-            except ValueError:
-                data = {}
-            cfg = read_json(CONFIG_FILE, {})
-            cur = dict(cfg.get("compact") or {})
-            for k in ("on", "thin"):
-                if k in data:
-                    cur[k] = bool(data[k])
-            cfg["compact"] = cur
-            write_json(CONFIG_FILE, cfg)
-            return self.send_json(compact_settings())
-        if path == "/api/compact/run":
-            if job_busy():
-                return self.send_json({"error": "The viewer is busy loading data. Try again when it has finished."}, 409)
-            if not os.path.exists(CURRENT_DB):
-                return self.send_json({"error": "There's no stored data to compact yet."}, 400)
-            if not compact_settings()["on"]:
-                return self.send_json({"error": "Switch on Compact stored data first."}, 400)
-            start_import("compact")
-            return self.send_json({"ok": True})
         if path in ("/api/auto", "/api/auto/check"):
             length = to_int(self.headers.get("Content-Length"), 0)
             try:
@@ -7020,7 +6735,7 @@ class Handler(BaseHTTPRequestHandler):
 
 # --------------------------------------------------------------------------- in-app updates
 
-VERSION = "16.7"
+VERSION = "16.6.1"
 BACKUP_DIR = os.path.join(APP_DIR, "backups")
 UPDATE_PENDING = os.path.join(DATA_DIR, "update_pending.json")
 UPDATE_RESULT = os.path.join(DATA_DIR, "update_result.json")

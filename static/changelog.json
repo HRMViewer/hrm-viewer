@@ -1,14 +1,10 @@
 [
   {
-    "version": "16.7",
+    "version": "16.6.1",
     "date": "2026-11-24",
-    "title": "Faster loading, and an option to compact the stored data",
+    "title": "Rebuild of 16.6",
     "changes": [
-      "Loading a save is faster: the sectional times already worked out are kept, and only new races are added, instead of working out every race's sectionals again each time. The results are exactly the same.",
-      "New in Settings: Stored data. Compact stored data (off to begin with) makes the stored copy smaller without losing anything you can see in the viewer. Each time a save is loaded it drops the game's rating history and race replays, its Yearly Summary story entries and their hidden data, and other people's horses' raw race positions once their sectional times are worked out (the sectionals are kept), and rebuilds the biggest tables without a duplicate copy of their ID index. What it drops can't come back.",
-      "Also thin other horses' charts (optional): other people's horses keep one stat and value point per quarter. Your stables' horses, horses you've ridden, bred or traded, their parents and your family are never thinned.",
-      "Compact now applies it straight away, and Settings shows how big the stored data is and what the last compacting saved.",
-      "Fix: Export CSV on the Horses list stopped with 'too many SQL variables' when the list held more than a few thousand horses. It now exports every horse."
+      "A fresh build of 16.6 for Windows, Mac and Linux. Nothing in the viewer has changed."
     ]
   },
   {
