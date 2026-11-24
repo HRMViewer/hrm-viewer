@@ -1,0 +1,28 @@
+import importlib.util, os, sqlite3, time, random, json, sys
+spec = importlib.util.spec_from_file_location("hv", "app.py"); hv = importlib.util.module_from_spec(spec); spec.loader.exec_module(hv)
+out = {}
+def log(k, v): out[k] = v; print(k, v, flush=True)
+p = os.path.abspath("test.db")
+c = sqlite3.connect(p)
+c.execute("create table horses (horse_horse_id INTEGER PRIMARY KEY NOT NULL UNIQUE, horse_name text, horse_breed text, horse_color text, horse_rating real, horse_value real, horse_note text)")
+c.execute("create table transactions (transaction_transaction_id INTEGER PRIMARY KEY NOT NULL UNIQUE, transaction_from_entity_type text, transaction_to_entity_type text, transaction_date real, transaction_amount real, transaction_type text, transaction_note text)")
+r = random.Random(1)
+names = ["Polar", "Piece", "Bold", "Garnet", "Rain", "Luna", "Fleet", "Dusky", "Highest", "Candy", "Sierra", "Cay", "Habin", "Saance"]
+c.executemany("insert into horses values (?,?,?,?,?,?,?)", ((i, " ".join(r.choice(names) for _ in range(2)), "Thoroughbred", r.choice(["Bay", "Chestnut", "Grey", "Black"]), r.random() * 120, r.random() * 1e7, "Bred by %s Stables" % r.choice(names)) for i in range(400000)))
+c.executemany("insert into transactions values (?,?,?,?,?,?,?)", ((i, "stable", "person", 1.4e9 + i * 60, round(r.random() * 5000, 2), r.choice(["Salary", "Win Share"]), "Win share for %s in %s Stakes" % (r.choice(names), r.choice(names))) for i in range(1500000)))
+c.commit(); c.close()
+log("size_mb", round(os.path.getsize(p) / 1e6, 1)); log("disk_before_mb", round(hv.disk_size(p) / 1e6, 1))
+held = sqlite3.connect(p); held.execute("select count(*) from horses").fetchone()          # the viewer has it open
+t = time.time(); d = hv.disk_compress(p); log("compress_seconds_while_open", round(time.time() - t, 1)); log("disk_after_mb", round(d / 1e6, 1))
+log("ratio", round(os.path.getsize(p) / d, 2))
+t = time.time(); log("read_while_held", held.execute("select count(*), sum(transaction_amount) from transactions where transaction_type='Salary'").fetchone()); log("read_seconds", round(time.time() - t, 2))
+held.close()
+c = sqlite3.connect(p)
+t = time.time(); c.execute("create index ix on transactions(transaction_date)"); c.executemany("insert into horses (horse_name) values (?)", [("New %d" % i,) for i in range(20000)]); c.commit()
+log("write_seconds", round(time.time() - t, 2)); log("integrity", c.execute("pragma integrity_check").fetchone()[0]); c.close()
+log("disk_after_writes_mb", round(hv.disk_size(p) / 1e6, 1))
+q = os.path.abspath("current.db"); os.replace(p, q)
+log("renamed_still_compressed_mb", round(hv.disk_size(q) / 1e6, 1))
+c = sqlite3.connect(q); log("count_after_rename", c.execute("select count(*) from horses").fetchone()[0]); c.close()
+d = hv.disk_compress(q, on=False); log("uncompressed_disk_mb", round(d / 1e6, 1))
+log("compact_settings", hv.compact_settings())
