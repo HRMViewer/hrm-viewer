@@ -1,0 +1,9 @@
+size_mb 639
+compress_closed_seconds 5.6 disk_mb 308 MB/s 114
+replace_other_file_during_compress ok
+compress_open_seconds 5.2 disk_mb 308
+queries_per_s_before 135 during 1 slowest_query_s 2.47 error None
+integrity ok
+replace_current_during_compress PermissionError(13, 'Access is denied')
+replace_after_wait ok
+exit 0
