@@ -2,11 +2,12 @@
   {
     "version": "16.7.2",
     "date": "2026-11-24",
-    "title": "Windows: the stored data is compressed on disk",
+    "title": "How long updates take, and an option to compress the stored data on disk (Windows)",
     "changes": [
-      "New in Settings → Stored data (Windows): Compress on disk, on to begin with. Windows keeps the stored data compressed on your drive, the same as ticking \"Compress contents to save disk space\" on the folder, so it takes roughly half the space. Nothing in it is removed and pages read it as normal.",
-      "Each time a save is loaded the new copy is compressed before it's used, which adds a little time to loading. Your current stored data is compressed the next time a save is loaded, or straight away if you switch the setting off and on.",
-      "Settings shows how much space the stored data takes on disk as well as its size. Works on NTFS drives (most Windows drives); elsewhere the file is left as it is."
+      "Settings → Automatic updates → Status now shows when the last update ran and how long it took, with the time for each step (copying the save, keeping older records, building lookups, working out stats…).",
+      "New in Settings → Stored data (Windows): Compress on disk, off to begin with. Windows keeps the stored data compressed on your drive, the same as ticking \"Compress contents to save disk space\" on the folder, so it takes roughly half the space. Nothing in it is removed and pages read it as normal.",
+      "With it on, each load compresses the new copy before it's used, adding about 10 seconds per GB; you can keep using the viewer meanwhile. Switching it on compresses the stored data you have now straight away. Works on NTFS drives (most Windows drives).",
+      "Settings shows how much space the stored data takes on disk as well as its size."
     ]
   },
   {

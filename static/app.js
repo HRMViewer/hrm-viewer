@@ -6507,7 +6507,7 @@ function compactBox() {
   return [
     row("Compact stored data", `Makes the stored copy of your save smaller, with nothing you can see in the viewer lost. Each time a save is loaded it drops what the viewer never shows: the game's rating history and race replays, its <i>Yearly Summary</i> story entries and their hidden data, and other people's horses' raw race positions once their sectional times are worked out (the sectionals are kept). It also rebuilds the biggest tables without a duplicate copy of their ID index. <b>What it drops can't come back</b>: older records the game has since deleted only exist in your stored copy. Loading takes a little longer while it's on.`,
       sw("set-compact", c.on)),
-    c.disk_available ? row("Compress on disk", `Windows keeps the stored data compressed on your drive (the same as ticking <i>Compress contents to save disk space</i> on the folder), so it takes roughly half the space. Nothing in it is removed and pages read it as normal; loading a save takes a little longer while it's compressed. Works on NTFS drives (most Windows drives).`,
+    c.disk_available ? row("Compress on disk", `Windows keeps the stored data compressed on your drive (the same as ticking <i>Compress contents to save disk space</i> on the folder), so it takes roughly half the space. Nothing in it is removed and pages read it as normal. Each load compresses the new copy before it's used, so it takes a little longer (about 10 seconds per GB); you can keep using the viewer meanwhile. Switching it on compresses the stored data you have now, and pages are slow for those few seconds. Works on NTFS drives (most Windows drives).${STATUS && STATUS.compressing ? " <b>Compressing now…</b>" : ""}`,
       sw("set-compact-disk", c.disk)) : "",
     row("Also thin other horses' charts", `Other people's horses keep one stat and value point per quarter instead of every one, so their charts have fewer points. Your stables' horses, horses you've ridden, bred or traded, their parents and your family are never thinned.`,
       sw("set-compact-thin", c.thin, !c.on)),
@@ -6538,6 +6538,16 @@ function wireCompact() {
     openLoad(true);
   };
 }
+// how long the last load took, step by step (16.7.2)
+const fSecs = (x) => (!isNum(x) ? "—" : x < 60 ? `${x < 10 ? x.toFixed(1) : Math.round(x)} s` : `${Math.floor(x / 60)} min ${Math.round(x % 60)} s`);
+function lastLoadHtml(l, compressing) {
+  if (!l || !isNum(l.took)) return "";
+  const kind = l.mode === "compact" ? "Last Compact now" : "Last update";
+  const steps = (l.steps || []).filter((x) => x[1] >= 0.5 && !/^(Starting|Saving|Loaded)$/.test(x[0]));
+  const comp = l.compress && isNum(l.compress_took) ? ` (${fSecs(l.compress_took)} of it compressing on disk)` : "";
+  return `<br>${kind}: ${new Date(l.at * 1000).toLocaleString("en-NZ")} · <b>took ${fSecs(l.took)}</b>${comp}
+    ${steps.length ? `<details class="small"><summary>Time per step</summary>${steps.map(([n, t]) => `${esc(n)}: ${fSecs(t)}`).join("<br>")}</details>` : ""}`;
+}
 async function drawAutoBox() {
   const box = $("#auto-box");
   if (!box) return;
@@ -6560,7 +6570,8 @@ async function drawAutoBox() {
     <div class="set-row"><div><div class="set-t">At most one update every</div><div class="set-h">Loading a 1 GB save takes a little while, so updates are spaced out if the game saves very often.</div></div>
       <div class="set-c"><select id="auto-gap">${opt(st.min_gap, [[60, "1 minute"], [120, "2 minutes"], [300, "5 minutes"], [600, "10 minutes"], [1800, "30 minutes"], [3600, "1 hour"]])}</select></div></div>
     <div class="set-row"><div><div class="set-t">Status</div><div class="set-h"><span class="auto-pill ${esc(a.state)}">${stateTxt}</span> ${esc(a.message || "")}
-      ${a.last_result && a.last_result.ok ? `<br>Last automatic update: ${new Date(a.last_result.at * 1000).toLocaleString("en-NZ")} · game date ${fDate(a.last_result.game_date)}` : ""}</div></div><div class="set-c"></div></div>`;
+      ${a.last_result && a.last_result.ok ? `<br>Last automatic update: ${new Date(a.last_result.at * 1000).toLocaleString("en-NZ")} · game date ${fDate(a.last_result.game_date)}` : ""}
+      ${lastLoadHtml(a.last_load, a.compressing)}</div></div><div class="set-c"></div></div>`;
   const post = async (url, body) => { await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}) }); setTimeout(drawAutoBox, 600); autoPoll(true); };
   $("#auto-on").onchange = (e) => post("/api/auto", { enabled: e.target.checked });
   $("#auto-quiet").onchange = (e) => post("/api/auto", { quiet: +e.target.value });

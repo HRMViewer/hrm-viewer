@@ -401,14 +401,40 @@ JOB = {"state": "idle", "step": "", "pct": 0, "error": None, "started": None, "f
 JOB_LOCK = threading.Lock()
 
 
+STEP_NUM = re.compile(r"\s*\(\d+ of \d+\)\s*$")
+
+
 def set_job(**kw):
     with JOB_LOCK:
+        now = time.time()
+        if kw.get("state") == "running" and "started" in kw:
+            JOB["steps"] = []          # a new job: time its steps afresh
+        step = kw.get("step")
+        if step is not None and JOB.get("state") == "running" or kw.get("state") == "running":
+            base = STEP_NUM.sub("", step or "")
+            steps = JOB.setdefault("steps", [])
+            if base and (not steps or steps[-1][0] != base):
+                steps.append([base, now])
         JOB.update(kw)
+
+
+def step_times(until=None):
+    """How long each step of the running job took: [[step, seconds], ...] in order."""
+    with JOB_LOCK:
+        steps = [list(x) for x in JOB.get("steps") or []]
+    end = until or time.time()
+    out = []
+    for i, (name, t) in enumerate(steps):
+        nxt = steps[i + 1][1] if i + 1 < len(steps) else end
+        out.append([name, round(nxt - t, 1)])
+    return out
 
 
 def job_snapshot():
     with JOB_LOCK:
-        return dict(JOB)
+        d = dict(JOB)
+    d.pop("steps", None)
+    return d
 
 
 def job_busy():
@@ -592,7 +618,7 @@ COMPACT_DUP_KEY = re.compile(r"(\bINTEGER\s+PRIMARY\s+KEY(?:\s+NOT\s+NULL)?)\s+U
 def compact_settings():
     c = read_json(CONFIG_FILE, {}).get("compact") or {}
     on = bool(c.get("on"))
-    return {"on": on, "thin": on and bool(c.get("thin")), "disk": os.name == "nt" and c.get("disk", True) is not False,
+    return {"on": on, "thin": on and bool(c.get("thin")), "disk": os.name == "nt" and c.get("disk") is True,
             "disk_available": os.name == "nt"}
 
 
@@ -620,6 +646,37 @@ def disk_size(path):
         return st.st_blocks * 512 if getattr(st, "st_blocks", None) else st.st_size
     except Exception:
         return None
+
+
+DISK = {"busy": False, "thread": None}
+
+
+def disk_compress_later(path):
+    """Compress (switching the setting on) the stored data already in use, in the background. Pages are slow until it's done."""
+    def run():
+        t = time.time()
+        size = disk_compress(path)
+        took = round(time.time() - t, 1)
+        try:
+            meta = read_json(META_FILE, {})
+            if meta.get("last_load"):
+                meta["last_load"].update(compress_took=took, disk_size=size)
+                write_json(META_FILE, meta)
+                load_meta_keep_cache()
+        except Exception:
+            traceback.print_exc()
+        DISK["busy"] = False
+    disk_wait()
+    DISK["busy"] = True
+    DISK["thread"] = threading.Thread(target=run, daemon=True)
+    DISK["thread"].start()
+
+
+def disk_wait():
+    """Wait for a background compression to finish (Windows won't replace a file it's still compressing)."""
+    th = DISK.get("thread")
+    if th and th.is_alive():
+        th.join()
 
 
 def disk_compress(path, on=True):
@@ -917,10 +974,21 @@ def process_incoming(source_label, source_path, decision=None, validated=False):
             meta["compact"] = META["compact"]
 
     if cset["disk"]:
+        # before the swap: pages keep reading the old stored data at full speed meanwhile (a file Windows is
+        # compressing can hardly be read until it's done, so doing it after the swap would make pages hang)
         set_job(step="Compressing it on disk", pct=95)
+        t = time.time()
         meta["disk_size"] = disk_compress(INCOMING_DB)
-
+        meta["compress_took"] = round(time.time() - t, 1)
     set_job(step="Saving", pct=97)
+    if DISK["busy"]:
+        set_job(step="Waiting for the last compression to finish", pct=97)
+        disk_wait()
+    started = job_snapshot().get("started") or time.time()
+    meta["last_load"] = {"at": time.time(), "took": round(time.time() - started, 1), "mode": mode, "steps": step_times(),
+                         "size": os.path.getsize(INCOMING_DB), "compress": cset["disk"], "compress_took": meta.pop("compress_took", None),
+                         "disk_size": meta.pop("disk_size", None)}
+    history[-1]["took"] = meta["last_load"]["took"]
     DB_LOCK.acquire_write()
     try:
         POOL.close_all()
@@ -1300,7 +1368,8 @@ def auto_status():
     with AUTO_LOCK:
         a = dict(AUTO)
     a.pop("seen_sig", None)
-    return dict(a, settings=st, path=path, exists=exists, file_mtime=mtime, loaded_at=META.get("loaded_at"),
+    return dict(a, settings=st, path=path, exists=exists, file_mtime=mtime, loaded_at=META.get("loaded_at"), last_load=META.get("last_load"),
+                compressing=DISK["busy"],
                 game_date=META.get("game_date"), db=ACTIVE["id"], job=job_snapshot().get("state"),
                 job_auto=bool(job_snapshot().get("auto")), job_started=job_snapshot().get("started"))
 
@@ -1905,7 +1974,7 @@ def api_status(con, q):
            "has_exe": os.path.exists(os.path.join(APP_DIR, DESKTOP_EXE)), "platform": PLATFORM, "windowed": WINDOWED,
            "window_problem": os.environ.get("HRMV_WINDOW_PROBLEM") or None, "compact": compact_settings(),
            "db_size": os.path.getsize(CURRENT_DB) if os.path.exists(CURRENT_DB) else None,
-           "db_disk": disk_size(CURRENT_DB) if os.path.exists(CURRENT_DB) else None}
+           "db_disk": disk_size(CURRENT_DB) if os.path.exists(CURRENT_DB) else None, "compressing": DISK["busy"]}
     if con:
         if meta.get("player_id"):
             out["player"] = one(con, "select person_person_id as id, person_full_name as name from persons where person_person_id=?", (meta["player_id"],))
@@ -6945,7 +7014,10 @@ class Handler(BaseHTTPRequestHandler):
             write_json(CONFIG_FILE, cfg)
             if "disk" in data and os.name == "nt" and os.path.exists(CURRENT_DB) and not job_busy():
                 # straight away for the stored data there is (Windows can do it while the viewer has the file open)
-                threading.Thread(target=disk_compress, args=(CURRENT_DB, bool(data["disk"])), daemon=True).start()
+                if data["disk"]:
+                    disk_compress_later(CURRENT_DB)
+                else:
+                    threading.Thread(target=lambda: (disk_wait(), disk_compress(CURRENT_DB, False)), daemon=True).start()
             return self.send_json(compact_settings())
         if path == "/api/compact/run":
             if job_busy():
