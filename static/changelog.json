@@ -1,5 +1,13 @@
 [
   {
+    "version": "16.8",
+    "date": "2026-11-24",
+    "title": "Fix: prize money in Dynasty and Lifespans",
+    "changes": [
+      "Fix: a person's prize money in the Dynasty members, totals and Lifespans was far too high. It added up the save's jockey, trainer, head trainer and manager totals, so a race you managed, trained and rode was counted up to three times, and the save's manager total runs well above what the stable actually won. It's now the race money of every race the person rode, trained or managed, each race counted once (the same way the wins next to it are counted)."
+    ]
+  },
+  {
     "version": "16.7",
     "date": "2026-11-24",
     "title": "Faster loading, and an option to compact the stored data",

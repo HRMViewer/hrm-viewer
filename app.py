@@ -4176,7 +4176,8 @@ def life_facts(con, ids):
             out[r.pop("id")]["owned"].append(r)
     pcols = set(columns(con, "persons"))
     money = [x for x in ("person_jockey_winnings", "person_trainer_winnings", "person_head_trainer_career_winnings", "person_management_career_winnings") if x in pcols]
-    if money:
+    if money and not ("race_results" in [r[0] for r in con.execute("select name from sqlite_master where type='table'")]
+                      and "race_result_cash_received" in columns(con, "race_results")):
         for c, mk in chunks():
             for r in con.execute("select person_person_id, %s from persons where person_person_id in (%s)" % (" + ".join("coalesce(%s,0)" % x for x in money), mk), c):
                 out[r[0]]["prize"] = r[1] or 0
@@ -4209,6 +4210,29 @@ def life_facts(con, ids):
             for k, who, rid, race, d, horse, typ, rname, hname in con.execute("""select w.*, x.races_type_of_race, x.races_race_name, h.horse_name from (%s) w
                     left join races x on x.races_race_id=w.race and w.race>0 left join horses h on h.horse_horse_id=w.horse""" % sub, args):
                 won.setdefault(who, {}).setdefault(rid, [set(), d, typ, race, rname, horse, hname])[0].add(k)
+        # prize money: every race result they had a part in (jockey, trainer, head trainer or manager of the stable), each
+        # counted once. The save's own per-role totals overlap (a race you managed, trained and rode counts in all three)
+        # and its manager total runs well above the stable's actual race money, so they aren't added up (16.8).
+        if "race_result_cash_received" in rcols:
+            for c, mk in chunks():
+                parts, args = [], []
+                for k, col in roles:
+                    parts.append("select %s as pid, race_result_id as rid, race_result_cash_received as cash from race_results where %s in (%s)" % (col, col, mk))
+                    args += c
+                if "race_result_stable_manager_id" in rcols:
+                    plain = [x for x in c if x not in mgr_people]
+                    if plain:
+                        parts.append("""select race_result_stable_manager_id, race_result_id, race_result_cash_received from race_results
+                            where race_result_stable_manager_id in (%s)""" % ",".join("?" * len(plain)))
+                        args += plain
+                    for x in c:
+                        if x in mgr_people:
+                            cl, ca = manager_clause(con, x, "race_results")
+                            parts.append("select ?, race_result_id, race_result_cash_received from race_results where %s" % cl)
+                            args += [x] + ca
+                for who, total in con.execute("select pid, sum(coalesce(cash, 0)) from (%s) group by pid" % " union ".join(parts), args):
+                    if who in out:
+                        out[who]["prize"] = total or 0
         for who, races in won.items():
             f = out[who]
             for rid, (ks, d, typ, race, rname, horse, hname) in races.items():
@@ -7020,7 +7044,7 @@ class Handler(BaseHTTPRequestHandler):
 
 # --------------------------------------------------------------------------- in-app updates
 
-VERSION = "16.7"
+VERSION = "16.8"
 BACKUP_DIR = os.path.join(APP_DIR, "backups")
 UPDATE_PENDING = os.path.join(DATA_DIR, "update_pending.json")
 UPDATE_RESULT = os.path.join(DATA_DIR, "update_result.json")
