@@ -592,7 +592,47 @@ COMPACT_DUP_KEY = re.compile(r"(\bINTEGER\s+PRIMARY\s+KEY(?:\s+NOT\s+NULL)?)\s+U
 def compact_settings():
     c = read_json(CONFIG_FILE, {}).get("compact") or {}
     on = bool(c.get("on"))
-    return {"on": on, "thin": on and bool(c.get("thin"))}
+    return {"on": on, "thin": on and bool(c.get("thin")), "disk": os.name == "nt" and c.get("disk", True) is not False,
+            "disk_available": os.name == "nt"}
+
+
+# --------------------------------------------------------------------------- compressing the stored data on disk (Windows, 16.7.2)
+# Windows can keep a file compressed on an NTFS drive (the same as ticking "Compress contents to save disk space").
+# On by default: each load compresses the new stored copy just before it replaces the old one, while nothing else has it open.
+# Pages read it as normal. Not NTFS (FAT, exFAT, some network drives): Windows says no and the file stays as it is.
+def compact_exe():
+    return os.path.join(os.environ.get("SystemRoot") or r"C:\Windows", "System32", "compact.exe")
+
+
+def disk_size(path):
+    """The space a file takes on disk: less than its size when Windows keeps it compressed."""
+    try:
+        if os.name == "nt":
+            import ctypes
+            k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+            k32.GetCompressedFileSizeW.restype = ctypes.c_ulong
+            hi = ctypes.c_ulong(0)
+            ctypes.set_last_error(0)
+            lo = k32.GetCompressedFileSizeW(ctypes.c_wchar_p(path), ctypes.byref(hi))
+            if lo != 0xFFFFFFFF or ctypes.get_last_error() == 0:
+                return (hi.value << 32) + lo
+        st = os.stat(path)
+        return st.st_blocks * 512 if getattr(st, "st_blocks", None) else st.st_size
+    except Exception:
+        return None
+
+
+def disk_compress(path, on=True):
+    """Compress (or uncompress) a file on disk with Windows' NTFS compression. Returns the space it takes afterwards."""
+    if os.name != "nt" or not os.path.exists(path):
+        return None
+    import subprocess
+    try:
+        subprocess.run([compact_exe(), "/c" if on else "/u", "/i", "/q", path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                       timeout=3600, creationflags=0x08000000)       # no console window
+    except Exception as e:
+        print("Couldn't %s %s: %s" % ("compress" if on else "uncompress", path, e))
+    return disk_size(path)
 
 
 def compact_keep_sets(con, prior):
@@ -875,6 +915,10 @@ def process_incoming(source_label, source_path, decision=None, validated=False):
         meta["compact_keep"] = META["compact_keep"]     # its other horses' race positions are still gone
         if META.get("compact"):
             meta["compact"] = META["compact"]
+
+    if cset["disk"]:
+        set_job(step="Compressing it on disk", pct=95)
+        meta["disk_size"] = disk_compress(INCOMING_DB)
 
     set_job(step="Saving", pct=97)
     DB_LOCK.acquire_write()
@@ -1860,7 +1904,8 @@ def api_status(con, q):
            "legacy": legacy_present(), "db_count": len(list_slots()), "desktop": os.environ.get("HRMV_DESKTOP") == "1",
            "has_exe": os.path.exists(os.path.join(APP_DIR, DESKTOP_EXE)), "platform": PLATFORM, "windowed": WINDOWED,
            "window_problem": os.environ.get("HRMV_WINDOW_PROBLEM") or None, "compact": compact_settings(),
-           "db_size": os.path.getsize(CURRENT_DB) if os.path.exists(CURRENT_DB) else None}
+           "db_size": os.path.getsize(CURRENT_DB) if os.path.exists(CURRENT_DB) else None,
+           "db_disk": disk_size(CURRENT_DB) if os.path.exists(CURRENT_DB) else None}
     if con:
         if meta.get("player_id"):
             out["player"] = one(con, "select person_person_id as id, person_full_name as name from persons where person_person_id=?", (meta["player_id"],))
@@ -4212,7 +4257,7 @@ def life_facts(con, ids):
                 won.setdefault(who, {}).setdefault(rid, [set(), d, typ, race, rname, horse, hname])[0].add(k)
         # prize money: every race result they had a part in (jockey, trainer, head trainer or manager of the stable), each
         # counted once. The save's own per-role totals overlap (a race you managed, trained and rode counts in all three)
-        # and its manager total runs well above the stable's actual race money, so they aren't added up (16.8).
+        # and its manager total runs well above the stable's actual race money, so they aren't added up (16.7.1).
         if "race_result_cash_received" in rcols:
             for c, mk in chunks():
                 parts, args = [], []
@@ -6893,11 +6938,14 @@ class Handler(BaseHTTPRequestHandler):
                 data = {}
             cfg = read_json(CONFIG_FILE, {})
             cur = dict(cfg.get("compact") or {})
-            for k in ("on", "thin"):
+            for k in ("on", "thin", "disk"):
                 if k in data:
                     cur[k] = bool(data[k])
             cfg["compact"] = cur
             write_json(CONFIG_FILE, cfg)
+            if "disk" in data and os.name == "nt" and os.path.exists(CURRENT_DB) and not job_busy():
+                # straight away for the stored data there is (Windows can do it while the viewer has the file open)
+                threading.Thread(target=disk_compress, args=(CURRENT_DB, bool(data["disk"])), daemon=True).start()
             return self.send_json(compact_settings())
         if path == "/api/compact/run":
             if job_busy():
@@ -7044,7 +7092,7 @@ class Handler(BaseHTTPRequestHandler):
 
 # --------------------------------------------------------------------------- in-app updates
 
-VERSION = "16.7.1"
+VERSION = "16.7.2"
 BACKUP_DIR = os.path.join(APP_DIR, "backups")
 UPDATE_PENDING = os.path.join(DATA_DIR, "update_pending.json")
 UPDATE_RESULT = os.path.join(DATA_DIR, "update_result.json")

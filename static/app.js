@@ -6507,9 +6507,11 @@ function compactBox() {
   return [
     row("Compact stored data", `Makes the stored copy of your save smaller, with nothing you can see in the viewer lost. Each time a save is loaded it drops what the viewer never shows: the game's rating history and race replays, its <i>Yearly Summary</i> story entries and their hidden data, and other people's horses' raw race positions once their sectional times are worked out (the sectionals are kept). It also rebuilds the biggest tables without a duplicate copy of their ID index. <b>What it drops can't come back</b>: older records the game has since deleted only exist in your stored copy. Loading takes a little longer while it's on.`,
       sw("set-compact", c.on)),
+    c.disk_available ? row("Compress on disk", `Windows keeps the stored data compressed on your drive (the same as ticking <i>Compress contents to save disk space</i> on the folder), so it takes roughly half the space. Nothing in it is removed and pages read it as normal; loading a save takes a little longer while it's compressed. Works on NTFS drives (most Windows drives).`,
+      sw("set-compact-disk", c.disk)) : "",
     row("Also thin other horses' charts", `Other people's horses keep one stat and value point per quarter instead of every one, so their charts have fewer points. Your stables' horses, horses you've ridden, bred or traded, their parents and your family are never thinned.`,
       sw("set-compact-thin", c.thin, !c.on)),
-    row("Size", `${STATUS && STATUS.db_size ? `The stored data is <b>${fSize(STATUS.db_size)}</b>.` : "No data stored yet."}${last ? ` Last compacted ${fDate(last.at)}: ${fSize(last.before)} → ${fSize(last.after)}.` : ""}
+    row("Size", `${STATUS && STATUS.db_size ? `The stored data is <b>${fSize(STATUS.db_size)}</b>${STATUS.db_disk && STATUS.db_disk < STATUS.db_size * 0.97 ? `, taking <b>${fSize(STATUS.db_disk)}</b> on disk` : ""}.` : "No data stored yet."}${last ? ` Last compacted ${fDate(last.at)}: ${fSize(last.before)} → ${fSize(last.after)}.` : ""}
       Compacting happens the next time a save is loaded, or now with <b>Compact now</b> (it needs free disk space about the size of the stored data while it runs).`,
       `<button class="btn" id="compact-run" ${c.on && STATUS && STATUS.db_size ? "" : "disabled"}>Compact now</button>`),
   ].join("") + `<div id="compact-msg" class="small"></div>`;
@@ -6524,6 +6526,11 @@ function wireCompact() {
   };
   $("#set-compact").onchange = (e) => set({ on: e.target.checked });
   $("#set-compact-thin").onchange = (e) => set({ thin: e.target.checked });
+  if ($("#set-compact-disk")) $("#set-compact-disk").onchange = (e) => {
+    set({ disk: e.target.checked });
+    // Windows works on the file in the background: show the new size on disk once it has had a moment
+    setTimeout(async () => { try { STATUS = await (await fetch("/api/status")).json(); const b = $("#compact-box"); if (b) { b.innerHTML = compactBox(); wireCompact(); } } catch (err) { /* next visit */ } }, 20000);
+  };
   $("#compact-run").onclick = async () => {
     const r = await fetch("/api/compact/run", { method: "POST" });
     const j = await r.json();
