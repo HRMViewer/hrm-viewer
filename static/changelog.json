@@ -1,5 +1,14 @@
 [
   {
+    "version": "16.7.3",
+    "date": "2026-11-24",
+    "title": "Moving off the slimmed 16.6 edit",
+    "changes": [
+      "Fix for stored data made by the slimmed personal edit of 16.6: it folded other stables' salary and win-share payments of finished years into yearly totals, and deleted those payments every time the game handed them back. Now the payments are kept, so each yearly total is cut to the part the save no longer has (or removed when every payment is back). Nothing is counted twice and every total stays the same. It's done once, on the first load after updating.",
+      "The sectional times that edit kept for other people's horses are kept too."
+    ]
+  },
+  {
     "version": "16.7.2",
     "date": "2026-11-24",
     "title": "How long updates take, and an option to compress the stored data on disk (Windows)",

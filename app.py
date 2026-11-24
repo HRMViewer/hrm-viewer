@@ -803,11 +803,50 @@ def compact_pre(con, thin, prior_keep):
     return info
 
 
+FORK_ROLLED = ("Salary, yearly total", "Win shares, yearly total")
+FORK_CHECKED = " (payments the save no longer has)"
+
+
+def fix_fork_rollups(con):
+    """Stored data from the slimmed personal edit of 16.6 rolled other stables' salary and win-share payments of
+    finished years into one row per payer, payee, type and year (negative ids, notes like "Salary, yearly total").
+    The game keeps handing those payments back, which that edit deleted on every load; here they're kept, so each
+    yearly total is cut to the part the save no longer has (or removed if every payment is back), and marked so it's
+    only done once. Returns how many yearly totals were changed (16.7.3)."""
+    if not has_table(con, "transactions") or not {"transaction_note", "transaction_category"} <= set(columns(con, "transactions")):
+        return 0
+    rolled = con.execute("""select transaction_transaction_id, transaction_from_entity_id, transaction_from_entity_type, transaction_to_entity_id,
+            transaction_to_entity_type, transaction_type, coalesce(transaction_category, ''), strftime('%Y', transaction_date, 'unixepoch'),
+            transaction_amount, transaction_note from transactions where transaction_transaction_id < 0 and transaction_note in (?, ?)""", FORK_ROLLED).fetchall()
+    if not rolled:
+        return 0
+    con.execute("drop table if exists temp.fork_raw")
+    con.execute("""create temp table fork_raw as select transaction_from_entity_id as f, transaction_from_entity_type as ft,
+            transaction_to_entity_id as t, transaction_to_entity_type as tt, transaction_type as ty, coalesce(transaction_category, '') as cat,
+            strftime('%Y', transaction_date, 'unixepoch') as y, sum(transaction_amount) as amt
+        from transactions where transaction_transaction_id > 0 and transaction_type in ('Salary', 'Win Share') group by 1, 2, 3, 4, 5, 6, 7""")
+    con.execute("create index temp.fork_raw_k on fork_raw(f, t, y)")
+    changed = 0
+    for rid, f, ft, t, tt, ty, cat, y, amt, note in rolled:
+        r = con.execute("select amt from temp.fork_raw where f=? and t=? and y=? and ft is ? and tt is ? and ty is ? and cat=?",
+                        (f, t, y, ft, tt, ty, cat)).fetchone()
+        back = (r[0] or 0) if r else 0
+        if back and abs(amt or 0) - abs(back) <= 0.01:
+            con.execute("delete from transactions where transaction_transaction_id=?", (rid,))
+        else:
+            con.execute("update transactions set transaction_amount=?, transaction_note=? where transaction_transaction_id=?",
+                        ((amt or 0) - back, note + FORK_CHECKED, rid))
+        changed += bool(back)
+    con.execute("drop table temp.fork_raw")
+    con.commit()
+    return changed
+
+
 def carry_sectionals(con, carry):
     """Bring the sectionals (and section records) already worked out for the stored data into incoming.db, so a load
     only adds the new races instead of working them all out again. Returns (sectionals carried, records carried)."""
     same = META.get("derived_version") == DERIVED_VERSION
-    must = bool(META.get("compact_keep"))       # compacted: other horses' race positions are gone, so these are the only copy
+    must = bool(META.get("compact_keep") or META.get("slim_keep"))      # compacted (or the slimmed 16.6 edit): other horses' race positions are gone, so these are the only copy
     if not carry or not os.path.exists(CURRENT_DB):
         return False, False
     if has_table(con, "hrmv_sectionals"):       # "add older records" and Compact now start from a copy of the stored data
@@ -911,8 +950,9 @@ def process_incoming(source_label, source_path, decision=None, validated=False):
         ensure_removed_table(con)
         size_before = os.path.getsize(CURRENT_DB) if carry and os.path.exists(CURRENT_DB) else os.path.getsize(INCOMING_DB)
         carried, carried_rec = carry_sectionals(con, carry)
+        fork_fixed = fix_fork_rollups(con) if carry else 0
         if cset["on"]:
-            compact_info = compact_pre(con, cset["thin"], META.get("compact_keep") if carry else None)
+            compact_info = compact_pre(con, cset["thin"], (META.get("compact_keep") or META.get("slim_keep")) if carry else None)
         todo = []
         for table, col in INDEXES:
             if has_table(con, table) and col in columns(con, table):
@@ -968,8 +1008,8 @@ def process_incoming(source_label, source_path, decision=None, validated=False):
         meta["compact_keep"] = compact_info.pop("keep")
         compact_info.update(at=time.time(), before=size_before, after=os.path.getsize(INCOMING_DB))
         meta["compact"] = compact_info
-    elif carry and META.get("compact_keep"):
-        meta["compact_keep"] = META["compact_keep"]     # its other horses' race positions are still gone
+    elif carry and (META.get("compact_keep") or META.get("slim_keep")):
+        meta["compact_keep"] = META.get("compact_keep") or META["slim_keep"]     # its other horses' race positions are still gone
         if META.get("compact"):
             meta["compact"] = META["compact"]
 
@@ -989,6 +1029,8 @@ def process_incoming(source_label, source_path, decision=None, validated=False):
                          "size": os.path.getsize(INCOMING_DB), "compress": cset["disk"], "compress_took": meta.pop("compress_took", None),
                          "disk_size": meta.pop("disk_size", None)}
     history[-1]["took"] = meta["last_load"]["took"]
+    if fork_fixed:
+        history[-1]["yearly_totals_fixed"] = fork_fixed
     DB_LOCK.acquire_write()
     try:
         POOL.close_all()
@@ -1144,7 +1186,7 @@ def ensure_derived(progress=None):
         progress()
     con = sqlite3.connect(CURRENT_DB)
     try:
-        build_derived(con, carried_sectionals=bool(META.get("compact_keep")))
+        build_derived(con, carried_sectionals=bool(META.get("compact_keep") or META.get("slim_keep")))
     finally:
         con.close()
     meta = read_json(META_FILE, {})
@@ -7164,7 +7206,7 @@ class Handler(BaseHTTPRequestHandler):
 
 # --------------------------------------------------------------------------- in-app updates
 
-VERSION = "16.7.2"
+VERSION = "16.7.3"
 BACKUP_DIR = os.path.join(APP_DIR, "backups")
 UPDATE_PENDING = os.path.join(DATA_DIR, "update_pending.json")
 UPDATE_RESULT = os.path.join(DATA_DIR, "update_result.json")
