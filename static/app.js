@@ -6494,8 +6494,42 @@ function settingsPage() {
       `<a class="btn" href="#/databases">Manage databases</a>`),
     row("Load a newer save", "Update the open database with a newer database.db, or load one as a new database.", `<button class="btn" onclick="openLoad()">Load database</button>`),
   ].join("")) + `</div></div>`;
+  html += `<div style="margin-top:16px">` + panel("Stored data", `<div id="compact-box">${compactBox()}</div>`) + `</div>`;
   html += `<div style="margin-top:16px">` + panel("Automatic updates", `<div id="auto-box"><div class="muted">Loading…</div></div>`) + `</div>`;
   return html;
+}
+// ------------------------------------------------------------------ Settings → Stored data: compacting (16.7)
+const fSize = (b) => (isNum(b) && b > 0 ? (b >= 1 << 30 ? (b / (1 << 30)).toFixed(2) + " GB" : Math.round(b / (1 << 20)) + " MB") : "—");
+function compactBox() {
+  const c = (STATUS && STATUS.compact) || {}, m = (STATUS && STATUS.meta) || {}, last = m.compact;
+  const sw = (id, on, dis) => `<label class="switch"><input type="checkbox" id="${id}" ${on ? "checked" : ""} ${dis ? "disabled" : ""}><span></span></label>`;
+  const row = (t, d, c2) => `<div class="set-row"><div><div class="set-t">${t}</div><div class="set-h">${d}</div></div><div class="set-c">${c2}</div></div>`;
+  return [
+    row("Compact stored data", `Makes the stored copy of your save smaller, with nothing you can see in the viewer lost. Each time a save is loaded it drops what the viewer never shows: the game's rating history and race replays, its <i>Yearly Summary</i> story entries and their hidden data, and other people's horses' raw race positions once their sectional times are worked out (the sectionals are kept). It also rebuilds the biggest tables without a duplicate copy of their ID index. <b>What it drops can't come back</b>: older records the game has since deleted only exist in your stored copy. Loading takes a little longer while it's on.`,
+      sw("set-compact", c.on)),
+    row("Also thin other horses' charts", `Other people's horses keep one stat and value point per quarter instead of every one, so their charts have fewer points. Your stables' horses, horses you've ridden, bred or traded, their parents and your family are never thinned.`,
+      sw("set-compact-thin", c.thin, !c.on)),
+    row("Size", `${STATUS && STATUS.db_size ? `The stored data is <b>${fSize(STATUS.db_size)}</b>.` : "No data stored yet."}${last ? ` Last compacted ${fDate(last.at)}: ${fSize(last.before)} → ${fSize(last.after)}.` : ""}
+      Compacting happens the next time a save is loaded, or now with <b>Compact now</b> (it needs free disk space about the size of the stored data while it runs).`,
+      `<button class="btn" id="compact-run" ${c.on && STATUS && STATUS.db_size ? "" : "disabled"}>Compact now</button>`),
+  ].join("") + `<div id="compact-msg" class="small"></div>`;
+}
+function wireCompact() {
+  const box = $("#compact-box");
+  if (!box) return;
+  const set = async (body) => {
+    const r = await fetch("/api/compact", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    if (STATUS) STATUS.compact = await r.json();
+    box.innerHTML = compactBox(); wireCompact();
+  };
+  $("#set-compact").onchange = (e) => set({ on: e.target.checked });
+  $("#set-compact-thin").onchange = (e) => set({ thin: e.target.checked });
+  $("#compact-run").onclick = async () => {
+    const r = await fetch("/api/compact/run", { method: "POST" });
+    const j = await r.json();
+    if (!r.ok) { $("#compact-msg").innerHTML = `<div class="err">${esc(j.error || "Couldn't start.")}</div>`; return; }
+    openLoad(true);
+  };
 }
 async function drawAutoBox() {
   const box = $("#auto-box");
@@ -6542,6 +6576,7 @@ settingsPage.after = () => {
   drawFontDropdowns();
   $$("[data-theme]", APP).forEach((b) => (b.onclick = () => { setTheme(b.dataset.theme); $$("[data-theme]", APP).forEach((x) => x.classList.toggle("on", x === b)); drawFontDropdowns(); }));
   drawAutoBox();
+  wireCompact();
   const save = (k, v) => { try { localStorage.setItem(k, v); } catch (e) { /* this session only */ } };
   $("#set-cards").onchange = (e) => { HOVER_CARDS = e.target.checked; save("hrm.hoverCards", HOVER_CARDS ? "1" : "0"); hideCard(); };
   $("#set-pedcol").onchange = (e) => { ANC_COLOURS = e.target.checked; save("hrm.ancColours", ANC_COLOURS ? "1" : "0"); };

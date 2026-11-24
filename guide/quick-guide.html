@@ -136,6 +136,8 @@
   <h3>Several databases</h3>
   <p><span class="ui">Settings → Databases</span> lets you keep different saves apart, switch between them, rename or delete them, and bring in data from another HRM Viewer folder. Click the database name at the top right to get there quickly.</p>
   <p>Each database follows one player. If a save's player is different from the database's (for example your heir has taken over), or the file is from a different save, the viewer asks before loading it, even during automatic updates: <span class="ui">Same world</span> keeps using this database, or make a new database for the new player. The Databases list shows each database's player and any players it followed before.</p>
+  <h3>Compact stored data</h3>
+  <p>The stored copy keeps everything the game has ever had, so it grows. <span class="ui">Settings → Stored data → Compact stored data</span> (off to begin with) makes it smaller without losing anything you can see in the viewer: each time a save is loaded it drops the game's rating history and race replays, its <i>Yearly Summary</i> story entries and their hidden data, and other people's horses' raw race positions once their sectional times are worked out (the sectionals are kept). It also rebuilds the biggest tables without a duplicate copy of their ID index. <span class="ui">Also thin other horses' charts</span> keeps one stat and value point per quarter for other people's horses; your stables' horses, horses you've ridden, bred or traded, their parents and your family are never thinned. <span class="ui">Compact now</span> does it straight away. What it drops can't come back, and loading takes a little longer while it's on.</p>
 </section>
 
 <section id="horses">
@@ -248,7 +250,7 @@
     <tr><td>Main stable</td><td>Which of your stables “Your stable” opens.</td></tr>
     <tr><td>Shortcuts (tab)</td><td>Your own keys for any page, favourite or menu-bar button. See <a href="#around">Getting around</a>.</td></tr>
     <tr><td>Quick Guide</td><td>Opens this guide inside the viewer, or downloads it as a PDF.</td></tr>
-    <tr><td>Automatic updates · Databases</td><td>See <a href="#load">Loading your saves</a>.</td></tr>
+    <tr><td>Automatic updates · Databases · Stored data</td><td>See <a href="#load">Loading your saves</a>.</td></tr>
   </table>
 </section>
 
