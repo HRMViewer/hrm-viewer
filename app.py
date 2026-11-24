@@ -1358,7 +1358,7 @@ def api_dbs():
 # the viewer waits until the file has been quiet for a while, then loads it the normal way
 # (newest wins, history kept). Only the same save, and never an older file, is loaded on its own.
 
-AUTO_DEFAULTS = {"enabled": False, "quiet": 30, "min_gap": 300}
+AUTO_DEFAULTS = {"enabled": True, "quiet": 30, "min_gap": 300}       # on to begin with (16.7.4)
 AUTO = {"state": "off", "message": "", "last_check": None, "changed_at": None, "seen_sig": None, "last_import": None,
         "last_result": None, "running": False}
 AUTO_LOCK = threading.Lock()
@@ -7206,7 +7206,7 @@ class Handler(BaseHTTPRequestHandler):
 
 # --------------------------------------------------------------------------- in-app updates
 
-VERSION = "16.7.3"
+VERSION = "16.7.4"
 BACKUP_DIR = os.path.join(APP_DIR, "backups")
 UPDATE_PENDING = os.path.join(DATA_DIR, "update_pending.json")
 UPDATE_RESULT = os.path.join(DATA_DIR, "update_result.json")

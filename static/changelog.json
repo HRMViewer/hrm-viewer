@@ -1,5 +1,13 @@
 [
   {
+    "version": "16.7.4",
+    "date": "2026-11-24",
+    "title": "Automatic updates on to begin with",
+    "changes": [
+      "Automatic updates (Settings → Automatic updates) are now on unless you switch them off: leave the viewer open and every time you save in the game, it loads the new file by itself. If you've switched them off before, they stay off."
+    ]
+  },
+  {
     "version": "16.7.3",
     "date": "2026-11-24",
     "title": "Moving off the slimmed 16.6 edit",
