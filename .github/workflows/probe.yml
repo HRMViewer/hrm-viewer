@@ -1,0 +1,25 @@
+name: Windows compress probe 2
+on:
+  push:
+    branches: [ci-probe-windows-compress2]
+permissions:
+  contents: write
+jobs:
+  probe:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - name: Probe
+        shell: bash
+        run: python probe.py > results.txt 2>&1; echo "exit $?" >> results.txt; cat results.txt
+      - name: Keep the results
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/r" && cp results.txt "$RUNNER_TEMP/r/" && cd "$RUNNER_TEMP/r"
+          git init -q && git checkout -q -b ci-results-win-compress && git add -A && git -c user.name=ci -c user.email=ci@localhost commit -qm "windows compress probe 2"
+          git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" ci-results-win-compress
