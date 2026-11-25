@@ -5057,6 +5057,42 @@ async function courseRacesPage(route) {
   }, { parts: route.parts, q });
 }
 
+// grouped bars: one group per label (a year or a month), one bar per series, with a zero line for losses (16.7.8)
+function groupBars(labels, series, opts = {}) {
+  const fmt = opts.fmt || fMoneyShort, tip = opts.tipFmt || fMoney, W = 680, H = opts.height || 230, padL = 58, padB = 26, padT = 10;
+  const vals = series.flatMap((s) => s.values).filter(isNum);
+  if (!labels.length || !vals.some((v) => v)) return '<div class="empty">No money recorded in this period.</div>';
+  // round steps for the axis (1, 2 or 5 times a power of ten), wide enough for the highest and lowest bar
+  const rawMax = Math.max(0, ...vals), rawMin = Math.min(0, ...vals), guess = (rawMax - rawMin || 1) / 4;
+  const pow = Math.pow(10, Math.floor(Math.log10(guess))), step = [1, 2, 5, 10].map((m) => m * pow).find((x) => x >= guess);
+  const max = Math.ceil(rawMax / step) * step, min = Math.floor(rawMin / step) * step, span = max - min || 1;
+  const y = (v) => padT + ((max - v) / span) * (H - padT - padB);
+  const gw = (W - padL) / labels.length, bw = Math.min(26, (gw * 0.8) / series.length);
+  const ticks = [];
+  for (let t = min; t <= max + step / 2; t += step) ticks.push(t);
+  let svg = `<svg viewBox="0 0 ${W} ${H}" class="gbars" role="img" preserveAspectRatio="xMidYMid meet">`;
+  ticks.forEach((t) => { svg += `<line x1="${padL}" x2="${W}" y1="${y(t)}" y2="${y(t)}" class="gb-grid"/><text x="${padL - 6}" y="${y(t) + 4}" text-anchor="end" class="gb-ax">${esc(fmt(t))}</text>`; });
+  svg += `<line x1="${padL}" x2="${W}" y1="${y(0)}" y2="${y(0)}" class="gb-zero"/>`;
+  labels.forEach((lab, i) => {
+    const x0 = padL + i * gw + (gw - bw * series.length) / 2;
+    series.forEach((s, k) => {
+      const v = s.values[i];
+      if (!isNum(v)) return;
+      const top = y(Math.max(0, v)), h = Math.max(v ? 1 : 0, Math.abs(y(v) - y(0)));
+      svg += `<rect x="${x0 + k * bw}" y="${top}" width="${bw - 2}" height="${h}" rx="2" fill="${s.color}"><title>${esc(lab)} · ${esc(s.name)}: ${esc(tip(v))}</title></rect>`;
+    });
+    svg += `<text x="${padL + i * gw + gw / 2}" y="${H - 8}" text-anchor="middle" class="gb-ax">${esc(lab)}</text>`;
+  });
+  svg += "</svg>";
+  const legend = `<div class="gb-legend">${series.map((s) => `<span><i style="background:${s.color}"></i>${esc(s.name)}</span>`).join("")}</div>`;
+  return `<div class="gb-box">${svg}${legend}</div>`;
+}
+const FIN_SERIES = (rows) => [
+  { name: "Income", color: "#2f9e5b", values: rows.map((r) => r.income) },
+  { name: "Expenses", color: "#d0453c", values: rows.map((r) => r.expenses) },
+  { name: "Profit", color: "#1d63d6", values: rows.map((r) => r.profit) },
+];
+
 async function stableCoursesPage(route) {
   const id = route.parts[1];
   const d = await api("stable/" + id);
@@ -5112,12 +5148,20 @@ async function courseFinancePage(route) {
   html += `<div class="grid cols-2">${panel("Income, last 12 months", catTable(l.income_cats, l.income), "Money paid to the racecourse")}
     ${panel("Expenses, last 12 months", catTable(l.expense_cats, l.expenses), "Money it paid out" + (l.surplus ? ` · the ${fMoney(l.surplus)} surplus paid out isn't counted as an expense` : ""))}</div>`;
   const ys = f.years || [];
-  const jan1 = (y) => Date.UTC(y, 0, 1) / 1000;
-  html += `<div style="margin-top:16px">${panel("Year by year", lineChart([
-      { name: "Income", color: "#2f9e5b", points: ys.map((y) => [jan1(y.year), y.income]) },
-      { name: "Expenses", color: "#d0453c", points: ys.map((y) => [jan1(y.year), y.expenses]) },
-      { name: "Profit", color: "#1d63d6", dash: true, points: ys.map((y) => [jan1(y.year), y.profit]) },
-    ], { yFmt: fMoneyShort, tipFmt: fMoney }) + table([
+  // the last 12 months, month by month
+  const ms = f.months12 || [];
+  const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const mLabel = (m) => `${MON[m.month - 1]} ${String(m.year).slice(2)}`;
+  const topCat = (cats) => { const e = Object.entries(cats || {}).sort((a, b) => b[1] - a[1])[0]; return e ? `${esc(e[0])} <span class="muted small">${fMoneyShort(e[1])}</span>` : '<span class="muted">—</span>'; };
+  html += `<div style="margin-top:16px">${panel("Last 12 months, month by month", groupBars(ms.map(mLabel), FIN_SERIES(ms)) + table([
+      { h: "Month", f: (m) => `<b>${MONTHS_LONG[m.month - 1]} ${m.year}</b>` },
+      { h: "Meetings", cls: "num", f: (m) => (m.meetings ? fNum(m.meetings) : '<span class="muted">—</span>') },
+      { h: "Races", cls: "num", f: (m) => (m.races ? fNum(m.races) : '<span class="muted">—</span>') },
+      { h: "Income", cls: "num", f: (m) => fMoney(m.income) }, { h: "Biggest income", f: (m) => topCat(m.income_cats) },
+      { h: "Expenses", cls: "num", f: (m) => fMoney(m.expenses) }, { h: "Biggest expense", f: (m) => topCat(m.expense_cats) },
+      { h: "Profit", cls: "num", f: (m) => `<span class="${m.profit >= 0 ? "up" : "dn"}">${fMoney(m.profit)}</span>` },
+    ], ms.slice().reverse()), "By the month the money was paid · tickets, food, media rights, subsidy and running costs are paid once a month, often the month after the meetings they're for")}</div>`;
+  html += `<div style="margin-top:16px">${panel("Year by year", groupBars(ys.map((y) => String(y.year)), FIN_SERIES(ys)) + table([
       { h: "Year", f: (y) => `<b>${y.year}</b>${y.itemised ? "" : ' <span class="muted small" title="The game only keeps a yearly total of these payments">yearly total</span>'}` },
       { h: "Meetings", cls: "num", f: (y) => fNum(y.meetings) }, { h: "Races", cls: "num", f: (y) => fNum(y.races) },
       { h: "Income", cls: "num", f: (y) => fMoney(y.income) }, { h: "Expenses", cls: "num", f: (y) => fMoney(y.expenses) },

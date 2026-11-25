@@ -7,6 +7,7 @@
       "A stable that owns racecourses has a new Racecourses tab: each one with where it is, capacity, licence, track and facilities condition, and its meetings, income, expenses and profit over the last 12 months, plus the totals.",
       "Racecourse pages now have tabs: Overview, Upcoming races, Results, Track records, Sectional records and Finances. Everything that was on the page is still there.",
       "Finances: income and expenses by type for the last 12 months (tickets, food, drink and parking, media rights, betting commission, sponsorship, subsidy, fees; prize money and running costs), with each one's share and amount per meeting; year by year with income, expenses, profit, and income and profit per meeting; each meeting's betting commission and prize money paid on the day; prices, budgets, licence, sponsors, and the racecourse's monthly figures when the save has them.",
+      "Finances has bar charts: the last 12 months month by month (income, expenses and profit, with meetings, races and each month's biggest income and expense) and year by year. \"Last 12 months\" everywhere on racecourse pages and a stable's Racecourses tab means this month so far and the 11 before, so the figures and the monthly chart always agree.",
       "Years the game only keeps a yearly total for are shown at that total and marked, so nothing is counted twice."
     ]
   },

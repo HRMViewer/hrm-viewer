@@ -1417,3 +1417,13 @@ html.dark body .anc-table .hits { background: rgba(255, 213, 74, .14); color: #f
 .cc-grid th { vertical-align: bottom; } .cc-grid td { vertical-align: top; }
 .cc-dbl { background: #fff1c7; border-radius: 4px; padding: 0 3px; }
 .season-pick { display: inline-flex; gap: 6px; }
+
+/* 16.7.8: grouped bar charts (racecourse finances) */
+.gb-box { margin: 4px 0 12px; }
+.gbars { width: 100%; height: auto; max-height: 280px; display: block; }
+.gbars rect:hover { opacity: .8; }
+.gb-grid { stroke: var(--line); stroke-width: 1; }
+.gb-zero { stroke: var(--muted, #8a94a6); stroke-width: 1; }
+.gb-ax { font-size: 11px; fill: var(--muted, #8a94a6); }
+.gb-legend { display: flex; gap: 14px; font-size: 12px; color: var(--muted, #8a94a6); margin-top: 4px; }
+.gb-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }

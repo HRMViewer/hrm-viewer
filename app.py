@@ -4856,6 +4856,16 @@ COURSE_INCOME_LABEL = {"Ticket Revenue": "Tickets", "Concessions & Parking": "Fo
 COURSE_EXPENSE_LABEL = {"Prize": "Prize money", "Operating Expenses": "Operating expenses", "Venue Surplus": "Surplus paid out"}
 
 
+def course_window_start(gd):
+    """The start of "the last 12 months" on racecourse pages: the first day of the month 11 months before the game date."""
+    y, m = time.gmtime(gd)[:2]
+    m -= 11
+    while m < 1:
+        m += 12
+        y -= 1
+    return calendar.timegm((y, m, 1, 0, 0, 0))
+
+
 def owned_courses(con, sid):
     """The racecourses a stable owns, with what they took in and paid out over the last 12 months of the save."""
     if "racecourse_owner_stable_id" not in columns(con, "racecourses"):
@@ -4868,13 +4878,13 @@ def owned_courses(con, sid):
     if not out or not has_table(con, "transactions"):
         return out
     gd = META.get("game_date") or time.time()
-    lo = gd - 365 * 86400
+    lo = course_window_start(gd)
     ids = ",".join(str(int(r["id"])) for r in out)
     inc = {r[0]: r[1] for r in con.execute("""select transaction_to_entity_id, sum(transaction_amount) from transactions where transaction_to_entity_type='racecourse'
-        and transaction_to_entity_id in (%s) and transaction_date > ? and transaction_type <> 'Yearly Summary' group by 1""" % ids, (lo,))}
+        and transaction_to_entity_id in (%s) and transaction_date >= ? and transaction_type <> 'Yearly Summary' group by 1""" % ids, (lo,))}
     exp = {r[0]: r[1] for r in con.execute("""select transaction_from_entity_id, sum(transaction_amount) from transactions where transaction_from_entity_type='racecourse'
-        and transaction_from_entity_id in (%s) and transaction_date > ? and transaction_type <> 'Yearly Summary' and transaction_type <> 'Venue Surplus' group by 1""" % ids, (lo,))}
-    days = {r[0]: r[1] for r in con.execute("select raceday_racecourse_id, count(*) from race_days where raceday_racecourse_id in (%s) and raceday_date > ? and raceday_date <= ? group by 1" % ids, (lo, gd))}
+        and transaction_from_entity_id in (%s) and transaction_date >= ? and transaction_type <> 'Yearly Summary' and transaction_type <> 'Venue Surplus' group by 1""" % ids, (lo,))}
+    days = {r[0]: r[1] for r in con.execute("select raceday_racecourse_id, count(*) from race_days where raceday_racecourse_id in (%s) and raceday_date >= ? and raceday_date <= ? group by 1" % ids, (lo, gd))}
     for r in out:
         r["income_12m"], r["expenses_12m"], r["meetings_12m"] = inc.get(r["id"], 0), exp.get(r["id"], 0), days.get(r["id"], 0)
         r["profit_12m"] = r["income_12m"] - r["expenses_12m"]
@@ -4931,13 +4941,14 @@ def api_course_finances(con, cid):
         e["per_meeting_profit"] = e["profit"] / e["meetings"] if e["meetings"] else None
         e["itemised"] = not e.get("income_from_summary") and not e.get("expenses_from_summary")
     out["years"] = [e for e in ys if e["income"] or e["expenses"] or e["meetings"]]
-    # the last 12 months of the save, from the itemised payments
-    lo = gd - 365 * 86400
+    # the last 12 months of the save, from the itemised payments: the 12 calendar months up to the game date (this month
+    # so far and the 11 before), the same months as the month-by-month chart, so the two always agree
+    lo = course_window_start(gd)
     last = {"income": 0, "expenses": 0, "surplus": 0, "income_cats": {}, "expense_cats": {}}
     if has_table(con, "transactions"):
         for side, key, labels in (("to", "income", COURSE_INCOME_LABEL), ("from", "expenses", COURSE_EXPENSE_LABEL)):
             for typ, total in con.execute("""select transaction_type, sum(transaction_amount) from transactions where transaction_%s_entity_type='racecourse'
-                    and transaction_%s_entity_id=? and transaction_date > ? and transaction_date <= ? and transaction_type <> 'Yearly Summary' group by 1""" % (side, side), (cid, lo, gd)):
+                    and transaction_%s_entity_id=? and transaction_date >= ? and transaction_date <= ? and transaction_type <> 'Yearly Summary' group by 1""" % (side, side), (cid, lo, gd)):
                 if key == "expenses" and typ == "Venue Surplus":
                     last["surplus"] += total or 0
                     continue
@@ -4945,11 +4956,47 @@ def api_course_finances(con, cid):
                 cats = last["income_cats" if key == "income" else "expense_cats"]
                 cats[label] = cats.get(label, 0) + (total or 0)
                 last[key] += total or 0
-    last["meetings"] = one(con, "select count(*) as n from race_days where raceday_racecourse_id=? and raceday_date > ? and raceday_date <= ?", (cid, lo, gd))["n"]
+    last["meetings"] = one(con, "select count(*) as n from race_days where raceday_racecourse_id=? and raceday_date >= ? and raceday_date <= ?", (cid, lo, gd))["n"]
     last["races"] = one(con, """select count(*) as n from races x join race_days d on d.raceday_race_day_id=x.races_race_day_id
-        where d.raceday_racecourse_id=? and d.raceday_date > ? and d.raceday_date <= ?""", (cid, lo, gd))["n"]
+        where d.raceday_racecourse_id=? and d.raceday_date >= ? and d.raceday_date <= ?""", (cid, lo, gd))["n"]
     last["profit"] = last["income"] - last["expenses"]
     out["last12"] = last
+    # the last 12 months month by month (16.7.8): by the month the money was paid, and the meetings held that month
+    gy, gm = time.gmtime(gd)[:2]
+    months = []      # the same 12 months as "last 12 months" above
+    for k in range(11, -1, -1):
+        y, m = gy, gm - k
+        while m < 1:
+            m += 12
+            y -= 1
+        months.append({"key": "%04d-%02d" % (y, m), "year": y, "month": m, "income": 0, "expenses": 0, "surplus": 0, "meetings": 0, "races": 0, "income_cats": {}, "expense_cats": {}})
+    by = {x["key"]: x for x in months}
+    first = lo
+    if has_table(con, "transactions"):
+        for side, key, labels in (("to", "income", COURSE_INCOME_LABEL), ("from", "expenses", COURSE_EXPENSE_LABEL)):
+            for mk, typ, total in con.execute("""select strftime('%%Y-%%m', transaction_date, 'unixepoch'), transaction_type, sum(transaction_amount) from transactions
+                    where transaction_%s_entity_type='racecourse' and transaction_%s_entity_id=? and transaction_date >= ? and transaction_date <= ?
+                    and transaction_type <> 'Yearly Summary' group by 1, 2""" % (side, side), (cid, first, gd)):
+                x = by.get(mk)
+                if not x:
+                    continue
+                if key == "expenses" and typ == "Venue Surplus":
+                    x["surplus"] += total or 0
+                    continue
+                label = labels.get(typ, typ or "Other")
+                cats = x["income_cats" if key == "income" else "expense_cats"]
+                cats[label] = cats.get(label, 0) + (total or 0)
+                x[key] += total or 0
+    for mk, n in con.execute("select strftime('%Y-%m', raceday_date, 'unixepoch'), count(*) from race_days where raceday_racecourse_id=? and raceday_date >= ? and raceday_date <= ? group by 1", (cid, first, gd)):
+        if mk in by:
+            by[mk]["meetings"] = n
+    for mk, n in con.execute("""select strftime('%Y-%m', d.raceday_date, 'unixepoch'), count(*) from races x join race_days d on d.raceday_race_day_id=x.races_race_day_id
+            where d.raceday_racecourse_id=? and d.raceday_date >= ? and d.raceday_date <= ? group by 1""", (cid, first, gd)):
+        if mk in by:
+            by[mk]["races"] = n
+    for x in months:
+        x["profit"] = x["income"] - x["expenses"]
+    out["months12"] = months
     # each meeting: what was paid on the day itself, betting commission in and prize money out (tickets, food, media
     # rights, subsidy and operating costs are settled once a month, so they're only in the yearly and 12-month figures)
     out["meetings"] = []
