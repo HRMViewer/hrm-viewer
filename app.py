@@ -887,6 +887,12 @@ def compact_early(path, prior):
         for t in NEVER_KEEP:
             con.execute("drop table if exists %s" % qident(t))
         con.commit()
+        # which tables are big enough to rebuild, decided before any rows are dropped (as compacting after the merge did)
+        big = []
+        for (t,) in con.execute("""select distinct tbl_name from sqlite_master where type='index' and name like 'sqlite_autoindex%'
+                and tbl_name not like 'hrmv_%'""").fetchall():
+            if con.execute("select count(*) from (select 1 from %s limit %d)" % (qident(t), COMPACT_REBUILD_ROWS)).fetchone()[0] >= COMPACT_REBUILD_ROWS:
+                big.append(t)
         if prior and has_table(con, "race_position_snapshots") and os.path.exists(CURRENT_DB):
             compact_keep_sets(con, prior)
             con.execute("attach database ? as prev", (CURRENT_DB,))
@@ -901,11 +907,6 @@ def compact_early(path, prior):
                 con.commit()
             finally:
                 con.execute("detach database prev")
-        big = []
-        for (t,) in con.execute("""select distinct tbl_name from sqlite_master where type='index' and name like 'sqlite_autoindex%'
-                and tbl_name not like 'hrmv_%'""").fetchall():
-            if con.execute("select count(*) from (select 1 from %s limit %d)" % (qident(t), COMPACT_REBUILD_ROWS)).fetchone()[0] >= COMPACT_REBUILD_ROWS:
-                big.append(t)
         for t in big:
             if compact_rebuild(con, t):
                 rebuilt.append(t)
