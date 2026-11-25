@@ -325,7 +325,7 @@ def warm_up(delay=1.0):
             pages.append("person/%s" % META["player_id"])
         if META.get("player_stable_id"):
             ps = META["player_stable_id"]
-            pages += ["stable/%s" % ps, "horse_table?stable=%s" % ps, "stable_races/%s" % ps,
+            pages += ["stable/%s" % ps, "horse_table?stable=%s" % ps, "stable_races/%s" % ps, "stable_courses/%s" % ps,
                       # your stable's money pages, alone and for its whole ownership group
                       "stable_finance/%s" % ps, "stable_finance/%s?group=1" % ps, "stable_horse_money/%s" % ps, "stable_horse_money/%s?group=1" % ps]
         for pg in pages:
@@ -2454,7 +2454,29 @@ def api_races(con, q):
     wn = name_map(con, "horses", "horse_horse_id", "horse_name", [r["winner_id"] for r in data])
     for r in data:
         r["winner_name"] = wn.get(r["winner_id"])
+    race_list_extras(con, data)
     return {"total": total, "page": page, "page_size": page_size(), "rows": data}
+
+
+def race_list_extras(con, data):
+    """Field size, and the winner's jockey, stable and time, for a page of races (16.7.9)."""
+    ids = [r["race_id"] for r in data if r.get("race_id")]
+    if not ids:
+        return
+    mk = ",".join("?" * len(ids))
+    ran = dict(con.execute("select race_result_race_id, count(*) from race_results where race_result_race_id in (%s) group by 1" % mk, ids).fetchall())
+    entered = dict(con.execute("select race_participant_race_id, count(*) from race_participants where race_participant_race_id in (%s) group by 1" % mk, ids).fetchall()) \
+        if has_table(con, "race_participants") else {}
+    win = {r[0]: r[1:] for r in con.execute("""select race_result_race_id, race_result_person_jockey_id, race_result_stable_id, race_result_time
+        from race_results where race_result_race_id in (%s) and race_result_rank=1""" % mk, ids)}
+    jn = name_map(con, "persons", "person_person_id", "person_full_name", [w[0] for w in win.values()])
+    sn = name_map(con, "stables", "stable_stable_id", "stable_name", [w[1] for w in win.values()])
+    for r in data:
+        r["runners"] = ran.get(r["race_id"]) or entered.get(r["race_id"]) or None
+        w = win.get(r["race_id"])
+        if w:
+            r["winner_jockey_id"], r["winner_stable_id"], r["winner_time"] = w
+            r["winner_jockey"], r["winner_stable"] = jn.get(w[0]), sn.get(w[1])
 
 
 def race_sectionals(con, rid):
@@ -4866,6 +4888,122 @@ def course_window_start(gd):
     return calendar.timegm((y, m, 1, 0, 0, 0))
 
 
+def course_months(con, cids, gd, back=0):
+    """The 12 calendar months up to the game date (or the 12 before that, back=1), month by month, summed over the
+    given racecourses: income and expenses by type (by the month the money was paid), meetings and races."""
+    gy, gm = time.gmtime(gd)[:2]
+    gm -= 12 * back
+    months = []
+    for k in range(11, -1, -1):
+        y, m = gy, gm - k
+        while m < 1:
+            m += 12
+            y -= 1
+        months.append({"key": "%04d-%02d" % (y, m), "year": y, "month": m, "income": 0, "expenses": 0, "surplus": 0, "meetings": 0, "races": 0,
+                       "income_cats": {}, "expense_cats": {}})
+    by = {x["key"]: x for x in months}
+    first = calendar.timegm((months[0]["year"], months[0]["month"], 1, 0, 0, 0))
+    ly, lm = months[-1]["year"], months[-1]["month"] + 1
+    if lm > 12:
+        ly, lm = ly + 1, 1
+    last = min(gd, calendar.timegm((ly, lm, 1, 0, 0, 0)) - 1)
+    ids = ",".join(str(int(c)) for c in cids) or "0"
+    if has_table(con, "transactions"):
+        for side, key, labels in (("to", "income", COURSE_INCOME_LABEL), ("from", "expenses", COURSE_EXPENSE_LABEL)):
+            for mk, typ, total in con.execute("""select strftime('%%Y-%%m', transaction_date, 'unixepoch'), transaction_type, sum(transaction_amount) from transactions
+                    where transaction_%s_entity_type='racecourse' and transaction_%s_entity_id in (%s) and transaction_date >= ? and transaction_date <= ?
+                    and transaction_type <> 'Yearly Summary' group by 1, 2""" % (side, side, ids), (first, last)):
+                x = by.get(mk)
+                if not x:
+                    continue
+                if key == "expenses" and typ == "Venue Surplus":
+                    x["surplus"] += total or 0
+                    continue
+                label = labels.get(typ, typ or "Other")
+                cats = x["income_cats" if key == "income" else "expense_cats"]
+                cats[label] = cats.get(label, 0) + (total or 0)
+                x[key] += total or 0
+    for mk, n in con.execute("select strftime('%%Y-%%m', raceday_date, 'unixepoch'), count(*) from race_days where raceday_racecourse_id in (%s) and raceday_date >= ? and raceday_date <= ? group by 1" % ids, (first, last)):
+        if mk in by:
+            by[mk]["meetings"] = n
+    for mk, n in con.execute("""select strftime('%%Y-%%m', d.raceday_date, 'unixepoch'), count(*) from races x join race_days d on d.raceday_race_day_id=x.races_race_day_id
+            where d.raceday_racecourse_id in (%s) and d.raceday_date >= ? and d.raceday_date <= ? group by 1""" % ids, (first, last)):
+        if mk in by:
+            by[mk]["races"] = n
+    for x in months:
+        x["profit"] = x["income"] - x["expenses"]
+    return months
+
+
+def course_prev_complete(con, cids, gd):
+    """Whether the 12 months before "the last 12 months" are still kept payment by payment for these racecourses
+    (not folded into the game's yearly totals), so comparing with them is fair."""
+    lo = course_window_start(gd)
+    y0, y1 = time.gmtime(lo)[0] - 1, time.gmtime(lo - 1)[0]
+    ids = ",".join(str(int(c)) for c in cids) or "0"
+    a, b = calendar.timegm((y0, 1, 1, 0, 0, 0)), calendar.timegm((y1 + 1, 1, 1, 0, 0, 0))
+    n = con.execute("""select count(*) from transactions where transaction_type='Yearly Summary' and transaction_date >= ? and transaction_date < ?
+        and ((transaction_to_entity_type='racecourse' and transaction_to_entity_id in (%s)) or (transaction_from_entity_type='racecourse' and transaction_from_entity_id in (%s)))""" % (ids, ids),
+        (a, b)).fetchone()[0] if has_table(con, "transactions") else 1
+    return n == 0
+
+
+def months_total(months):
+    t = {"income": 0, "expenses": 0, "surplus": 0, "meetings": 0, "races": 0, "income_cats": {}, "expense_cats": {}}
+    for x in months:
+        for k in ("income", "expenses", "surplus", "meetings", "races"):
+            t[k] += x[k]
+        for k in ("income_cats", "expense_cats"):
+            for cat, v in x[k].items():
+                t[k][cat] = t[k].get(cat, 0) + v
+    t["profit"] = t["income"] - t["expenses"]
+    return t
+
+
+LEAGUE_CACHE = {}    # (data generation, game date) -> every racecourse's last 12 months
+
+
+def course_league(con, gd):
+    """Every racecourse's last-12-months income, expenses, profit and meetings (itemised payments), for ranks and averages.
+    It reads every racecourse payment in the save (a few seconds on a big one), so it's kept until the next load."""
+    key = (DB_GEN, gd)
+    if key in LEAGUE_CACHE:
+        return LEAGUE_CACHE[key]
+    LEAGUE_CACHE.clear()
+    out = LEAGUE_CACHE[key] = course_league_build(con, gd)
+    return out
+
+
+def course_league_build(con, gd):
+    lo = course_window_start(gd)
+    out = {}
+    if not has_table(con, "transactions"):
+        return out
+    for cid, v in con.execute("""select transaction_to_entity_id, sum(transaction_amount) from transactions where transaction_to_entity_type='racecourse'
+            and transaction_date >= ? and transaction_date <= ? and transaction_type <> 'Yearly Summary' group by 1""", (lo, gd)):
+        out.setdefault(cid, {"income": 0, "expenses": 0, "meetings": 0})["income"] = v or 0
+    for cid, v in con.execute("""select transaction_from_entity_id, sum(transaction_amount) from transactions where transaction_from_entity_type='racecourse'
+            and transaction_date >= ? and transaction_date <= ? and transaction_type not in ('Yearly Summary', 'Venue Surplus') group by 1""", (lo, gd)):
+        out.setdefault(cid, {"income": 0, "expenses": 0, "meetings": 0})["expenses"] = v or 0
+    for cid, n in con.execute("select raceday_racecourse_id, count(*) from race_days where raceday_date >= ? and raceday_date <= ? group by 1", (lo, gd)):
+        if cid in out:
+            out[cid]["meetings"] = n
+    for v in out.values():
+        v["profit"] = v["income"] - v["expenses"]
+        v["per_meeting"] = v["income"] / v["meetings"] if v["meetings"] else None
+    return out
+
+
+def league_place(league, cid, key):
+    """(place, out of) for one racecourse by a key, highest first; None if it isn't in the league."""
+    vals = [(v[key], k) for k, v in league.items() if v.get(key) is not None]
+    vals.sort(key=lambda x: -x[0])
+    for i, (_, k) in enumerate(vals):
+        if k == cid:
+            return [i + 1, len(vals)]
+    return None
+
+
 def owned_courses(con, sid):
     """The racecourses a stable owns, with what they took in and paid out over the last 12 months of the save."""
     if "racecourse_owner_stable_id" not in columns(con, "racecourses"):
@@ -4885,9 +5023,26 @@ def owned_courses(con, sid):
     exp = {r[0]: r[1] for r in con.execute("""select transaction_from_entity_id, sum(transaction_amount) from transactions where transaction_from_entity_type='racecourse'
         and transaction_from_entity_id in (%s) and transaction_date >= ? and transaction_type <> 'Yearly Summary' and transaction_type <> 'Venue Surplus' group by 1""" % ids, (lo,))}
     days = {r[0]: r[1] for r in con.execute("select raceday_racecourse_id, count(*) from race_days where raceday_racecourse_id in (%s) and raceday_date >= ? and raceday_date <= ? group by 1" % ids, (lo, gd))}
+    league = course_league(con, gd)
     for r in out:
         r["income_12m"], r["expenses_12m"], r["meetings_12m"] = inc.get(r["id"], 0), exp.get(r["id"], 0), days.get(r["id"], 0)
         r["profit_12m"] = r["income_12m"] - r["expenses_12m"]
+        r["income_rank"] = league_place(league, r["id"], "income")
+        r["profit_rank"] = league_place(league, r["id"], "profit")
+    return out
+
+
+def api_stable_courses(con, sid):
+    """A stable's Racecourses tab: the racecourses it owns, and their money month by month (16.7.9)."""
+    out = {"courses": owned_courses(con, sid)}
+    gd = META.get("game_date") or time.time()
+    ids = [r["id"] for r in out["courses"]]
+    if ids:
+        out["months12"] = course_months(con, ids, gd)
+        out["prev12"] = months_total(course_months(con, ids, gd, back=1))
+        out["prev12"]["complete"] = course_prev_complete(con, ids, gd)
+        for r in out["courses"]:
+            r["months12"] = [{k: m[k] for k in ("key", "year", "month", "income", "expenses", "profit")} for m in course_months(con, [r["id"]], gd)]
     return out
 
 
@@ -4961,42 +5116,25 @@ def api_course_finances(con, cid):
         where d.raceday_racecourse_id=? and d.raceday_date >= ? and d.raceday_date <= ?""", (cid, lo, gd))["n"]
     last["profit"] = last["income"] - last["expenses"]
     out["last12"] = last
-    # the last 12 months month by month (16.7.8): by the month the money was paid, and the meetings held that month
-    gy, gm = time.gmtime(gd)[:2]
-    months = []      # the same 12 months as "last 12 months" above
-    for k in range(11, -1, -1):
-        y, m = gy, gm - k
-        while m < 1:
-            m += 12
-            y -= 1
-        months.append({"key": "%04d-%02d" % (y, m), "year": y, "month": m, "income": 0, "expenses": 0, "surplus": 0, "meetings": 0, "races": 0, "income_cats": {}, "expense_cats": {}})
-    by = {x["key"]: x for x in months}
-    first = lo
-    if has_table(con, "transactions"):
-        for side, key, labels in (("to", "income", COURSE_INCOME_LABEL), ("from", "expenses", COURSE_EXPENSE_LABEL)):
-            for mk, typ, total in con.execute("""select strftime('%%Y-%%m', transaction_date, 'unixepoch'), transaction_type, sum(transaction_amount) from transactions
-                    where transaction_%s_entity_type='racecourse' and transaction_%s_entity_id=? and transaction_date >= ? and transaction_date <= ?
-                    and transaction_type <> 'Yearly Summary' group by 1, 2""" % (side, side), (cid, first, gd)):
-                x = by.get(mk)
-                if not x:
-                    continue
-                if key == "expenses" and typ == "Venue Surplus":
-                    x["surplus"] += total or 0
-                    continue
-                label = labels.get(typ, typ or "Other")
-                cats = x["income_cats" if key == "income" else "expense_cats"]
-                cats[label] = cats.get(label, 0) + (total or 0)
-                x[key] += total or 0
-    for mk, n in con.execute("select strftime('%Y-%m', raceday_date, 'unixepoch'), count(*) from race_days where raceday_racecourse_id=? and raceday_date >= ? and raceday_date <= ? group by 1", (cid, first, gd)):
-        if mk in by:
-            by[mk]["meetings"] = n
-    for mk, n in con.execute("""select strftime('%Y-%m', d.raceday_date, 'unixepoch'), count(*) from races x join race_days d on d.raceday_race_day_id=x.races_race_day_id
-            where d.raceday_racecourse_id=? and d.raceday_date >= ? and d.raceday_date <= ? group by 1""", (cid, first, gd)):
-        if mk in by:
-            by[mk]["races"] = n
-    for x in months:
-        x["profit"] = x["income"] - x["expenses"]
-    out["months12"] = months
+    # the last 12 months month by month, and the 12 before them for comparison (16.7.9)
+    out["months12"] = course_months(con, [cid], gd)
+    prev = months_total(course_months(con, [cid], gd, back=1))
+    # the comparison only counts when the game still keeps those months' payments in detail
+    py0, py1 = time.gmtime(course_window_start(gd))[0] - 1, time.gmtime(course_window_start(gd) - 1)[0]
+    prev["complete"] = all(years.get(y, {}).get("itemised", True) and not years.get(y, {}).get("summary") for y in range(py0, py1 + 1))
+    out["prev12"] = prev
+    league = course_league(con, gd)
+    out["rank"] = {k: league_place(league, cid, k) for k in ("income", "profit", "per_meeting")}
+    pm = sorted(v["per_meeting"] for v in league.values() if v.get("per_meeting"))
+    out["typical_per_meeting"] = pm[len(pm) // 2] if pm else None
+    avg_cols = ("racecourse_vip_ticket_price", "racecourse_normal_ticket_price", "racecourse_standing_ticket_price", "racecourse_parking_price",
+                "racecourse_food_price", "racecourse_drink_price", "racecourse_staff_budget", "racecourse_maintenance_budget", "racecourse_marketing_budget",
+                "racecourse_prize_pool_contribution")
+    have = set(columns(con, "racecourses"))
+    cols = [x for x in avg_cols if x in have]
+    if cols:
+        r = con.execute("select %s from racecourses where racecourse_demolished_date is null" % ", ".join("avg(%s)" % x for x in cols)).fetchone()
+        out["averages"] = dict(zip(cols, r))
     # each meeting: what was paid on the day itself, betting commission in and prize money out (tickets, food, media
     # rights, subsidy and operating costs are settled once a month, so they're only in the yearly and 12-month figures)
     out["meetings"] = []
@@ -5004,6 +5142,8 @@ def api_course_finances(con, cid):
         out["meetings"] = rows(con, """select d.raceday_race_day_id as id, d.raceday_date as date, d.raceday_raceseries_name as name,
             (select count(*) from races x where x.races_race_day_id=d.raceday_race_day_id) as races,
             (select min(x.races_race_id) from races x where x.races_race_day_id=d.raceday_race_day_id) as first_race_id,
+            (select count(*) from race_results rr join races x on x.races_race_id=rr.race_result_race_id where x.races_race_day_id=d.raceday_race_day_id) as runners,
+            (select sum(x.races_prize_money_total) from races x where x.races_race_day_id=d.raceday_race_day_id) as purse,
             (select sum(t.transaction_amount) from transactions t where t.transaction_to_entity_type='racecourse' and t.transaction_to_entity_id=d.raceday_racecourse_id
                 and t.transaction_date >= d.raceday_date and t.transaction_date < d.raceday_date + 86400 and t.transaction_type = 'Betting Commission') as betting,
             (select sum(t.transaction_amount) from transactions t where t.transaction_from_entity_type='racecourse' and t.transaction_from_entity_id=d.raceday_racecourse_id
@@ -6339,6 +6479,7 @@ ROUTES = [
     (re.compile(r"^/api/courses$"), lambda con, m, q: api_courses(con, q)),
     (re.compile(r"^/api/course/(-?\d+)$"), lambda con, m, q: api_course(con, int(m.group(1)))),
     (re.compile(r"^/api/course_finances/(-?\d+)$"), lambda con, m, q: api_course_finances(con, int(m.group(1)))),
+    (re.compile(r"^/api/stable_courses/(-?\d+)$"), lambda con, m, q: api_stable_courses(con, int(m.group(1)))),
     (re.compile(r"^/api/tables$"), lambda con, m, q: api_tables(con, q)),
     (re.compile(r"^/api/horse_table$"), lambda con, m, q: api_horse_table(con, q)),
     (re.compile(r"^/api/stable_table$"), lambda con, m, q: api_stable_table(con, q)),
@@ -7442,7 +7583,7 @@ class Handler(BaseHTTPRequestHandler):
 
 # --------------------------------------------------------------------------- in-app updates
 
-VERSION = "16.7.8"
+VERSION = "16.7.9"
 BACKUP_DIR = os.path.join(APP_DIR, "backups")
 UPDATE_PENDING = os.path.join(DATA_DIR, "update_pending.json")
 UPDATE_RESULT = os.path.join(DATA_DIR, "update_result.json")

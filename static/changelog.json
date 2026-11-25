@@ -1,5 +1,20 @@
 [
   {
+    "version": "16.7.9",
+    "date": "2026-11-25",
+    "title": "Racecourse pages: better charts and more to compare",
+    "changes": [
+      "New charts throughout racecourse pages and a stable's Racecourses tab: income and expenses side by side, profit above and below a zero line (blue made money, red lost it), and income by type stacked month by month. Point at (or tab to) any month or year to see every figure for it. Colours are checked for colour blindness and have their own light and dark versions, and every chart has the same numbers in a table.",
+      "Finances: the headline figures now show the change against the 12 months before (when the game still keeps those months in detail), how much of its income the racecourse keeps as profit, income per meeting against a typical racecourse, and its rank among all racecourses for income and profit. Crowds last month show the share of capacity filled per meeting.",
+      "Finances: \"Where the money comes from\" splits income into one bar with each type's share, and both it and \"Where it goes\" list each type with its amount, share and amount per meeting. Fees now have their own colour.",
+      "Finances: the yearly table adds the margin, income per race and prize money as a share of income; meetings show runners and total purses; prices and budgets show how they compare with the average racecourse.",
+      "Overview: a new \"Business, last 12 months\" summary with ranks and a monthly profit chart, linking to Finances.",
+      "Upcoming races show the number of entries; Results show runners, the winner's jockey, stable and winning time.",
+      "A stable's Racecourses tab: monthly income, expenses and profit for all its racecourses together, income and profit by racecourse, and each racecourse's rank among all racecourses and its margin.",
+      "Ranking every racecourse reads a lot of the save, so it's worked out once after each load (in the background for your stable) and kept until the next one."
+    ]
+  },
+  {
     "version": "16.7.8",
     "date": "2026-11-25",
     "title": "Racecourses: tabs, finances, and the ones a stable owns",

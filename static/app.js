@@ -5053,8 +5053,160 @@ async function courseRacesPage(route) {
       { h: "Race", sort: "name", f: (r) => `${L.race(r.race_id, r.race_name)} ${grade(r.race_type)}` },
       { h: "Distance", sort: "distance", cls: "num", f: (r) => fDist(r.distance) },
       { h: "Purse", sort: "purse", cls: "num", f: (r) => fMoney(r.purse) },
-    ].concat(upcoming ? [] : [{ h: "Winner", f: (r) => L.horse(r.winner_id, r.winner_name, '<span class="muted">—</span>') }]),
+      { h: upcoming ? "Entries" : "Runners", cls: "num", f: (r) => (r.runners ? fNum(r.runners) : '<span class="muted">—</span>') },
+    ].concat(upcoming ? [] : [
+      { h: "Winner", f: (r) => L.horse(r.winner_id, r.winner_name, '<span class="muted">—</span>') },
+      { h: "Jockey", f: (r) => (r.winner_jockey_id ? L.person(r.winner_jockey_id, r.winner_jockey) : '<span class="muted">—</span>') },
+      { h: "Stable", f: (r) => (r.winner_stable_id ? L.stable(r.winner_stable_id, r.winner_stable) : '<span class="muted">—</span>') },
+      { h: "Time", cls: "num", f: (r) => (isNum(r.winner_time) ? fTime(r.winner_time) : '<span class="muted">—</span>') },
+    ]),
   }, { parts: route.parts, q });
+}
+
+// ------------------------------------------------------------------ charts for money pages (16.7.9)
+// Column charts (grouped or stacked), a profit chart (blue above zero, red below), ranked meter lists, a split bar and
+// deltas. Colours are CSS variables (--viz-*, light and dark steps of a colour-blind-checked palette); text never wears
+// a series colour; every chart has a legend for two or more series and a table of the same numbers beside it; hovering
+// (or tabbing to) a column shows every series at that point.
+const VZ = new Map();
+let VZ_N = 0;
+function vzNice(lo, hi) {
+  const guess = (hi - lo || 1) / 4, pow = Math.pow(10, Math.floor(Math.log10(guess)));
+  const step = [1, 2, 2.5, 5, 10].map((m) => m * pow).find((x) => x >= guess);
+  const min = Math.floor(lo / step) * step, max = Math.ceil(hi / step) * step, ticks = [];
+  for (let t = min; t <= max + step / 2; t += step) ticks.push(Math.abs(t) < step / 1e6 ? 0 : t);
+  return { min, max, ticks };
+}
+// a column from the baseline to v, 4px rounded at its data end, square at the baseline
+function vzCol(x, w, yBase, yEnd, round = true) {
+  const h = Math.abs(yEnd - yBase);
+  if (h < 0.5) return "";
+  const r = round ? Math.min(4, w / 2, h) : 0, up = yEnd < yBase, top = Math.min(yBase, yEnd), bot = Math.max(yBase, yEnd);
+  if (!r) return `M${x},${top}h${w}v${h}h${-w}z`;
+  return up ? `M${x},${bot}V${top + r}Q${x},${top} ${x + r},${top}H${x + w - r}Q${x + w},${top} ${x + w},${top + r}V${bot}Z`
+    : `M${x},${top}V${bot - r}Q${x},${bot} ${x + r},${bot}H${x + w - r}Q${x + w},${bot} ${x + w},${bot - r}V${top}Z`;
+}
+// opts: labels (x), series [{name, color, values}], stacked, signed (one series coloured by sign), fmt (axis), tip (values),
+// total (label for a total row in the hover), long (full labels for the hover), height
+function colChart(o) {
+  const labels = o.labels || [], series = (o.series || []).filter((s) => s.values.some((v) => isNum(v) && v)), fmt = o.fmt || fMoneyShort, tip = o.tip || fMoney;
+  if (!labels.length || !series.length) return `<div class="empty">${o.empty || "No money recorded in this period."}</div>`;
+  const W = o.wide ? 1240 : 600, H = o.height || 230, padL = 60, padR = 6, padT = 12, padB = 26, plotW = W - padL - padR, plotH = H - padT - padB;
+  let lo = 0, hi = 0;
+  labels.forEach((_, i) => {
+    if (o.stacked) {
+      let pos = 0, neg = 0;
+      series.forEach((s) => { const v = s.values[i] || 0; if (v >= 0) pos += v; else neg += v; });
+      hi = Math.max(hi, pos); lo = Math.min(lo, neg);
+    } else series.forEach((s) => { const v = s.values[i]; if (isNum(v)) { hi = Math.max(hi, v); lo = Math.min(lo, v); } });
+  });
+  const sc = vzNice(lo, hi), y = (v) => padT + ((sc.max - v) / (sc.max - sc.min || 1)) * plotH, band = plotW / labels.length;
+  const nb = o.stacked ? 1 : series.length, bw = Math.max(3, Math.min(24, (band * 0.72 - (nb - 1) * 2) / nb));
+  const id = "vz" + ++VZ_N;
+  let g = "";
+  sc.ticks.forEach((t) => { g += `<line class="grid" x1="${padL}" x2="${W - padR}" y1="${y(t)}" y2="${y(t)}"/><text class="tick" x="${padL - 8}" y="${y(t) + 4}" text-anchor="end">${esc(fmt(t))}</text>`; });
+  let marks = "";
+  const every = Math.ceil(labels.length / (o.wide ? 24 : 12));
+  labels.forEach((lab, i) => {
+    const cx = padL + band * i + band / 2;
+    if (o.stacked) {
+      let pos = 0, neg = 0;
+      const segs = series.map((s) => ({ s, v: s.values[i] || 0 })).filter((x) => x.v);
+      const lastPos = segs.filter((x) => x.v > 0).pop(), lastNeg = segs.filter((x) => x.v < 0).pop();
+      segs.forEach((x) => {
+        const from = x.v > 0 ? pos : neg, to = from + x.v;
+        if (x.v > 0) pos = to; else neg = to;
+        const isEnd = x === lastPos || x === lastNeg;
+        const y0 = y(from) + (from === 0 ? 0 : (x.v > 0 ? -1 : 1)), y1 = y(to) + (isEnd ? 0 : (x.v > 0 ? 1 : -1));     // 2px surface gap between segments
+        marks += `<path d="${vzCol(cx - bw / 2, bw, y0, y1, isEnd)}" style="fill:${x.s.color}"/>`;
+      });
+    } else {
+      const x0 = cx - (nb * bw + (nb - 1) * 2) / 2;
+      series.forEach((s, k) => {
+        const v = s.values[i];
+        if (!isNum(v) || !v) return;
+        const col = o.signed ? (v < 0 ? "var(--viz-8)" : "var(--viz-1)") : s.color;
+        marks += `<path d="${vzCol(x0 + k * (bw + 2), bw, y(0), y(v))}" style="fill:${col}"/>`;
+      });
+    }
+    marks += `<rect class="band" data-vz="${id}" data-i="${i}" tabindex="0" x="${padL + band * i}" y="${padT}" width="${band}" height="${plotH}" aria-label="${esc(lab)}"/>`;
+    if (i % every === 0 || i === labels.length - 1) g += `<text class="xl" x="${cx}" y="${H - 8}" text-anchor="middle">${esc(lab)}</text>`;
+  });
+  g += `<line class="base" x1="${padL}" x2="${W - padR}" y1="${y(0)}" y2="${y(0)}"/>`;
+  VZ.set(id, { labels: o.long || labels, series, tip, total: o.total, signed: o.signed });
+  const legend = series.length > 1 ? `<div class="vz-legend">${series.map((s) => `<span><i style="background:${s.color}"></i>${esc(s.name)}</span>`).join("")}</div>` : "";
+  return `<div class="vz"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(o.title || "Chart")}"><g>${g}</g><g>${marks}</g></svg>${legend}</div>`;
+}
+function vzTipHtml(d, i) {
+  let h = `<div class="h">${esc(d.labels[i])}</div>`, total = 0;
+  d.series.forEach((s) => {
+    const v = s.values[i];
+    if (!isNum(v) || (!v && d.series.length > 2)) return;     // a stack's empty parts are left out
+    total += v;
+    const col = d.signed ? (v < 0 ? "var(--viz-8)" : "var(--viz-1)") : s.color;
+    h += `<div class="r"><i style="background:${col}"></i><span>${esc(s.name)}</span><b>${esc(d.tip(v))}</b></div>`;
+  });
+  if (d.total) h += `<div class="r t"><i></i><span>${esc(d.total)}</span><b>${esc(d.tip(total))}</b></div>`;
+  return h;
+}
+function vzTip() {
+  let t = document.querySelector(".vz-tip");
+  if (!t) { t = document.createElement("div"); t.className = "vz-tip"; document.body.appendChild(t); }
+  return t;
+}
+function vzShow(el, x, y) {
+  const d = VZ.get(el.dataset.vz);
+  if (!d) return;
+  const t = vzTip();
+  t.innerHTML = vzTipHtml(d, +el.dataset.i);
+  t.style.display = "block";
+  const r = t.getBoundingClientRect();
+  t.style.left = Math.min(window.innerWidth - r.width - 8, x + 14) + "px";
+  t.style.top = Math.max(8, Math.min(window.innerHeight - r.height - 8, y - r.height / 2)) + "px";
+}
+document.addEventListener("pointermove", (e) => {
+  const el = e.target.closest && e.target.closest("[data-vz]");
+  if (el) vzShow(el, e.clientX, e.clientY); else { const t = document.querySelector(".vz-tip"); if (t) t.style.display = "none"; }
+});
+document.addEventListener("focusin", (e) => {
+  const el = e.target.closest && e.target.closest("[data-vz]");
+  if (el) { const r = el.getBoundingClientRect(); vzShow(el, r.right, r.top + r.height / 2); }
+});
+document.addEventListener("focusout", () => { const t = document.querySelector(".vz-tip"); if (t) t.style.display = "none"; });
+// ranked bars, one hue: name, bar, amount and share (largest first)
+function meterList(rows, o = {}) {
+  const list = rows.filter((r) => isNum(r.value) && r.value).sort((a, b) => b.value - a.value);
+  if (!list.length) return `<div class="empty">${o.empty || "None in this period."}</div>`;
+  const max = Math.max(...list.map((r) => Math.abs(r.value))), color = o.color || "var(--viz-1)";
+  return `<div class="meters">${list.map((r) => `<div class="meter-row"><div class="n">${esc(r.name)}${r.note ? `<small>${r.note}</small>` : ""}</div>
+    <div class="track" role="img" aria-label="${esc(r.name)}: ${esc((o.fmt || fMoney)(r.value))}"><div class="fill" style="width:${(100 * Math.abs(r.value)) / max}%;background:${r.color || color}"></div></div>
+    <div class="v">${(o.fmt || fMoney)(r.value)}${isNum(r.share) ? `<small>${Math.round(r.share * 100)}%</small>` : ""}</div></div>`).join("")}</div>`;
+}
+// one whole split into parts: each part's share printed on it where it fits, a legend of names
+function splitBar(parts, o = {}) {
+  const list = parts.filter((p) => p.value > 0), tot = list.reduce((a, p) => a + p.value, 0);
+  if (!tot) return "";
+  return `<div class="split-bar" role="img" aria-label="${esc(list.map((p) => `${p.name} ${Math.round((100 * p.value) / tot)}%`).join(", "))}">${list.map((p) => {
+    const pc = (100 * p.value) / tot;
+    return `<div class="${p.dark ? "dk" : ""}" style="flex:${p.value} 1 0;background:${p.color}" title="${esc(p.name)}: ${esc((o.fmt || fMoney)(p.value))} (${Math.round(pc)}%)">${pc >= 9 ? Math.round(pc) + "%" : ""}</div>`;
+  }).join("")}</div><div class="vz-legend">${list.map((p) => `<span><i style="background:${p.color}"></i>${esc(p.name)}</span>`).join("")}</div>`;
+}
+// change against an earlier period, with an arrow so it isn't colour alone
+function deltaHtml(cur, prev, o = {}) {
+  if (!isNum(cur) || !isNum(prev) || !prev) return "";
+  const ch = (cur - prev) / Math.abs(prev), up = ch > 0.005, down = ch < -0.005, good = o.lowerIsBetter ? down : up, bad = o.lowerIsBetter ? up : down;
+  return `<span class="delta ${good ? "good" : bad ? "bad" : "flat"}">${up ? "▲" : down ? "▼" : "■"} ${Math.abs(ch) < 10 ? Math.round(Math.abs(ch) * 100) + "%" : "×" + fNum(Math.abs(cur / prev), 1)} ${esc(o.vs || "vs the 12 months before")}</span>`;
+}
+const ordinal = (n) => { const sfx = ["th", "st", "nd", "rd"], v = n % 100; return n + (sfx[(v - 20) % 10] || sfx[v] || sfx[0]); };
+const placeText = (p) => (p ? `${ordinal(p[0])} of ${fNum(p[1])}` : "—");
+// the income types, each always the same colour; the rare ones go to Other
+const INCOME_COLOR = { "Tickets": "var(--viz-1)", "Food, drink & parking": "var(--viz-2)", "Media rights": "var(--viz-3)", "Betting commission": "var(--viz-4)", "Sponsorship": "var(--viz-5)", "Subsidy": "var(--viz-6)", "Fees": "var(--viz-7)" };
+const INCOME_DARK_TEXT = { "Betting commission": 1 };
+function incomeGroup(cat) { return cat === "Sponsor event bonuses" ? "Sponsorship" : INCOME_COLOR[cat] ? cat : "Other"; }
+function incomeStack(rows) {
+  const names = Object.keys(INCOME_COLOR).concat(["Other"]);
+  return names.map((n) => ({ name: n, color: INCOME_COLOR[n] || "var(--viz-other)",
+    values: rows.map((r) => Object.entries(r.income_cats || {}).reduce((a, [c, v]) => a + (incomeGroup(c) === n ? v : 0), 0)) }));
 }
 
 // grouped bars: one group per label (a year or a month), one bar per series, with a zero line for losses (16.7.8)
@@ -5095,105 +5247,145 @@ const FIN_SERIES = (rows) => [
 
 async function stableCoursesPage(route) {
   const id = route.parts[1];
-  const d = await api("stable/" + id);
-  const list = d.racecourses_owned || [];
+  const [d, sc] = await Promise.all([api("stable/" + id), api("stable_courses/" + id)]);
+  const list = sc.courses || [];
   let html = stableHead(d, "racecourses");
   if (!list.length) return html + panel("Racecourses", '<div class="empty">This stable doesn\'t own a racecourse.</div>');
+  const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const ms = sc.months12 || [], p = sc.prev12 || {};
   const sum = (k) => list.reduce((a, r) => a + (r[k] || 0), 0);
   const tot = { income: sum("income_12m"), expenses: sum("expenses_12m"), profit: sum("profit_12m"), meetings: sum("meetings_12m") };
-  html += tiles([["Racecourses", fNum(list.length)], ["Income", fMoneyShort(tot.income), "last 12 months"], ["Expenses", fMoneyShort(tot.expenses), "last 12 months"],
-    ["Profit", `<span class="${tot.profit >= 0 ? "up" : "dn"}">${fMoneyShort(tot.profit)}</span>`, "last 12 months"], ["Meetings", fNum(tot.meetings), "last 12 months"],
-    ["Income per meeting", tot.meetings ? fMoneyShort(tot.income / tot.meetings) : "—", "last 12 months"]]);
-  html += panel("Racecourses owned", table([
-    { h: "Racecourse", f: (r) => `${L.course(r.id, r.name)}${r.demolished ? ' <span class="badge dead">Demolished</span>' : ""}${r.for_sale ? ' <span class="badge">For sale</span>' : ""}` },
-    { h: "Where", f: (r) => esc([r.city, r.country].filter(Boolean).join(", ")) },
+  const pctTxt = (x) => (isNum(x) ? `${Math.round(x * 100)}%` : "—");
+  html += tiles([
+    ["Racecourses", fNum(list.length), list.filter((r) => r.for_sale).length ? `${list.filter((r) => r.for_sale).length} for sale` : "owned by this stable"],
+    ["Income", fMoneyShort(tot.income), p.complete && p.income ? deltaHtml(tot.income, p.income) : "last 12 months"],
+    ["Expenses", fMoneyShort(tot.expenses), p.complete && p.expenses ? deltaHtml(tot.expenses, p.expenses, { lowerIsBetter: true }) : "last 12 months"],
+    ["Profit", `<span class="${tot.profit >= 0 ? "up" : "dn"}">${fMoneyShort(tot.profit)}</span>`, `${pctTxt(tot.income ? tot.profit / tot.income : null)} of income kept`],
+    ["Meetings", fNum(tot.meetings), "last 12 months"],
+    ["Income per meeting", tot.meetings ? fMoneyShort(tot.income / tot.meetings) : "—", "last 12 months"],
+  ]);
+  const short = ms.map((m) => `${MON[m.month - 1]} ${String(m.year).slice(2)}`), long = ms.map((m) => `${MONTHS_LONG[m.month - 1]} ${m.year}`);
+  html += `<div class="grid cols-2">
+    ${panel("Income and expenses, month by month", colChart({ labels: short, long, series: [{ name: "Income", color: "var(--viz-1)", values: ms.map((m) => m.income) }, { name: "Expenses", color: "var(--viz-2)", values: ms.map((m) => m.expenses) }], title: "Income and expenses by month" }), "All this stable's racecourses together")}
+    ${panel("Profit, month by month", colChart({ labels: short, long, series: [{ name: "Profit", color: "var(--viz-1)", values: ms.map((m) => m.profit) }], signed: true, title: "Profit by month" }), "Above the line: made money · below: lost money")}</div>`;
+  if (list.length > 1) {
+    html += `<div class="grid cols-2" style="margin-top:16px">${panel("Income by racecourse", meterList(list.map((r) => ({ name: r.name, value: r.income_12m, share: tot.income ? r.income_12m / tot.income : null }))), "Last 12 months")}
+      ${panel("Profit by racecourse", colChart({ labels: list.map((r) => r.name.length > 14 ? r.name.slice(0, 13) + "…" : r.name), long: list.map((r) => r.name), series: [{ name: "Profit", color: "var(--viz-1)", values: list.map((r) => r.profit_12m) }], signed: true, title: "Profit by racecourse" }), "Last 12 months")}</div>`;
+  }
+  html += `<div style="margin-top:16px">${panel("Racecourses owned", table([
+    { h: "Racecourse", f: (r) => `${L.course(r.id, r.name)}${r.demolished ? ' <span class="badge dead">Demolished</span>' : ""}${r.for_sale ? ' <span class="badge">For sale</span>' : ""}<div class="muted small">${esc([r.city, r.country].filter(Boolean).join(", "))}</div>` },
     { h: "Capacity", cls: "num", f: (r) => fNum(r.capacity) },
     { h: "Licence", f: (r) => esc(r.licence || "—") },
     { h: "Track", cls: "num", f: (r) => (isNum(r.track_condition) ? fNum(r.track_condition, 0) + "%" : "—") },
     { h: "Facilities", cls: "num", f: (r) => (isNum(r.facilities) ? fNum(r.facilities, 0) + "%" : "—") },
     { h: "Meetings", cls: "num", f: (r) => fNum(r.meetings_12m) },
-    { h: "Income", cls: "num", f: (r) => fMoney(r.income_12m) },
+    { h: "Income", cls: "num", f: (r) => `${fMoney(r.income_12m)}<div class="muted small">${placeText(r.income_rank)}</div>` },
     { h: "Expenses", cls: "num", f: (r) => fMoney(r.expenses_12m) },
-    { h: "Profit", cls: "num", f: (r) => `<span class="${r.profit_12m >= 0 ? "up" : "dn"}">${fMoney(r.profit_12m)}</span>` },
+    { h: "Profit", cls: "num", f: (r) => `<span class="${r.profit_12m >= 0 ? "up" : "dn"}">${fMoney(r.profit_12m)}</span><div class="muted small">${placeText(r.profit_rank)}</div>` },
+    { h: "Margin", cls: "num", f: (r) => pctTxt(r.income_12m ? r.profit_12m / r.income_12m : null) },
     { h: "", f: (r) => `<a href="#/course/${r.id}/finances">Finances</a> · <a href="#/course/${r.id}/upcoming">Races</a>` },
-  ], list, { wide: true }), "Money over the last 12 months of the save · click a racecourse for its races, results, records and finances");
+  ], list, { wide: true }), "Last 12 months (this month so far and the 11 before) · ranks are among all racecourses")}</div>`;
   return html;
 }
 
 async function courseFinancePage(route) {
   const id = route.parts[1];
   const [d, f] = await Promise.all([api("course/" + id), api("course_finances/" + id)]);
-  const c = f.course, l = f.last12;
-  let html = courseHead(d, "finances");
-  const perMeet = (v, n) => (n ? fMoneyShort(v / n) : "—");
-  const tickets = (c.racecourse_last_month_vip_sold || 0) + (c.racecourse_last_month_normal_sold || 0) + (c.racecourse_last_month_standing_sold || 0);
-  html += tiles([
-    ["Income", fMoneyShort(l.income), "last 12 months"],
-    ["Expenses", fMoneyShort(l.expenses), "prize money and running costs"],
-    ["Profit", `<span class="${l.profit >= 0 ? "up" : "dn"}">${fMoneyShort(l.profit)}</span>`, l.surplus ? `then ${fMoneyShort(l.surplus)} surplus paid out` : "income less expenses"],
-    ["Meetings", fNum(l.meetings), `${fNum(l.races)} races in the last 12 months`],
-    ["Income per meeting", perMeet(l.income, l.meetings), `profit per meeting ${perMeet(l.profit, l.meetings)}`],
-    ["Tickets sold last month", fNum(tickets), c.racecourse_last_month_race_days ? `${fNum(Math.round(tickets / c.racecourse_last_month_race_days))} per meeting over ${fNum(c.racecourse_last_month_race_days)}` : "no meetings last month"],
-  ]);
-  const catTable = (cats, total) => {
-    const list = Object.entries(cats || {}).sort((a, b) => b[1] - a[1]);
-    if (!list.length) return '<div class="empty">None in the last 12 months.</div>';
-    return table([
-      { h: "", f: (r) => esc(r[0]) },
-      { h: "Amount", cls: "num", f: (r) => fMoney(r[1]) },
-      { h: "Share", cls: "num", f: (r) => (total ? `${Math.round((100 * r[1]) / total)}%` : "—") },
-      { h: "Per meeting", cls: "num", f: (r) => perMeet(r[1], l.meetings) },
-    ], list);
-  };
-  html += `<div class="grid cols-2">${panel("Income, last 12 months", catTable(l.income_cats, l.income), "Money paid to the racecourse")}
-    ${panel("Expenses, last 12 months", catTable(l.expense_cats, l.expenses), "Money it paid out" + (l.surplus ? ` · the ${fMoney(l.surplus)} surplus paid out isn't counted as an expense` : ""))}</div>`;
-  const ys = f.years || [];
-  // the last 12 months, month by month
-  const ms = f.months12 || [];
+  const c = f.course, l = f.last12, p = f.prev12 || {}, cmp = p.complete;
   const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-  const mLabel = (m) => `${MON[m.month - 1]} ${String(m.year).slice(2)}`;
+  let html = courseHead(d, "finances");
+  const margin = (r) => (r.income ? r.profit / r.income : null);
+  const pctTxt = (x) => (isNum(x) ? `${Math.round(x * 100)}%` : "—");
+  const perMeet = (v, n) => (n ? v / n : null);
+  const tickets = (c.racecourse_last_month_vip_sold || 0) + (c.racecourse_last_month_normal_sold || 0) + (c.racecourse_last_month_standing_sold || 0);
+  const fill = c.racecourse_last_month_race_days && c.racecourse_max_attendance ? tickets / c.racecourse_last_month_race_days / c.racecourse_max_attendance : null;
+  // headline figures for the last 12 months, against the 12 before when the game still keeps those in detail
+  html += tiles([
+    ["Income", fMoneyShort(l.income), cmp ? deltaHtml(l.income, p.income) : "last 12 months"],
+    ["Expenses", fMoneyShort(l.expenses), cmp ? deltaHtml(l.expenses, p.expenses, { lowerIsBetter: true }) : "prize money and running costs"],
+    ["Profit", `<span class="${l.profit >= 0 ? "up" : "dn"}">${fMoneyShort(l.profit)}</span>`, `${pctTxt(margin(l))} of income kept${cmp && p.profit ? " · " + deltaHtml(l.profit, p.profit) : ""}`],
+    ["Income per meeting", isNum(perMeet(l.income, l.meetings)) ? fMoneyShort(perMeet(l.income, l.meetings)) : "—",
+      `${fNum(l.meetings)} meetings, ${fNum(l.races)} races${isNum(f.typical_per_meeting) ? ` · a typical racecourse takes ${fMoneyShort(f.typical_per_meeting)}` : ""}`],
+    ["Income rank", placeText((f.rank || {}).income), `profit rank ${placeText((f.rank || {}).profit)} · among all racecourses`],
+    ["Crowds last month", fNum(tickets), fill !== null ? `${pctTxt(fill)} of capacity per meeting` : "no meetings last month"],
+  ]);
+  if (!cmp && (p.income || p.expenses)) html += `<div class="stat-note" style="margin:-6px 0 12px">No comparison with the 12 months before: the game only keeps a yearly total for some of them.</div>`;
+  // where the money comes from and goes
+  const incRows = Object.entries(l.income_cats || {}).map(([k, v]) => ({ name: k, value: v, share: l.income ? v / l.income : null, color: INCOME_COLOR[incomeGroup(k)] || "var(--viz-other)",
+    note: l.meetings ? `${fMoneyShort(v / l.meetings)} per meeting` : "" }));
+  const groups = {};
+  incRows.forEach((r) => { const g = incomeGroup(r.name); groups[g] = (groups[g] || 0) + r.value; });
+  const split = splitBar(Object.keys(INCOME_COLOR).concat(["Other"]).map((n) => ({ name: n, value: groups[n] || 0, color: INCOME_COLOR[n] || "var(--viz-other)", dark: INCOME_DARK_TEXT[n] })));
+  const expRows = Object.entries(l.expense_cats || {}).map(([k, v]) => ({ name: k, value: v, share: l.expenses ? v / l.expenses : null,
+    note: l.meetings ? `${fMoneyShort(v / l.meetings)} per meeting` : "", color: "var(--viz-2)" }));
+  html += `<div class="grid cols-2">${panel("Where the money comes from", split + meterList(incRows, { empty: "No income in the last 12 months." }), "Last 12 months")}
+    ${panel("Where it goes", meterList(expRows, { empty: "No expenses in the last 12 months." }) + (l.surplus ? `<div class="stat-note" style="margin-top:10px">Also paid out as surplus: ${fMoney(l.surplus)} (not counted as an expense).</div>` : ""), "Last 12 months")}</div>`;
+  // month by month
+  const ms = f.months12 || [];
+  const short = ms.map((m) => `${MON[m.month - 1]} ${String(m.year).slice(2)}`), long = ms.map((m) => `${MONTHS_LONG[m.month - 1]} ${m.year}`);
+  const ie = (rows) => [{ name: "Income", color: "var(--viz-1)", values: rows.map((r) => r.income) }, { name: "Expenses", color: "var(--viz-2)", values: rows.map((r) => r.expenses) }];
+  html += `<div class="grid cols-2" style="margin-top:16px">
+    ${panel("Income and expenses, month by month", colChart({ labels: short, long, series: ie(ms), title: "Income and expenses by month" }), "Last 12 months · by the month the money was paid")}
+    ${panel("Profit, month by month", colChart({ labels: short, long, series: [{ name: "Profit", color: "var(--viz-1)", values: ms.map((m) => m.profit) }], signed: true, title: "Profit by month" }), "Above the line: made money · below: lost money")}</div>`;
   const topCat = (cats) => { const e = Object.entries(cats || {}).sort((a, b) => b[1] - a[1])[0]; return e ? `${esc(e[0])} <span class="muted small">${fMoneyShort(e[1])}</span>` : '<span class="muted">—</span>'; };
-  html += `<div style="margin-top:16px">${panel("Last 12 months, month by month", groupBars(ms.map(mLabel), FIN_SERIES(ms)) + table([
+  html += `<div style="margin-top:16px">${panel("Income by type, month by month", colChart({ labels: short, long, series: incomeStack(ms), stacked: true, total: "Total income", title: "Income by type by month", wide: true }) + table([
       { h: "Month", f: (m) => `<b>${MONTHS_LONG[m.month - 1]} ${m.year}</b>` },
       { h: "Meetings", cls: "num", f: (m) => (m.meetings ? fNum(m.meetings) : '<span class="muted">—</span>') },
       { h: "Races", cls: "num", f: (m) => (m.races ? fNum(m.races) : '<span class="muted">—</span>') },
       { h: "Income", cls: "num", f: (m) => fMoney(m.income) }, { h: "Biggest income", f: (m) => topCat(m.income_cats) },
       { h: "Expenses", cls: "num", f: (m) => fMoney(m.expenses) }, { h: "Biggest expense", f: (m) => topCat(m.expense_cats) },
       { h: "Profit", cls: "num", f: (m) => `<span class="${m.profit >= 0 ? "up" : "dn"}">${fMoney(m.profit)}</span>` },
-    ], ms.slice().reverse()), "By the month the money was paid · tickets, food, media rights, subsidy and running costs are paid once a month, often the month after the meetings they're for")}</div>`;
-  html += `<div style="margin-top:16px">${panel("Year by year", groupBars(ys.map((y) => String(y.year)), FIN_SERIES(ys)) + table([
+    ], ms.slice().reverse()), "Tickets, food, media rights, subsidy and running costs are paid once a month, often the month after the meetings they're for")}</div>`;
+  // year by year
+  const ys = f.years || [];
+  const yl = ys.map((y) => String(y.year));
+  html += `<div class="grid cols-2" style="margin-top:16px">
+    ${panel("Income and expenses, year by year", colChart({ labels: yl, series: ie(ys), title: "Income and expenses by year" }), "Calendar years")}
+    ${panel("Profit, year by year", colChart({ labels: yl, series: [{ name: "Profit", color: "var(--viz-1)", values: ys.map((y) => y.profit) }], signed: true, title: "Profit by year" }), "Above the line: made money · below: lost money")}</div>`;
+  html += `<div style="margin-top:16px">${panel("Year by year", table([
       { h: "Year", f: (y) => `<b>${y.year}</b>${y.itemised ? "" : ' <span class="muted small" title="The game only keeps a yearly total of these payments">yearly total</span>'}` },
       { h: "Meetings", cls: "num", f: (y) => fNum(y.meetings) }, { h: "Races", cls: "num", f: (y) => fNum(y.races) },
       { h: "Income", cls: "num", f: (y) => fMoney(y.income) }, { h: "Expenses", cls: "num", f: (y) => fMoney(y.expenses) },
       { h: "Profit", cls: "num", f: (y) => `<span class="${y.profit >= 0 ? "up" : "dn"}">${fMoney(y.profit)}</span>` },
-      { h: "Income per meeting", cls: "num", f: (y) => (isNum(y.per_meeting_income) ? fMoney(y.per_meeting_income) : "—") },
-      { h: "Profit per meeting", cls: "num", f: (y) => (isNum(y.per_meeting_profit) ? fMoney(y.per_meeting_profit) : "—") },
+      { h: "Margin", cls: "num", f: (y) => pctTxt(margin(y)) },
+      { h: "Per meeting", cls: "num", f: (y) => (isNum(y.per_meeting_income) ? fMoneyShort(y.per_meeting_income) : "—") },
+      { h: "Per race", cls: "num", f: (y) => (y.races ? fMoneyShort(y.income / y.races) : "—") },
+      { h: "Prize money", cls: "num", f: (y) => (y.itemised && y.prize_paid ? `${fMoneyShort(y.prize_paid)} <span class="muted small">${pctTxt(y.income ? y.prize_paid / y.income : null)}</span>` : '<span class="muted">—</span>') },
       { h: "Surplus paid out", cls: "num", f: (y) => (y.surplus ? fMoney(y.surplus) : '<span class="muted">—</span>') },
-    ], ys.slice().reverse(), { empty: "No money recorded for this racecourse yet." }),
-    "Years marked “yearly total” are ones the game only keeps one total for, so they aren't split by type")}</div>`;
+    ], ys.slice().reverse(), { empty: "No money recorded for this racecourse yet." }), "Margin is the share of income kept as profit · prize money also shows its share of income · years marked “yearly total” only have one total in the save")}</div>`;
   const itemYears = ys.filter((y) => y.itemised && (y.income || y.expenses)).slice(-6);
   if (itemYears.length) {
     const cats = (key) => [...new Set(itemYears.flatMap((y) => Object.keys(y[key])))];
     const rowsFor = (key, label) => cats(key).map((cat) => ({ cat, label, vals: itemYears.map((y) => y[key][cat] || 0) }));
-    const grid = rowsFor("income_cats", "Income").concat(rowsFor("expense_cats", "Expense"));
-    html += `<div style="margin-top:16px">${panel("By type, year by year", table([
-      { h: "", f: (r) => `${esc(r.cat)} <span class="muted small">${r.label.toLowerCase()}</span>` },
-    ].concat(itemYears.map((y, i) => ({ h: String(y.year), cls: "num", f: (r) => (r.vals[i] ? fMoney(r.vals[i]) : '<span class="muted">—</span>') }))), grid), "The years the game keeps every payment for")}</div>`;
+    html += `<div style="margin-top:16px">${panel("By type, year by year", table([{ h: "", f: (r) => `${esc(r.cat)} <span class="muted small">${r.label.toLowerCase()}</span>` }]
+      .concat(itemYears.map((y, k) => ({ h: String(y.year), cls: "num", f: (r) => (r.vals[k] ? fMoney(r.vals[k]) : '<span class="muted">—</span>') }))),
+      rowsFor("income_cats", "Income").concat(rowsFor("expense_cats", "Expense"))), "The years the game keeps every payment for")}</div>`;
   }
-  html += `<div class="grid cols-2" style="margin-top:16px">${panel("Meetings", table([
+  // meetings
+  html += `<div style="margin-top:16px">${panel("Meetings", table([
       { h: "Date", cls: "nowrap", f: (m) => L.race(m.first_race_id, fDate(m.date)) }, { h: "Meeting", f: (m) => esc(m.name || "") },
-      { h: "Races", cls: "num", f: (m) => fNum(m.races) },
+      { h: "Races", cls: "num", f: (m) => fNum(m.races) }, { h: "Runners", cls: "num", f: (m) => (m.runners ? fNum(m.runners) : '<span class="muted">—</span>') },
       { h: "Biggest race", f: (m) => (m.top_race_id ? `${L.race(m.top_race_id, m.top_race_name)} ${grade(m.top_grade)}` : "—") },
+      { h: "Total purses", cls: "num", f: (m) => (m.purse ? fMoney(m.purse) : '<span class="muted">—</span>') },
       { h: "Betting commission", cls: "num", f: (m) => (isNum(m.betting) ? fMoney(m.betting) : '<span class="muted">—</span>') },
       { h: "Prize money paid", cls: "num", f: (m) => (isNum(m.prizes) ? fMoney(m.prizes) : '<span class="muted">—</span>') },
-    ], f.meetings || [], { empty: "No meetings yet." }), "Money paid on the day itself · tickets, food, media rights, subsidy and running costs are settled monthly, so they're in the figures above", "span-2")}</div>`;
-  const kvMoney = (pairs) => kv(pairs.filter((p) => p[1] !== null && p[1] !== undefined && p[1] !== "").map(([k, v, fmt]) => [k, (fmt || fMoney)(v)]));
+    ], f.meetings || [], { empty: "No meetings yet." }), "Money paid on the day itself; tickets, food, media rights, subsidy and running costs are settled monthly")}</div>`;
+  // prices and budgets against the average racecourse
+  const av = f.averages || {};
+  const vsAvg = (k, money = true) => {
+    const v = c[k], a = av[k];
+    if (!isNum(v)) return "—";
+    const val = money ? fMoney(v) : fNum(v);
+    if (!isNum(a) || !a) return val;
+    const ch = (v - a) / a;
+    return `${val} <span class="stat-note">${Math.abs(ch) < 0.03 ? "about average" : `${ch > 0 ? "▲" : "▼"} ${Math.round(Math.abs(ch) * 100)}% vs average ${fMoney(a)}`}</span>`;
+  };
   const pct = (v) => (isNum(v) ? `${fNum(100 * v, 1)}%` : "—");
   html += `<div class="grid cols-3" style="margin-top:16px">
-    ${panel("Prices", kvMoney([["VIP ticket", c.racecourse_vip_ticket_price], ["Normal ticket", c.racecourse_normal_ticket_price], ["Standing ticket", c.racecourse_standing_ticket_price],
-      ["Parking", c.racecourse_parking_price], ["Food", c.racecourse_food_price], ["Drink", c.racecourse_drink_price]]))}
-    ${panel("Budgets", kvMoney([["Staff", c.racecourse_staff_budget], ["Maintenance", c.racecourse_maintenance_budget], ["Marketing", c.racecourse_marketing_budget],
-      ["Prize pool contribution", c.racecourse_prize_pool_contribution], ["Monthly dividend", c.racecourse_monthly_dividend]]))}
+    ${panel("Prices", kv([["VIP ticket", vsAvg("racecourse_vip_ticket_price")], ["Normal ticket", vsAvg("racecourse_normal_ticket_price")], ["Standing ticket", vsAvg("racecourse_standing_ticket_price")],
+      ["Parking", vsAvg("racecourse_parking_price")], ["Food", vsAvg("racecourse_food_price")], ["Drink", vsAvg("racecourse_drink_price")]]), "Against the average racecourse")}
+    ${panel("Budgets", kv([["Staff", vsAvg("racecourse_staff_budget")], ["Maintenance", vsAvg("racecourse_maintenance_budget")], ["Marketing", vsAvg("racecourse_marketing_budget")],
+      ["Prize pool contribution", vsAvg("racecourse_prize_pool_contribution")], ["Monthly dividend", isNum(c.racecourse_monthly_dividend) ? fMoney(c.racecourse_monthly_dividend) : "—"]]), "Against the average racecourse")}
     ${panel("Business", kv([["Owner", f.owner ? L.stable(f.owner.id, f.owner.name) : "—"],
       ["Betting commission rate", !isNum(c.racecourse_betting_commission_rate) ? "—" : c.racecourse_betting_commission_rate < 1 ? pct(c.racecourse_betting_commission_rate) : `${fNum(c.racecourse_betting_commission_rate, 2)}%`],
       ["Media rights multiplier", fNum(c.racecourse_media_rights_multiplier, 2)], ["Licence", `${esc(c.racecourse_licence_grade || "—")}${c.racecourse_licence_expires ? ` · until ${fDate(c.racecourse_licence_expires)}` : ""}`],
@@ -5201,10 +5393,9 @@ async function courseFinancePage(route) {
       ["For sale", c.racecourse_for_sale ? `Yes · asking ${fMoney(c.racecourse_asking_price)}` : "No"]]))}</div>`;
   if ((f.monthly || []).length) {
     const m = f.monthly;
-    html += `<div class="grid cols-2" style="margin-top:16px">${panel("Month by month", lineChart([
-        { name: "Income", color: "#2f9e5b", points: m.map((x) => [x.date, x.income]) }, { name: "Costs", color: "#d0453c", points: m.map((x) => [x.date, x.costs]) },
-        { name: "Cash", color: "#1d63d6", dash: true, points: m.map((x) => [x.date, x.cash]) }], { yFmt: fMoneyShort, tipFmt: fMoney }), "The racecourse's own monthly figures")}
-      ${panel("Value", lineChart([{ name: "Value", points: m.map((x) => [x.date, x.value]) }], { yFmt: fMoneyShort, tipFmt: fMoney }), "What the racecourse is worth")}</div>`;
+    html += `<div class="grid cols-2" style="margin-top:16px">${panel("The racecourse's own monthly figures", lineChart([
+        { name: "Income", color: "#257de0", points: m.map((x) => [x.date, x.income]) }, { name: "Costs", color: "#f47230", points: m.map((x) => [x.date, x.costs]) }], { yFmt: fMoneyShort, tipFmt: fMoney }), "As the game records them each month")}
+      ${panel("Value and cash", lineChart([{ name: "Value", color: "#257de0", points: m.map((x) => [x.date, x.value]) }, { name: "Cash", color: "#00b894", points: m.map((x) => [x.date, x.cash]) }], { yFmt: fMoneyShort, tipFmt: fMoney }), "What the racecourse is worth, and its cash")}</div>`;
   }
   if ((f.sponsors || []).length) html += `<div style="margin-top:16px">${panel("Sponsors", sponsorTable(f.sponsors, [{ h: "Deal", f: (r) => esc(nice(r.type)) }]), "Companies sponsoring this racecourse")}</div>`;
   return html;
@@ -5222,6 +5413,23 @@ async function coursePage(id, preloaded) {
     ["Track condition", fNum(c.racecourse_condition_of_track, 0) + "%"], ["Facilities", fNum(c.racecourse_condition_of_facilities, 0) + "%"],
     ["Awareness", fNum(c.racecourse_awareness, 0)], ["Built", fDate(c.racecourse_build_date)],
   ]);
+  // the business at a glance (16.7.9): the last 12 months, its place among racecourses, and profit month by month
+  const f = await api("course_finances/" + id).catch(() => null);
+  if (f && f.last12) {
+    const l = f.last12, MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"], ms = f.months12 || [];
+    const tickets = (c.racecourse_last_month_vip_sold || 0) + (c.racecourse_last_month_normal_sold || 0) + (c.racecourse_last_month_standing_sold || 0);
+    const fill = c.racecourse_last_month_race_days && c.racecourse_max_attendance ? tickets / c.racecourse_last_month_race_days / c.racecourse_max_attendance : null;
+    html += `<div class="grid cols-2">${panel("Business, last 12 months", kv([
+        ["Income", `${fMoney(l.income)} <span class="stat-note">${placeText((f.rank || {}).income)} of racecourses</span>`],
+        ["Expenses", fMoney(l.expenses)],
+        ["Profit", `<span class="${l.profit >= 0 ? "up" : "dn"}">${fMoney(l.profit)}</span> <span class="stat-note">${placeText((f.rank || {}).profit)}</span>`],
+        ["Meetings", `${fNum(l.meetings)} · ${fNum(l.races)} races`],
+        ["Income per meeting", l.meetings ? fMoney(l.income / l.meetings) : "—"],
+        ["Crowds last month", `${fNum(tickets)} tickets${fill !== null ? ` · ${Math.round(fill * 100)}% of capacity per meeting` : ""}`],
+      ]) + `<div style="margin-top:10px"><a class="btn" href="#/course/${id}/finances">Finances</a></div>`, "Payments the game keeps in detail")}
+      ${panel("Profit, month by month", colChart({ labels: ms.map((m) => `${MON[m.month - 1]} ${String(m.year).slice(2)}`), long: ms.map((m) => `${MONTHS_LONG[m.month - 1]} ${m.year}`),
+        series: [{ name: "Profit", color: "var(--viz-1)", values: ms.map((m) => m.profit) }], signed: true, height: 200, title: "Profit by month" }), "Last 12 months")}</div><div style="height:16px"></div>`;
+  }
   const dayCols = [
     { h: "Date", cls: "nowrap", f: (r) => L.race(r.first_race_id, fDate(r.date)) }, { h: "Meeting", f: (r) => esc(r.name || "") },
     { h: "Races", cls: "num", f: (r) => fNum(r.races) },
