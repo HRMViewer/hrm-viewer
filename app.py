@@ -875,6 +875,45 @@ def carry_sectionals(con, carry):
         con.execute("detach database prev")
 
 
+def compact_early(path, prior):
+    """Compacting that's done to the copy of the save before the stored data's older records are added (16.7.7):
+    the big tables are rebuilt without their duplicate key index, and other people's horses' race positions are
+    dropped where their sectionals are already stored. The older records then fill the space this frees, instead of
+    the whole file being rewritten at the end to give it back. Returns the tables rebuilt."""
+    con = sqlite3.connect(path)
+    rebuilt = []
+    try:
+        set_job(step="Compacting the save before keeping older records", pct=40)
+        for t in NEVER_KEEP:
+            con.execute("drop table if exists %s" % qident(t))
+        con.commit()
+        if prior and has_table(con, "race_position_snapshots") and os.path.exists(CURRENT_DB):
+            compact_keep_sets(con, prior)
+            con.execute("attach database ? as prev", (CURRENT_DB,))
+            try:
+                if has_table_in(con, "prev", "hrmv_sectionals"):
+                    con.execute("drop table if exists temp.ce_done")
+                    con.execute("create temp table ce_done (race_id integer, horse_id integer, primary key (race_id, horse_id)) without rowid")
+                    con.execute("insert or ignore into temp.ce_done select race_id, horse_id from prev.hrmv_sectionals where horse_id not in (select id from temp.ck_h)")
+                    con.execute("""delete from race_position_snapshots where race_position_horse_id not in (select id from temp.ck_h)
+                        and exists (select 1 from temp.ce_done d where d.race_id=race_position_race_id and d.horse_id=race_position_horse_id)""")
+                    con.execute("drop table temp.ce_done")
+                con.commit()
+            finally:
+                con.execute("detach database prev")
+        big = []
+        for (t,) in con.execute("""select distinct tbl_name from sqlite_master where type='index' and name like 'sqlite_autoindex%'
+                and tbl_name not like 'hrmv_%'""").fetchall():
+            if con.execute("select count(*) from (select 1 from %s limit %d)" % (qident(t), COMPACT_REBUILD_ROWS)).fetchone()[0] >= COMPACT_REBUILD_ROWS:
+                big.append(t)
+        for t in big:
+            if compact_rebuild(con, t):
+                rebuilt.append(t)
+    finally:
+        con.close()
+    return rebuilt
+
+
 def compact_post(con, info):
     """After the sectionals are worked out: other people's horses' raw race positions, then give the space back."""
     if has_table(con, "race_position_snapshots"):
@@ -884,7 +923,8 @@ def compact_post(con, info):
     page = con.execute("pragma page_size").fetchone()[0]
     free = con.execute("pragma freelist_count").fetchone()[0] * page
     info["freed"] = free
-    if free >= 32 * 1024 * 1024:
+    total = con.execute("pragma page_count").fetchone()[0] * page
+    if free >= max(64 * 1024 * 1024, total // 20):
         set_job(step="Giving the space back (a minute or so)", pct=90)
         con.execute("vacuum")
 
@@ -899,6 +939,7 @@ def process_incoming(source_label, source_path, decision=None, validated=False):
     new = read_save_info(INCOMING_DB)
     mode = "fresh"
     added = {}
+    early_rebuilt = []
     if os.path.exists(CURRENT_DB):
         old = stored_save_info()
         same = bool(old.get("save_id")) and old.get("save_id") == new.get("save_id")
@@ -940,6 +981,8 @@ def process_incoming(source_label, source_path, decision=None, validated=False):
         else:
             mode = "fresh"
         if mode == "merge_new":
+            if compact_settings()["on"]:
+                early_rebuilt = compact_early(INCOMING_DB, META.get("compact_keep") or META.get("slim_keep"))
             added = merge_missing(INCOMING_DB, CURRENT_DB, new["game_date"], old["game_date"])
         elif mode == "merge_old":
             set_job(step="Copying the stored data", pct=40)
@@ -961,6 +1004,7 @@ def process_incoming(source_label, source_path, decision=None, validated=False):
         fork_fixed = fix_fork_rollups(con) if carry else 0
         if cset["on"]:
             compact_info = compact_pre(con, cset["thin"], (META.get("compact_keep") or META.get("slim_keep")) if carry else None)
+            compact_info["rebuilt"] = early_rebuilt + compact_info["rebuilt"]
         todo = []
         for table, col in INDEXES:
             if has_table(con, table) and col in columns(con, table):
@@ -7215,7 +7259,7 @@ class Handler(BaseHTTPRequestHandler):
 
 # --------------------------------------------------------------------------- in-app updates
 
-VERSION = "16.7.6"
+VERSION = "16.7.7"
 BACKUP_DIR = os.path.join(APP_DIR, "backups")
 UPDATE_PENDING = os.path.join(DATA_DIR, "update_pending.json")
 UPDATE_RESULT = os.path.join(DATA_DIR, "update_result.json")

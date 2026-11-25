@@ -1,5 +1,14 @@
 [
   {
+    "version": "16.7.7",
+    "date": "2026-11-25",
+    "title": "Faster loads with Compact stored data on",
+    "changes": [
+      "With Compact stored data on, a load now compacts the save first, before your stored data's older records are added back: the big tables are rebuilt without their duplicate key index and other people's horses' race positions that already have sectional times are dropped. The older records then fill the space this frees, so the slow \"Giving the space back\" step at the end is skipped unless a lot of space is left over. In testing a load took 25 seconds instead of 40; the stored data comes out the same.",
+      "The first load after switching Compact stored data on still gives the space back once, as before."
+    ]
+  },
+  {
     "version": "16.7.6",
     "date": "2026-11-25",
     "title": "Sizes in the update status",
