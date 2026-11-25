@@ -2,6 +2,8 @@
 # builds HRM Viewer.exe and the Windows zips, the Mac app and the Linux download (each tried on a real machine
 # first, see desktop-builds.yml), and attaches them all with the changelog as notes.
 # The viewers out there see it within a few hours and offer to install it.
+# If GitHub can't supply a Mac machine, the mac-linux job ends "abandoned" and nothing is published: re-run the
+# failed jobs, or push again; the version is still unreleased, so the next run builds and publishes it.
 name: Release
 
 on:
