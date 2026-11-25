@@ -6499,7 +6499,7 @@ function settingsPage() {
   return html;
 }
 // ------------------------------------------------------------------ Settings → Stored data: compacting (16.7)
-const fSize = (b) => (isNum(b) && b > 0 ? (b >= 1 << 30 ? (b / (1 << 30)).toFixed(2) + " GB" : Math.round(b / (1 << 20)) + " MB") : "—");
+const fSize = (b) => (isNum(b) && b > 0 ? (b >= 1000 * (1 << 20) ? (b / (1 << 30)).toFixed(2) + " GB" : Math.round(b / (1 << 20)) + " MB") : "—");
 function compactBox() {
   const c = (STATUS && STATUS.compact) || {}, m = (STATUS && STATUS.meta) || {}, last = m.compact;
   const sw = (id, on, dis) => `<label class="switch"><input type="checkbox" id="${id}" ${on ? "checked" : ""} ${dis ? "disabled" : ""}><span></span></label>`;
@@ -6545,7 +6545,10 @@ function lastLoadHtml(l, compressing) {
   const kind = l.mode === "compact" ? "Last Compact now" : "Last update";
   const steps = (l.steps || []).filter((x) => x[1] >= 0.5 && !/^(Starting|Saving|Loaded)$/.test(x[0]));
   const comp = l.compress && isNum(l.compress_took) ? ` (${fSecs(l.compress_took)} of it compressing on disk)` : "";
-  return `<br>${kind}: ${new Date(l.at * 1000).toLocaleString("en-NZ")} · <b>took ${fSecs(l.took)}</b>${comp}
+  // the sizes at the end (16.7.6): the save file that was loaded, and the stored copy it made (and its space on disk if compressed)
+  const sizes = [isNum(l.save_size) ? `save file ${fSize(l.save_size)}` : "",
+    isNum(l.size) ? `stored data ${fSize(l.size)}${isNum(l.disk_size) && l.disk_size < l.size * 0.97 ? ` (${fSize(l.disk_size)} on disk)` : ""}` : ""].filter(Boolean).join(" · ");
+  return `<br>${kind}: ${new Date(l.at * 1000).toLocaleString("en-NZ")} · <b>took ${fSecs(l.took)}</b>${comp}${sizes ? ` · ${sizes}` : ""}
     ${steps.length ? `<details class="small"><summary>Time per step</summary>${steps.map(([n, t]) => `${esc(n)}: ${fSecs(t)}`).join("<br>")}</details>` : ""}`;
 }
 async function drawAutoBox() {

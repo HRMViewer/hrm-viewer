@@ -1,5 +1,13 @@
 [
   {
+    "version": "16.7.6",
+    "date": "2026-11-25",
+    "title": "Sizes in the update status",
+    "changes": [
+      "Settings → Automatic updates → Status: the line for the last update now ends with the size of the save file that was loaded and the size of the stored data it made (and the space it takes on disk, if Compress on disk is on)."
+    ]
+  },
+  {
     "version": "16.7.5",
     "date": "2026-11-25",
     "title": "Smaller stored data: the game's performance log is left out",

@@ -1035,7 +1035,8 @@ def process_incoming(source_label, source_path, decision=None, validated=False):
     started = job_snapshot().get("started") or time.time()
     meta["last_load"] = {"at": time.time(), "took": round(time.time() - started, 1), "mode": mode, "steps": step_times(),
                          "size": os.path.getsize(INCOMING_DB), "compress": cset["disk"], "compress_took": meta.pop("compress_took", None),
-                         "disk_size": meta.pop("disk_size", None)}
+                         "disk_size": meta.pop("disk_size", None),
+                         "save_size": os.path.getsize(source_path) if source_path and os.path.exists(source_path) else None}
     history[-1]["took"] = meta["last_load"]["took"]
     if fork_fixed:
         history[-1]["yearly_totals_fixed"] = fork_fixed
@@ -7214,7 +7215,7 @@ class Handler(BaseHTTPRequestHandler):
 
 # --------------------------------------------------------------------------- in-app updates
 
-VERSION = "16.7.5"
+VERSION = "16.7.6"
 BACKUP_DIR = os.path.join(APP_DIR, "backups")
 UPDATE_PENDING = os.path.join(DATA_DIR, "update_pending.json")
 UPDATE_RESULT = os.path.join(DATA_DIR, "update_result.json")
