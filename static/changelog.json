@@ -1,5 +1,13 @@
 [
   {
+    "version": "16.7.5",
+    "date": "2026-11-25",
+    "title": "Smaller stored data: the game's performance log is left out",
+    "changes": [
+      "The stored data no longer keeps daily_function_performance, the game's own log of how long its daily routines took to run (developer diagnostics with nothing about racing, about 28 MB on a big save). It's left out each time a save is loaded, so your stored data shrinks on the next load. Your game's database.db isn't changed."
+    ]
+  },
+  {
     "version": "16.7.4",
     "date": "2026-11-24",
     "title": "Automatic updates on to begin with",

@@ -803,6 +803,11 @@ def compact_pre(con, thin, prior_keep):
     return info
 
 
+# Tables the viewer never keeps: daily_function_performance is the game's own log of how long its daily routines
+# took to run (developer diagnostics, ~28 MB on a big save, nothing about racing). Dropped on every load (16.7.5).
+NEVER_KEEP = ("daily_function_performance",)
+
+
 FORK_ROLLED = ("Salary, yearly total", "Win shares, yearly total")
 FORK_CHECKED = " (payments the save no longer has)"
 
@@ -948,6 +953,9 @@ def process_incoming(source_label, source_path, decision=None, validated=False):
     compact_info = None
     try:
         ensure_removed_table(con)
+        for t in NEVER_KEEP:
+            con.execute("drop table if exists %s" % qident(t))
+        con.commit()
         size_before = os.path.getsize(CURRENT_DB) if carry and os.path.exists(CURRENT_DB) else os.path.getsize(INCOMING_DB)
         carried, carried_rec = carry_sectionals(con, carry)
         fork_fixed = fix_fork_rollups(con) if carry else 0
@@ -7206,7 +7214,7 @@ class Handler(BaseHTTPRequestHandler):
 
 # --------------------------------------------------------------------------- in-app updates
 
-VERSION = "16.7.4"
+VERSION = "16.7.5"
 BACKUP_DIR = os.path.join(APP_DIR, "backups")
 UPDATE_PENDING = os.path.join(DATA_DIR, "update_pending.json")
 UPDATE_RESULT = os.path.join(DATA_DIR, "update_result.json")
