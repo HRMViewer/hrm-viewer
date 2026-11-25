@@ -3266,6 +3266,7 @@ def api_stable(con, sid):
     out = {"stable": clean_blob(s), "removed": removed_info(con, "stables", sid)}
     out["record"] = one(con, "select * from hrmv_stable_stats where stable_id=?", (sid,)) if has_table(con, "hrmv_stable_stats") else None
     out["owner"] = one(con, "select person_person_id as id, person_full_name as name from persons where person_person_id=?", (s.get("stable_owner_id"),))
+    out["racecourses_owned"] = owned_courses(con, sid)
     out["city"] = one(con, "select c.city_name as city, n.country_name as country from cities c left join countries n on n.country_id=c.city_country_id where c.city_id=?", (s.get("stable_city_id"),)) if has_table(con, "cities") and has_table(con, "countries") else None
     out["horses"] = rows(con, """select horse_horse_id as id, horse_name as name, horse_gender as gender, horse_birth_date as birth,
         horse_career_earnings as earnings, horse_international_rating as rating, horse_form as form, horse_g1_wins as g1,
@@ -4845,6 +4846,139 @@ def api_course(con, cid):
     return out
 
 
+# --------------------------------------------------------------------------- racecourse finances (16.7.8)
+# The money a racecourse takes in and pays out is in the payment log (entity type "racecourse"). For years the game no
+# longer keeps in detail it leaves one "Yearly Summary" payment each way, dated 1 January; a year with one counts at that
+# total (the detail the viewer kept from earlier loads is then only part of it), and is itemised only when there's none.
+COURSE_INCOME_LABEL = {"Ticket Revenue": "Tickets", "Concessions & Parking": "Food, drink & parking", "Media Rights": "Media rights",
+                       "Betting Commission": "Betting commission", "Venue Sponsorship": "Sponsorship", "Venue Sponsor Event Bonus": "Sponsor event bonuses",
+                       "Venue Subsidy": "Subsidy", "Fee": "Fees"}
+COURSE_EXPENSE_LABEL = {"Prize": "Prize money", "Operating Expenses": "Operating expenses", "Venue Surplus": "Surplus paid out"}
+
+
+def owned_courses(con, sid):
+    """The racecourses a stable owns, with what they took in and paid out over the last 12 months of the save."""
+    if "racecourse_owner_stable_id" not in columns(con, "racecourses"):
+        return []
+    out = rows(con, """select racecourse_racecourse_id as id, racecourse_name as name, racecourse_location_city as city,
+        racecourse_location_country as country, racecourse_max_attendance as capacity, racecourse_condition_of_track as track_condition,
+        racecourse_condition_of_facilities as facilities, racecourse_licence_grade as licence, racecourse_for_sale as for_sale,
+        racecourse_monthly_dividend as dividend, racecourse_demolished_date as demolished
+        from racecourses where racecourse_owner_stable_id=? order by racecourse_name""", (sid,))
+    if not out or not has_table(con, "transactions"):
+        return out
+    gd = META.get("game_date") or time.time()
+    lo = gd - 365 * 86400
+    ids = ",".join(str(int(r["id"])) for r in out)
+    inc = {r[0]: r[1] for r in con.execute("""select transaction_to_entity_id, sum(transaction_amount) from transactions where transaction_to_entity_type='racecourse'
+        and transaction_to_entity_id in (%s) and transaction_date > ? and transaction_type <> 'Yearly Summary' group by 1""" % ids, (lo,))}
+    exp = {r[0]: r[1] for r in con.execute("""select transaction_from_entity_id, sum(transaction_amount) from transactions where transaction_from_entity_type='racecourse'
+        and transaction_from_entity_id in (%s) and transaction_date > ? and transaction_type <> 'Yearly Summary' and transaction_type <> 'Venue Surplus' group by 1""" % ids, (lo,))}
+    days = {r[0]: r[1] for r in con.execute("select raceday_racecourse_id, count(*) from race_days where raceday_racecourse_id in (%s) and raceday_date > ? and raceday_date <= ? group by 1" % ids, (lo, gd))}
+    for r in out:
+        r["income_12m"], r["expenses_12m"], r["meetings_12m"] = inc.get(r["id"], 0), exp.get(r["id"], 0), days.get(r["id"], 0)
+        r["profit_12m"] = r["income_12m"] - r["expenses_12m"]
+    return out
+
+
+def api_course_finances(con, cid):
+    c = one(con, "select * from racecourses where racecourse_racecourse_id=?", (cid,))
+    if not c:
+        return None
+    gd = META.get("game_date") or time.time()
+    out = {"course": {k: c.get(k) for k in c if k.startswith("racecourse_") and not k.startswith("racecourse_location_map")}, "game_date": gd}
+    out["owner"] = one(con, "select stable_stable_id as id, stable_name as name from stables where stable_stable_id=?", (c.get("racecourse_owner_stable_id"),))
+    yr = "cast(strftime('%Y', transaction_date, 'unixepoch') as int)"
+    years = {}
+
+    def year(y):
+        return years.setdefault(y, {"year": y, "income": 0, "expenses": 0, "surplus": 0, "income_cats": {}, "expense_cats": {}, "summary": False,
+                                    "meetings": 0, "races": 0, "prize_paid": 0})
+    if has_table(con, "transactions"):
+        for direction, side in (("in", "to"), ("out", "from")):
+            for y, typ, n, total in con.execute("""select %s, transaction_type, count(*), sum(transaction_amount) from transactions
+                    where transaction_%s_entity_type='racecourse' and transaction_%s_entity_id=? group by 1, 2""" % (yr, side, side), (cid,)):
+                e = year(y)
+                key = "income" if direction == "in" else "expenses"
+                if typ == "Yearly Summary":
+                    e["summary_" + key] = total or 0
+                    e["summary"] = True
+                    continue
+                if direction == "out" and typ == "Venue Surplus":
+                    e["surplus"] += total or 0
+                    continue
+                label = (COURSE_INCOME_LABEL if direction == "in" else COURSE_EXPENSE_LABEL).get(typ, typ or "Other")
+                cats = e["income_cats" if direction == "in" else "expense_cats"]
+                cats[label] = cats.get(label, 0) + (total or 0)
+                e[key] += total or 0
+                if typ == "Prize":
+                    e["prize_paid"] += total or 0
+        for e in years.values():
+            for key in ("income", "expenses"):
+                if "summary_" + key in e:          # the game's yearly total covers the whole year (it includes any surplus paid out)
+                    e[key + "_detail"] = e[key]
+                    e[key] = e.pop("summary_" + key) - (e["surplus"] if key == "expenses" else 0)
+                    e[key + "_from_summary"] = True
+    for y, n in con.execute("select cast(strftime('%Y', raceday_date, 'unixepoch') as int), count(*) from race_days where raceday_racecourse_id=? and raceday_date <= ? group by 1", (cid, gd)):
+        year(y)["meetings"] = n
+    for y, n in con.execute("""select cast(strftime('%Y', d.raceday_date, 'unixepoch') as int), count(*) from races x join race_days d on d.raceday_race_day_id=x.races_race_day_id
+            where d.raceday_racecourse_id=? and d.raceday_date <= ? group by 1""", (cid, gd)):
+        year(y)["races"] = n
+    ys = sorted(years.values(), key=lambda e: e["year"])
+    for e in ys:
+        e["profit"] = e["income"] - e["expenses"]
+        e["per_meeting_income"] = e["income"] / e["meetings"] if e["meetings"] else None
+        e["per_meeting_profit"] = e["profit"] / e["meetings"] if e["meetings"] else None
+        e["itemised"] = not e.get("income_from_summary") and not e.get("expenses_from_summary")
+    out["years"] = [e for e in ys if e["income"] or e["expenses"] or e["meetings"]]
+    # the last 12 months of the save, from the itemised payments
+    lo = gd - 365 * 86400
+    last = {"income": 0, "expenses": 0, "surplus": 0, "income_cats": {}, "expense_cats": {}}
+    if has_table(con, "transactions"):
+        for side, key, labels in (("to", "income", COURSE_INCOME_LABEL), ("from", "expenses", COURSE_EXPENSE_LABEL)):
+            for typ, total in con.execute("""select transaction_type, sum(transaction_amount) from transactions where transaction_%s_entity_type='racecourse'
+                    and transaction_%s_entity_id=? and transaction_date > ? and transaction_date <= ? and transaction_type <> 'Yearly Summary' group by 1""" % (side, side), (cid, lo, gd)):
+                if key == "expenses" and typ == "Venue Surplus":
+                    last["surplus"] += total or 0
+                    continue
+                label = labels.get(typ, typ or "Other")
+                cats = last["income_cats" if key == "income" else "expense_cats"]
+                cats[label] = cats.get(label, 0) + (total or 0)
+                last[key] += total or 0
+    last["meetings"] = one(con, "select count(*) as n from race_days where raceday_racecourse_id=? and raceday_date > ? and raceday_date <= ?", (cid, lo, gd))["n"]
+    last["races"] = one(con, """select count(*) as n from races x join race_days d on d.raceday_race_day_id=x.races_race_day_id
+        where d.raceday_racecourse_id=? and d.raceday_date > ? and d.raceday_date <= ?""", (cid, lo, gd))["n"]
+    last["profit"] = last["income"] - last["expenses"]
+    out["last12"] = last
+    # each meeting: what was paid on the day itself, betting commission in and prize money out (tickets, food, media
+    # rights, subsidy and operating costs are settled once a month, so they're only in the yearly and 12-month figures)
+    out["meetings"] = []
+    if has_table(con, "transactions"):
+        out["meetings"] = rows(con, """select d.raceday_race_day_id as id, d.raceday_date as date, d.raceday_raceseries_name as name,
+            (select count(*) from races x where x.races_race_day_id=d.raceday_race_day_id) as races,
+            (select min(x.races_race_id) from races x where x.races_race_day_id=d.raceday_race_day_id) as first_race_id,
+            (select sum(t.transaction_amount) from transactions t where t.transaction_to_entity_type='racecourse' and t.transaction_to_entity_id=d.raceday_racecourse_id
+                and t.transaction_date >= d.raceday_date and t.transaction_date < d.raceday_date + 86400 and t.transaction_type = 'Betting Commission') as betting,
+            (select sum(t.transaction_amount) from transactions t where t.transaction_from_entity_type='racecourse' and t.transaction_from_entity_id=d.raceday_racecourse_id
+                and t.transaction_date >= d.raceday_date and t.transaction_date < d.raceday_date + 86400 and t.transaction_type = 'Prize') as prizes
+            from race_days d where d.raceday_racecourse_id=? and d.raceday_date <= ? order by d.raceday_date desc limit 60""", (cid, gd))
+        prize_by_race = {}
+        ids = [m["id"] for m in out["meetings"]]
+        if ids:     # the biggest race of each meeting, by prize money
+            for r in con.execute("""select x.races_race_day_id, x.races_race_id, x.races_race_name, x.races_type_of_race, x.races_prize_money_total from races x
+                    where x.races_race_day_id in (%s) order by x.races_prize_money_total""" % ",".join("?" * len(ids)), ids):
+                prize_by_race[r[0]] = r[1:]
+        for m in out["meetings"]:
+            top = prize_by_race.get(m["id"])
+            m["top_race_id"], m["top_race_name"], m["top_grade"], m["top_purse"] = top if top else (None, None, None, None)
+    # month by month, when the save keeps the racecourse's own monthly figures
+    out["monthly"] = rows(con, """select vms_date as date, vms_cash as cash, vms_income as income, vms_costs as costs, vms_value as value,
+        vms_prestige_percentile as prestige from venue_monthly_snapshots where vms_venue_type='racecourse' and vms_venue_id=? order by vms_date""", (cid,)) \
+        if has_table(con, "venue_monthly_snapshots") else []
+    out["sponsors"] = course_sponsors(con, cid)
+    return out
+
+
 # --------------------------------------------------------------------------- API: raw tables
 
 OPS = {"eq": "=", "ne": "<>", "gt": ">", "lt": "<", "ge": ">=", "le": "<="}
@@ -6157,6 +6291,7 @@ ROUTES = [
     (re.compile(r"^/api/person/(-?\d+)$"), lambda con, m, q: api_person(con, int(m.group(1)))),
     (re.compile(r"^/api/courses$"), lambda con, m, q: api_courses(con, q)),
     (re.compile(r"^/api/course/(-?\d+)$"), lambda con, m, q: api_course(con, int(m.group(1)))),
+    (re.compile(r"^/api/course_finances/(-?\d+)$"), lambda con, m, q: api_course_finances(con, int(m.group(1)))),
     (re.compile(r"^/api/tables$"), lambda con, m, q: api_tables(con, q)),
     (re.compile(r"^/api/horse_table$"), lambda con, m, q: api_horse_table(con, q)),
     (re.compile(r"^/api/stable_table$"), lambda con, m, q: api_stable_table(con, q)),
@@ -7260,7 +7395,7 @@ class Handler(BaseHTTPRequestHandler):
 
 # --------------------------------------------------------------------------- in-app updates
 
-VERSION = "16.7.7"
+VERSION = "16.7.8"
 BACKUP_DIR = os.path.join(APP_DIR, "backups")
 UPDATE_PENDING = os.path.join(DATA_DIR, "update_pending.json")
 UPDATE_RESULT = os.path.join(DATA_DIR, "update_result.json")

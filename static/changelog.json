@@ -1,5 +1,16 @@
 [
   {
+    "version": "16.7.8",
+    "date": "2026-11-25",
+    "title": "Racecourses: tabs, finances, and the ones a stable owns",
+    "changes": [
+      "A stable that owns racecourses has a new Racecourses tab: each one with where it is, capacity, licence, track and facilities condition, and its meetings, income, expenses and profit over the last 12 months, plus the totals.",
+      "Racecourse pages now have tabs: Overview, Upcoming races, Results, Track records, Sectional records and Finances. Everything that was on the page is still there.",
+      "Finances: income and expenses by type for the last 12 months (tickets, food, drink and parking, media rights, betting commission, sponsorship, subsidy, fees; prize money and running costs), with each one's share and amount per meeting; year by year with income, expenses, profit, and income and profit per meeting; each meeting's betting commission and prize money paid on the day; prices, budgets, licence, sponsors, and the racecourse's monthly figures when the save has them.",
+      "Years the game only keeps a yearly total for are shown at that total and marked, so nothing is counted twice."
+    ]
+  },
+  {
     "version": "16.7.7",
     "date": "2026-11-25",
     "title": "Faster loads with Compact stored data on",
