@@ -5709,6 +5709,7 @@ async function stableCoursesPage(route) {
   html += `<div class="grid cols-2">
     ${panel("Income and expenses, month by month", colChart({ labels: short, long, series: [{ name: "Income", color: "var(--viz-1)", values: ms.map((m) => m.income) }, { name: "Expenses", color: "var(--viz-2)", values: ms.map((m) => m.expenses) }], title: "Income and expenses by month" }), "All this stable's racecourses together")}
     ${panel("Profit, month by month", colChart({ labels: short, long, series: [{ name: "Profit", color: "var(--viz-1)", values: ms.map((m) => m.profit) }], signed: true, title: "Profit by month" }), "Above the line: made money · below: lost money")}</div>`;
+  html += `<div style="margin-top:16px">${breakdownPanel(sc.breakdown, `All ${list.length > 1 ? `${fNum(list.length)} racecourses` : "its racecourse"} together, from the save's payment log`)}</div>`;      // 16.7.18
   if (list.length > 1) {
     html += `<div class="grid cols-2" style="margin-top:16px">${panel("Income by racecourse", meterList(list.map((r) => ({ name: r.name, value: r.income_12m, share: tot.income ? r.income_12m / tot.income : null }))), "Last 12 months")}
       ${panel("Profit by racecourse", colChart({ labels: list.map((r) => r.name.length > 14 ? r.name.slice(0, 13) + "…" : r.name), long: list.map((r) => r.name), series: [{ name: "Profit", color: "var(--viz-1)", values: list.map((r) => r.profit_12m) }], signed: true, title: "Profit by racecourse" }), "Last 12 months")}</div>`;
@@ -5730,6 +5731,13 @@ async function stableCoursesPage(route) {
 }
 
 let COURSE_BK = null;
+function breakdownPanel(b, note) {
+  COURSE_BK = { b: b || {} };
+  // the last 12 months first, then the years newest first (the keys of an object holding years would sort the years first)
+  const keys = Object.keys(COURSE_BK.b).sort((x, y) => (x === "last12" ? -1 : y === "last12" ? 1 : +y - +x));
+  return panel("Income and expenses in detail", `<div class="bk-bar">${keys.length > 1 ? `<div class="seg">${keys.map((k, i) => `<button data-bk="${k}" class="${i ? "" : "on"}">${k === "last12" ? "Last 12 months" : k}</button>`).join("")}</div>` : ""}</div>
+    <div id="bk-body">${courseStatement("last12")}</div>`, note);
+}
 function courseStatement(key) {
   const p = (COURSE_BK && COURSE_BK.b[key]) || null;
   if (!p) return '<div class="empty">No payments recorded for this period.</div>';
@@ -5798,11 +5806,7 @@ async function courseFinancePage(route) {
   ]);
   if (!cmp && (p.income || p.expenses)) html += `<div class="stat-note" style="margin:-6px 0 12px">No comparison with the 12 months before: the game only keeps a yearly total for some of them.</div>`;
   // 16.7.18: income and expenses line by line (each sponsor, prize money by class of race…), for the last 12 months or a year
-  COURSE_BK = { b: f.breakdown || {} };
-  // the last 12 months first, then the years newest first (the keys of an object holding years would sort the years first)
-  const bkKeys = Object.keys(COURSE_BK.b).sort((x, y) => (x === "last12" ? -1 : y === "last12" ? 1 : +y - +x));
-  html += panel("Income and expenses in detail", `<div class="bk-bar">${bkKeys.length > 1 ? `<div class="seg">${bkKeys.map((k, i) => `<button data-bk="${k}" class="${i ? "" : "on"}">${k === "last12" ? "Last 12 months" : k}</button>`).join("")}</div>` : ""}</div>
-    <div id="bk-body">${courseStatement("last12")}</div>`, "Every payment, grouped from the save's payment log");
+  html += breakdownPanel(f.breakdown, "Every payment, grouped from the save's payment log");
   // month by month
   const ms = f.months12 || [];
   const short = ms.map((m) => `${MON[m.month - 1]} ${String(m.year).slice(2)}`), long = ms.map((m) => `${MONTHS_LONG[m.month - 1]} ${m.year}`);

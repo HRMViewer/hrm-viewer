@@ -5728,18 +5728,26 @@ def api_stable_courses(con, sid):
         out["months12"] = course_months(con, ids, gd)
         out["prev12"] = months_total(course_months(con, ids, gd, back=1))
         out["prev12"]["complete"] = course_prev_complete(con, ids, gd)
+        out["breakdown"] = course_breakdown(con, ids, gd)      # 16.7.18: all its racecourses together, line by line
         for r in out["courses"]:
             r["months12"] = [{k: m[k] for k in ("key", "year", "month", "income", "expenses", "profit")} for m in course_months(con, [r["id"]], gd)]
     return out
 
 
-def course_breakdown(con, cid, gd, years):
+def course_breakdown(con, cids, gd, years=None):
     """Income and expenses line by line (16.7.18), from the payment notes: each sponsor, race days and races paid for,
-    entry and trial fees, prize money by class of race. For the last 12 months and each year the game still itemises."""
-    if not has_table(con, "transactions"):
+    entry and trial fees, prize money by class of race. For the last 12 months and each year the game still itemises.
+    One racecourse, or several added together (a stable's racecourses)."""
+    if not has_table(con, "transactions") or not cids:
         return {}
+    ids = ",".join(str(int(c)) for c in cids)
     lo12 = course_window_start(gd)
     periods = {"last12": None}
+    if years is None:       # the years with payments, less any the game only keeps a yearly total for (for any of the racecourses)
+        yr = "cast(strftime('%%Y', transaction_date, 'unixepoch') as int)"
+        have = {r[0] for r in con.execute("select distinct %s from transactions where transaction_to_entity_type='racecourse' and transaction_to_entity_id in (%s)" % (yr, ids))}
+        summ = {r[0] for r in con.execute("select distinct %s from transactions where transaction_to_entity_type='racecourse' and transaction_to_entity_id in (%s) and transaction_type='Yearly Summary'" % (yr, ids))}
+        years = [{"year": y, "itemised": True, "income": 1} for y in have - summ if y]
     for e in years:
         if e.get("itemised") and not e.get("summary") and (e.get("income") or e.get("expenses")):
             periods[str(e["year"])] = None
@@ -5771,8 +5779,8 @@ def course_breakdown(con, cid, gd, years):
         return int(m.group(1)) if m else 0
     for side, io in (("to", "inc"), ("from", "exp")):
         for t, typ, note, n, total in con.execute("""select min(transaction_date), transaction_type, transaction_note, count(*), sum(transaction_amount) from transactions
-                where transaction_%s_entity_type='racecourse' and transaction_%s_entity_id=? and transaction_type not in ('Yearly Summary', 'Prize')
-                group by strftime('%%Y-%%m', transaction_date, 'unixepoch'), 2, 3""" % (side, side), (cid,)):
+                where transaction_%s_entity_type='racecourse' and transaction_%s_entity_id in (%s) and transaction_type not in ('Yearly Summary', 'Prize')
+                group by strftime('%%Y-%%m', transaction_date, 'unixepoch'), 2, 3""" % (side, side, ids)):
             for p in targets(t):
                 if typ == "Venue Surplus":
                     p["surplus"] += total or 0
@@ -5799,15 +5807,15 @@ def course_breakdown(con, cid, gd, years):
                     line(p, io, (COURSE_INCOME_LABEL if io == "inc" else COURSE_EXPENSE_LABEL).get(typ, typ or "Other"), total, n)
     # prize money by class of race: the payment names the race, matched to this course's races that day
     grade_of = {}
-    for day, name, typ in con.execute("""select cast(d.raceday_date / 86400 as int), x.races_race_name, x.races_type_of_race from races x
-            join race_days d on d.raceday_race_day_id=x.races_race_day_id where d.raceday_racecourse_id=?""", (cid,)):
-        grade_of[(day, name)] = typ
+    for c, day, name, typ in con.execute("""select d.raceday_racecourse_id, cast(d.raceday_date / 86400 as int), x.races_race_name, x.races_type_of_race from races x
+            join race_days d on d.raceday_race_day_id=x.races_race_day_id where d.raceday_racecourse_id in (%s)""" % ids):
+        grade_of[(c, day, name)] = typ
     CLASS = {"G1": "Group 1", "G2": "Group 2", "G3": "Group 3", "listed": "Listed", "stakes": "Stakes"}
-    for t, race, n, total in con.execute("""select min(transaction_date), substr(transaction_note, instr(transaction_note, ', for result in ') + 16), count(*), sum(transaction_amount)
-            from transactions where transaction_from_entity_type='racecourse' and transaction_from_entity_id=? and transaction_type='Prize'
-            group by cast(transaction_date / 86400 as int), 2""", (cid,)):
+    for c, t, race, n, total in con.execute("""select transaction_from_entity_id, min(transaction_date), substr(transaction_note, instr(transaction_note, ', for result in ') + 16),
+            count(*), sum(transaction_amount) from transactions where transaction_from_entity_type='racecourse' and transaction_from_entity_id in (%s) and transaction_type='Prize'
+            group by 1, cast(transaction_date / 86400 as int), 3""" % ids):
         day = int(t // 86400)
-        typ = grade_of.get((day, race)) or grade_of.get((day - 1, race))
+        typ = grade_of.get((c, day, race)) or grade_of.get((c, day - 1, race))
         cls = CLASS.get(typ, "Other races" if typ else "Race not found")
         for p in targets(t):
             line(p, "exp", "Prize money", total, n, sub=cls, races=1)
@@ -5817,7 +5825,7 @@ def course_breakdown(con, cid, gd, years):
             lo, hi = lo12, gd
         else:
             lo, hi = calendar.timegm((int(k), 1, 1, 0, 0, 0)), min(gd, calendar.timegm((int(k) + 1, 1, 1, 0, 0, 0)) - 1)
-        meetings = one(con, "select count(*) as n from race_days where raceday_racecourse_id=? and raceday_date >= ? and raceday_date <= ?", (cid, lo, hi))["n"]
+        meetings = one(con, "select count(*) as n from race_days where raceday_racecourse_id in (%s) and raceday_date >= ? and raceday_date <= ?" % ids, (lo, hi))["n"]
 
         def lines(d):
             res = []
@@ -5947,7 +5955,7 @@ def api_course_finances(con, cid):
         vms_prestige_percentile as prestige from venue_monthly_snapshots where vms_venue_type='racecourse' and vms_venue_id=? order by vms_date""", (cid,)) \
         if has_table(con, "venue_monthly_snapshots") else []
     out["sponsors"] = course_sponsors(con, cid)
-    out["breakdown"] = course_breakdown(con, cid, gd, ys)
+    out["breakdown"] = course_breakdown(con, [cid], gd, ys)
     return out
 
 
