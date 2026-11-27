@@ -98,7 +98,7 @@
   <h3>On Linux and Steam Deck (desktop mode)</h3>
   <ol>
     <li>Download <b>HRM-Viewer-&lt;version&gt;-linux.tar.gz</b> and unpack it in your home folder.</li>
-    <li>Open <b>HRM Viewer</b> in that folder. The first time, it offers to add itself to your applications menu (also in <span class="ui">Settings → HRM Viewer app → Desktop app</span>).</li>
+    <li>Open <b>HRM Viewer</b> in that folder. The first time, it offers to add itself to your applications menu (also in <span class="ui">Settings → Versions &amp; changes → Desktop app</span>).</li>
     <li>It opens in its own window when <b>WebKitGTK</b> 4.1 or 4.0 is installed (most desktops have one). If the window can't start, it tries again with safe graphics settings and remembers what worked. Without WebKitGTK it opens in your browser, and <span class="ui">Settings</span> says why; stop it there with <span class="ui">Stop the viewer</span>.</li>
   </ol>
 </section>
@@ -132,12 +132,12 @@
     <li>If a file is older than what's stored, or from a different career, the viewer asks first.</li>
   </ul>
   <h3>Following the game as you play</h3>
-  <p><span class="ui">Settings → Your save file → Load new saves automatically</span> is on to begin with: leave the viewer open, and every time you save in the game it loads the new file by itself (switch it off there if you'd rather load saves yourself). <span class="ui">● Auto</span> at the top shows it's on. You can change which file it follows there too (<span class="ui">Save file to follow</span>).</p>
+  <p><span class="ui">Settings → Databases → Load new saves automatically</span> is on to begin with: leave the viewer open, and every time you save in the game it loads the new file by itself (switch it off there if you'd rather load saves yourself). <span class="ui">● Auto</span> at the top shows it's on. You can change which file it follows there too (<span class="ui">Save file to follow</span>).</p>
   <h3>Several databases</h3>
   <p><span class="ui">Settings → Databases</span> lets you keep different saves apart, switch between them, rename or delete them, and bring in data from another HRM Viewer folder. Click the database name at the top right to get there quickly.</p>
   <p>Each database follows one player. If a save's player is different from the database's (for example your heir has taken over), or the file is from a different save, the viewer asks before loading it, even during automatic updates: <span class="ui">Same world</span> keeps using this database, or make a new database for the new player. The Databases list shows each database's player and any players it followed before.</p>
   <h3>Compact stored data</h3>
-  <p>The stored copy keeps everything the game has ever had, so it grows. <span class="ui">Settings → Stored data → Compact stored data</span> (off to begin with) makes it smaller without losing anything you can see in the viewer: each time a save is loaded it drops the game's rating history and race replays, its <i>Yearly Summary</i> story entries and their hidden data, and other people's horses' raw race positions once their sectional times are worked out (the sectionals are kept). It also rebuilds the biggest tables without a duplicate copy of their ID index. <span class="ui">Also thin other horses' charts</span> keeps one stat and value point per quarter for other people's horses; your stables' horses, horses you've ridden, bred or traded, their parents and your family are never thinned. <span class="ui">Compact now</span> does it straight away. What it drops can't come back, and loading takes a little longer while it's on.</p>
+  <p>The stored copy keeps everything the game has ever had, so it grows. <span class="ui">Settings → Databases → Stored data → Compact stored data</span> (off to begin with) makes it smaller without losing anything you can see in the viewer: each time a save is loaded it drops the game's rating history and race replays, its <i>Yearly Summary</i> story entries and their hidden data, and other people's horses' raw race positions once their sectional times are worked out (the sectionals are kept). It also rebuilds the biggest tables without a duplicate copy of their ID index. <span class="ui">Compact now</span> does it straight away. What it drops can't come back, and loading takes a little longer while it's on.</p>
   <p>On Windows, <span class="ui">Compress on disk</span> (off to begin with) keeps the stored data compressed on your drive, the same as ticking <i>Compress contents to save disk space</i> on the folder: it takes roughly half the space, nothing in it is removed, and pages read it as normal. Each load compresses the new copy before it's used, which adds about 10 seconds per GB; you can keep using the viewer meanwhile. It works on NTFS drives (most Windows drives); <span class="ui">Size</span> shows the space the stored data takes on disk.</p>
   <p>Under <span class="ui">Status</span> in the same place you can see when the last update ran and how long it took, with the time for each step, followed by the size of the save file it loaded and of the stored data it made.</p>
 </section>
@@ -243,25 +243,21 @@
 
 <section id="settings">
   <h2><span class="n">9</span>Settings</h2>
-  <p><span class="ui">Settings → General</span> is one page of sections, with a menu beside them to jump to each one. Changes are saved as soon as you make them. Each section says where it's kept: <span class="ui">This browser</span> (only this browser on this computer) or <span class="ui">Whole viewer</span>. Longer explanations are behind <span class="ui">More about this</span>.</p>
+  <p>Settings are spread over three tabs, and changes are saved as soon as you make them. Each section says where it's kept: <span class="ui">This browser</span> (only this browser on this computer) or <span class="ui">Whole viewer</span>. Longer explanations are behind <span class="ui">More about this</span>.</p>
   <table>
-    <tr><th style="width:24%">Section</th><th>What's in it</th></tr>
-    <tr><td>Your stable</td><td>Which of your stables “Your stables” and “Your horses” open.</td></tr>
-    <tr><td>Look</td><td>Light, dark or match Windows; text size; font (93 free fonts that work offline, plus your computer's own) and font colour; and <span class="ui">Change colours</span> for your own colours or a preset (Racing green, Royal purple, Crimson…). Light and dark mode each keep their own colours.</td></tr>
-    <tr><td>Pages &amp; tables</td><td>The side menu (full, icons only or hidden), rows per page, the time range charts open on, hover cards, and pedigree gender colours.</td></tr>
-    <tr><td>Racing season</td><td>The day your season starts, and whether race series keep their own season. See <a href="#racing">Racing</a>.</td></tr>
-    <tr><td>Your save file</td><td>The open database, loading a newer save yourself, and <span class="ui">Follow the game as you play</span> (loading new saves automatically). See <a href="#load">Loading your saves</a>.</td></tr>
-    <tr><td>Stored data</td><td>Compact stored data, thinning other horses' charts, and Compress on disk. See <a href="#load">Loading your saves</a>.</td></tr>
-    <tr><td>HRM Viewer app</td><td>Your version, <span class="ui">New versions</span> of the viewer from GitHub (separate from loading your save), installing an update from a file, the desktop app, this Quick Guide, and <span class="ui">Reset settings</span>.</td></tr>
+    <tr><th style="width:24%">Where</th><th>What's there</th></tr>
+    <tr><td>General</td><td><b>Your stable</b> (which of your stables “Your stables” and “Your horses” open) · <b>Look</b> (light, dark or match Windows; text size; font, from 93 free fonts that work offline plus your computer's own; font colour; and <span class="ui">Change colours</span> for your own colours or a preset, kept separately for light and dark mode) · <b>Pages &amp; tables</b> (side menu, rows per page, the range charts open on, hover cards, pedigree gender colours) · <b>Racing season</b> (see <a href="#racing">Racing</a>) · <b>Reset</b>. A menu beside the sections jumps to each one.</td></tr>
+    <tr><td>Databases</td><td>A <b>Settings</b> block at the top: <b>Your save file</b> (the open database, loading a newer save yourself, and <span class="ui">Follow the game as you play</span>) and <b>Stored data</b> (Compact stored data and Compress on disk). Your databases are listed below it. See <a href="#load">Loading your saves</a>.</td></tr>
+    <tr><td>Versions &amp; changes</td><td>A <b>Settings</b> block at the top: <b>New versions</b> of the viewer from GitHub (separate from loading your save), installing an update from a file, the desktop app and this Quick Guide. Earlier versions and every change are listed below it.</td></tr>
   </table>
-  <p>The other tabs are <span class="ui">Databases</span>, <span class="ui">All tables</span>, <span class="ui">Shortcuts</span> (see <a href="#around">Getting around</a>), <span class="ui">Tags</span> and <span class="ui">Versions &amp; changes</span>.</p>
+  <p>The other tabs are <span class="ui">All tables</span>, <span class="ui">Shortcuts</span> (see <a href="#around">Getting around</a>) and <span class="ui">Tags</span>.</p>
 </section>
 
 <section id="update">
   <h2><span class="n">10</span>Updating the viewer</h2>
   <h3>From GitHub (easiest)</h3>
   <p>New versions are published on GitHub. When one is out, the viewer asks when it opens and shows what's new: click <span class="ui">Install now</span> and it downloads, installs and restarts by itself. <span class="ui">Remind me later</span> asks again next time (a bar at the top stays until then); <span class="ui">Skip this version</span> stops asking about that one.</p>
-  <p><span class="ui">Settings → HRM Viewer app → New versions</span> shows whether you're up to date and has <span class="ui">Check now</span>. <span class="ui">All versions</span> lists every published version with its changes: <span class="ui">Go back to this</span> installs an earlier one if you don't like a new version, and you can update again from the same list whenever you like.</p>
+  <p><span class="ui">Settings → Versions &amp; changes → New versions</span> shows whether you're up to date and has <span class="ui">Check now</span>. <span class="ui">All versions</span> lists every published version with its changes: <span class="ui">Go back to this</span> installs an earlier one if you don't like a new version, and you can update again from the same list whenever you like.</p>
   <p>Untick <span class="ui">Check for updates automatically</span> there if you'd rather the viewer never looks for new versions by itself; <span class="ui">Check now</span> still works whenever you press it.</p>
   <p>Anyone can download the full viewer from <b>github.com/HRMViewer/hrm-viewer/releases</b>.</p>
   <h3>From a file</h3>

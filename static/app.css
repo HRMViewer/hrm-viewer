@@ -1542,3 +1542,11 @@ table.tr-grid td.tr-best { font-weight: 700; box-shadow: inset 0 -3px 0 #d4a017;
 .legend .tr-key { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 6px; vertical-align: -2px; border: 1px solid var(--line); }
 .legend .tr-key.top { background: var(--win); }
 .legend .tr-key.best { background: transparent; box-shadow: inset 0 -3px 0 #d4a017; }
+
+/* ---- 16.7.11: settings blocks at the top of the Databases and Versions & changes tabs ---- */
+.set-block { border: 1px solid #c9d8f3; background: #f3f7fe; border-radius: 10px; padding: 14px 14px 16px; margin: 0 0 20px; max-width: 1104px; }
+.set-block-h { display: flex; gap: 12px; align-items: flex-start; margin: 2px 4px 12px; }
+.set-block-ic { flex: none; width: 34px; height: 34px; border-radius: 8px; background: var(--blue); color: #fff; display: grid; place-items: center; }
+.set-block-ic svg { width: 20px; height: 20px; }
+.set-block-k { font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--blue); }
+.set-block-h h2 { margin: 0; font-size: var(--fs-lg, 17px); }

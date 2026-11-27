@@ -6517,6 +6517,7 @@ async function versionsPage() {
   let html = settingsTabs("versions") + `<div class="page-head"><div><h1>Versions</h1><div class="sub">You have HRM Viewer version <b>${esc(a.version || "?")}</b>
     ${lu && lu.ok ? ` · last change ${new Date(lu.at * 1000).toLocaleString("en-NZ", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}` : ""}</div></div>
     <button class="btn primary" data-open-update>Install an update</button></div>`;
+  html += settingsBlock("App", "New versions of HRM Viewer and how they're installed. Earlier versions and every change are listed below.", appSettings());
   html += panel("Go back to an earlier version", backups.length ? table([
     { h: "Version", f: (b) => `<b>${esc(b.version)}</b>` },
     { h: "Saved", cls: "nowrap", f: (b) => new Date(b.made * 1000).toLocaleString("en-NZ", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) },
@@ -6533,6 +6534,7 @@ async function versionsPage() {
   return html;
 }
 versionsPage.after = () => {
+  wireAppSettings();
   $$("[data-back]", APP).forEach((b) => b.addEventListener("click", () => openUpdate(true, b.dataset.back)));
 };
 function version_tuple(v) { return String(v || "0").split(".").map((x) => parseInt(x, 10) || 0); }
@@ -6569,7 +6571,7 @@ async function autoPoll(soon) {
   const fast = a && (a.state === "updating" || a.state === "waiting" || a.running);
   AUTO_TIMER = setTimeout(autoPoll, soon || fast ? 2500 : 10000);
 }
-document.addEventListener("click", (e) => { if (e.target.closest("#auto-ind")) location.hash = "#/settings?s=save"; });
+document.addEventListener("click", (e) => { if (e.target.closest("#auto-ind")) location.hash = "#/databases"; });
 
 // ------------------------------------------------------------------ export any table to CSV
 function tableToCsv(tbl) {
@@ -6976,15 +6978,69 @@ function settingsTabs(on) {
 }
 // Settings → General, laid out again in 16.7.11: one column of sections with a menu beside it to jump between them,
 // short descriptions (the longer explanations are behind "More about this"), and each section says where it's kept
-const SET_SECTIONS = [["stable", "Your stable"], ["look", "Look"], ["pages", "Pages & tables"], ["season", "Racing season"],
-  ["save", "Your save file"], ["storage", "Stored data"], ["app", "HRM Viewer app"]];
+const SET_SECTIONS = [["stable", "Your stable"], ["look", "Look"], ["pages", "Pages & tables"], ["season", "Racing season"], ["reset", "Reset"]];
 const setRow = (title, help, control, more) => `<div class="set-row"><div class="set-txt"><div class="set-t">${title}</div><div class="set-h">${help}</div>${more
   ? `<details class="set-more"><summary>More about this</summary><div class="set-h">${more}</div></details>` : ""}</div><div class="set-c">${control}</div></div>`;
 const setSection = (k, title, about, where, body) => `<section class="panel set-sec" id="set-${k}"><div class="set-sec-head"><div><h2>${title}</h2><div class="set-about">${about}</div></div>
   <span class="set-where" data-tip="${where === "browser" ? "Kept in this browser on this computer" : "Kept by the viewer, whichever browser or window you use"}">${where === "browser" ? "This browser" : "Whole viewer"}</span></div>${body}</section>`;
+// 16.7.11: the save-file, stored-data and app settings live at the top of the Databases and Versions & changes tabs,
+// in a block headed "Settings" so it's clear they're settings and not part of the list below
+const settingsBlock = (title, about, sections) => `<div class="set-block"><div class="set-block-h"><span class="set-block-ic">${icon("cog")}</span>
+  <div><div class="set-block-k">Settings</div><h2>${title}</h2><div class="set-about">${about}</div></div></div><div class="set-main">${sections}</div></div>`;
+function saveFileSettings() {
+  return setSection("save", "Your save file", "The game save you're looking at, and keeping it up to date as you play.", "viewer", [
+    setRow("Open database", `<b>${esc((STATUS && STATUS.db && STATUS.db.name) || "—")}</b>${STATUS && STATUS.meta && STATUS.meta.game_date ? ` · game date ${fDate(STATUS.meta.game_date)}` : ""}`,
+      `<a class="btn" href="#databases-list" data-set-scroll="db-list">See all databases</a>`),
+    setRow("Load a newer save", "Bring in a newer database.db yourself, or load one as a new database.", `<button class="btn" onclick="openLoad()">Load database</button>`),
+    `<h3 class="set-sub">Follow the game as you play</h3><div id="auto-box"><div class="muted">Loading…</div></div>`,
+  ].join("")) + setSection("storage", "Stored data", "Ways to make the viewer's copy of your save take less space. They all start off.", "viewer", `<div id="compact-box">${compactBox()}</div>`);
+}
+function wireSaveFileSettings() {
+  drawAutoBox();
+  wireCompact();
+  $$("[data-set-scroll]", APP).forEach((a) => a.addEventListener("click", (e) => { e.preventDefault(); const el = $("#" + a.dataset.setScroll); if (el) window.scrollTo({ top: el.getBoundingClientRect().top + window.scrollY - 110, behavior: "smooth" }); }));
+}
+function appSettings() {
+  const a = (STATUS && STATUS.app) || {};
+  return setSection("app", "HRM Viewer app", "New versions, installing an update, the desktop app and the Quick Guide.", "viewer", [
+    setRow("New versions", `You have HRM Viewer <b>${esc(a.version || "")}</b>. New versions come from GitHub: the viewer checks for them, offers to install them, and can go back to an earlier one. (This is separate from loading your save.)`, `<div id="gh-box" class="gh-box"><span class="muted small">Checking…</span></div>`),
+    setRow("Install from a file", "Install an HRM-Viewer-update zip you've downloaded. Your data isn't touched.", `<button class="btn" data-open-update>Install an update</button>`),
+    STATUS && STATUS.desktop && STATUS.platform === "mac"
+      ? setRow("Desktop app", "You're using the HRM Viewer app. Keep it in Applications and drag it to the Dock to open it like any other app.", "", "Your data is kept in Library/Application Support/HRM Viewer, so it stays when you replace the app with a newer one.")
+      : STATUS && STATUS.desktop && STATUS.platform === "linux"
+      ? setRow("Desktop app", "You're using the HRM Viewer app. Add it to your applications menu to open it like any other program.", `<button class="btn" id="set-shortcut">Add to menu</button>`)
+      : STATUS && STATUS.desktop
+      ? setRow("Desktop app", "You're using the HRM Viewer app. Add it to your desktop and Start menu to open it like any other program.", `<button class="btn" id="set-shortcut">Add shortcuts</button>`)
+      : STATUS && STATUS.has_exe
+        ? setRow("Desktop app", "HRM Viewer can open in its own window instead of the browser: close this, then double-click <b>HRM Viewer.exe</b> in the viewer's folder.", "")
+        : "",
+    STATUS && STATUS.desktop && STATUS.platform === "linux" && !STATUS.windowed
+      ? setRow("Stop the viewer", `HRM Viewer is running in your browser because it couldn't open its own window${STATUS.window_problem ? `: <b>${esc(STATUS.window_problem)}</b>` : ""}. Closing the browser tab leaves it running; stop it here when you're done.`, `<button class="btn" id="set-stop">Stop the viewer</button>`,
+        "To get its own window it needs WebKitGTK (the package is usually called <code>libwebkit2gtk-4.1</code> or <code>webkit2gtk-4.1</code>; version 4.0 works too).")
+      : "",
+    setRow("Quick Guide", "How to use the main features, as a PDF. It's updated with every version.",
+      `<span style="display:inline-flex;gap:8px"><button class="btn" data-guide>Open the guide</button><a class="btn" href="/quick-guide.pdf" download="HRM Viewer - Quick Guide.pdf">Download PDF</a></span>`),
+  ].join(""));
+}
+function wireAppSettings() {
+  drawGithubBox();
+  const stopBtn = $("#set-stop");
+  if (stopBtn) stopBtn.onclick = async () => {
+    await fetch("/api/quit", { method: "POST" }).catch(() => {});
+    APP.innerHTML = `<div class="welcome"><h1>HRM Viewer has stopped</h1><p>You can close this tab. Open HRM Viewer again to carry on.</p></div>`;
+  };
+  const sc = $("#set-shortcut");
+  if (sc) sc.onclick = async () => {
+    const label = sc.textContent;
+    sc.disabled = true; sc.textContent = "Adding…";
+    const r = await fetch("/api/desktop/shortcut", { method: "POST" });
+    const j = await r.json().catch(() => ({}));
+    sc.textContent = r.ok ? "✓ Added" : label; sc.disabled = r.ok;
+    if (!r.ok) sc.insertAdjacentHTML("afterend", `<div class="err" style="margin-top:6px">${esc(j.error || "Couldn't add the shortcuts.")}</div>`);
+  };
+}
 function settingsPage() {
   const ms = (STATUS && STATUS.my_stables) || [], cur = myStableId();
-  const a = (STATUS && STATUS.app) || {};
   const sw = (id, on) => `<label class="switch"><input type="checkbox" id="${id}" ${on ? "checked" : ""}><span></span></label>`;
   const row = setRow;
   const cr = chartDefaultRange();
@@ -7024,36 +7080,11 @@ function settingsPage() {
     row("Race series keep their own season", "On: each series in Concepts runs from its first race to its last. Off: series follow your season.",
       sw("set-season-series", seriesOwnSeason()), "Handy when a series doesn't fit your season, like a Northern Hemisphere series that runs April to October."),
   ].join("")));
-  secs.push(setSection("save", "Your save file", "The game save you're looking at, and keeping it up to date as you play.", "viewer", [
-    row("Open database", `<b>${esc((STATUS && STATUS.db && STATUS.db.name) || "—")}</b>${STATUS && STATUS.meta && STATUS.meta.game_date ? ` · game date ${fDate(STATUS.meta.game_date)}` : ""}`,
-      `<a class="btn" href="#/databases">Manage databases</a>`),
-    row("Load a newer save", "Bring in a newer database.db yourself, or load one as a new database.", `<button class="btn" onclick="openLoad()">Load database</button>`),
-    `<h3 class="set-sub">Follow the game as you play</h3><div id="auto-box"><div class="muted">Loading…</div></div>`,
-  ].join("")));
-  secs.push(setSection("storage", "Stored data", "Ways to make the viewer's copy of your save take less space. They all start off.", "viewer", `<div id="compact-box">${compactBox()}</div>`));
-  secs.push(setSection("app", "HRM Viewer app", "Your version, new versions, the Quick Guide, and resetting settings.", "viewer", [
-    row("Version", `HRM Viewer <b>${esc(a.version || "")}</b>`, `<a class="btn" href="#/versions">Versions &amp; changes</a>`),
-    row("New versions", "New versions of HRM Viewer come from GitHub. The viewer checks for them, offers to install them, and can go back to an earlier one. (This is separate from loading your save.)", `<div id="gh-box" class="gh-box"><span class="muted small">Checking…</span></div>`),
-    row("Install from a file", "Install an HRM-Viewer-update zip you've downloaded. Your data isn't touched.", `<button class="btn" data-open-update>Install an update</button>`),
-    STATUS && STATUS.desktop && STATUS.platform === "mac"
-      ? row("Desktop app", "You're using the HRM Viewer app. Keep it in Applications and drag it to the Dock to open it like any other app.", "", "Your data is kept in Library/Application Support/HRM Viewer, so it stays when you replace the app with a newer one.")
-      : STATUS && STATUS.desktop && STATUS.platform === "linux"
-      ? row("Desktop app", "You're using the HRM Viewer app. Add it to your applications menu to open it like any other program.", `<button class="btn" id="set-shortcut">Add to menu</button>`)
-      : STATUS && STATUS.desktop
-      ? row("Desktop app", "You're using the HRM Viewer app. Add it to your desktop and Start menu to open it like any other program.", `<button class="btn" id="set-shortcut">Add shortcuts</button>`)
-      : STATUS && STATUS.has_exe
-        ? row("Desktop app", "HRM Viewer can open in its own window instead of the browser: close this, then double-click <b>HRM Viewer.exe</b> in the viewer's folder.", "")
-        : "",
-    STATUS && STATUS.desktop && STATUS.platform === "linux" && !STATUS.windowed
-      ? row("Stop the viewer", `HRM Viewer is running in your browser because it couldn't open its own window${STATUS.window_problem ? `: <b>${esc(STATUS.window_problem)}</b>` : ""}. Closing the browser tab leaves it running; stop it here when you're done.`, `<button class="btn" id="set-stop">Stop the viewer</button>`,
-        "To get its own window it needs WebKitGTK (the package is usually called <code>libwebkit2gtk-4.1</code> or <code>webkit2gtk-4.1</code>; version 4.0 works too).")
-      : "",
-    row("Quick Guide", "How to use the main features, as a PDF. It's updated with every version.",
-      `<span style="display:inline-flex;gap:8px"><button class="btn" data-guide>Open the guide</button><a class="btn" href="/quick-guide.pdf" download="HRM Viewer - Quick Guide.pdf">Download PDF</a></span>`),
-    row("Reset settings", "Puts the settings kept in this browser (look, pages &amp; tables, racing season, main stable) back to how they started.", `<button class="btn" id="set-reset">Reset settings</button>`,
-      "Your data, favourites and shortcuts aren't touched, and nor are the save file, stored data and new-version settings."),
-  ].join("")));
-  return settingsTabs("settings") + `<div class="page-head"><div><h1>Settings</h1><div class="sub">Changes are saved as soon as you make them.</div></div></div>
+  secs.push(setSection("reset", "Reset", "Put the settings on this page back to how they started.", "browser",
+    row("Reset settings", "Puts your main stable, look, pages &amp; tables and racing season settings back to how they started.", `<button class="btn" id="set-reset">Reset settings</button>`,
+      "Your data, favourites and shortcuts aren't touched, and nor are the save file, stored data and app settings (on the Databases and Versions &amp; changes tabs).")));
+  return settingsTabs("settings") + `<div class="page-head"><div><h1>Settings</h1><div class="sub">Changes are saved as soon as you make them. Save file and stored data settings are on the
+    <a href="#/databases">Databases</a> tab; app updates are on <a href="#/versions">Versions &amp; changes</a>.</div></div></div>
     <div class="set-layout">${nav}<div class="set-main">${secs.join("")}</div></div>`;
 }
 // ------------------------------------------------------------------ Settings → Stored data: compacting (16.7)
@@ -7066,9 +7097,10 @@ function compactBox() {
     row("Compact stored data", `Drops the parts of each save the viewer never shows, so the stored copy is smaller. Loading takes a little longer. <b>What's dropped can't be brought back.</b>`,
       sw("set-compact", c.on),
       `Each time a save is loaded it drops the game's rating history and race replays, its <i>Yearly Summary</i> story entries and their hidden data, and other people's horses' raw race positions once their sectional times are worked out (the sectionals are kept). It also rebuilds the biggest tables without a duplicate copy of their ID index. Older records the game has since deleted only exist in your stored copy, which is why what's dropped can't come back.`),
-    row("Also thin other horses' charts", `Other people's horses keep one chart point per quarter instead of every one. Needs Compact stored data on.`,
+    // hidden from Settings in 16.7.11 (it still works): shown only while it's on, so it can be switched off
+    c.thin ? row("Also thin other horses' charts", `Other people's horses keep one chart point per quarter instead of every one. Needs Compact stored data on.`,
       sw("set-compact-thin", c.thin, !c.on),
-      `Applies to stat and value history. Your stables' horses, horses you've ridden, bred or traded, their parents and your family are never thinned.`),
+      `Applies to stat and value history. Your stables' horses, horses you've ridden, bred or traded, their parents and your family are never thinned.`) : "",
     c.disk_available ? row("Compress on disk", `Windows keeps the stored copy compressed on your drive, so it takes about half the space. Nothing is removed.${STATUS && STATUS.compressing ? " <b>Compressing now…</b>" : ""}`,
       sw("set-compact-disk", c.disk),
       `The same as ticking <i>Compress contents to save disk space</i> on the folder; it works on NTFS drives (most Windows drives). Each load compresses the new copy before it's used, so loading takes a little longer (about 10 seconds per GB) and you can keep using the viewer meanwhile. Switching it on compresses what's stored now, and pages are slow for those few seconds.`) : "",
@@ -7087,7 +7119,7 @@ function wireCompact() {
     box.innerHTML = compactBox(); wireCompact();
   };
   $("#set-compact").onchange = (e) => set({ on: e.target.checked });
-  $("#set-compact-thin").onchange = (e) => set({ thin: e.target.checked });
+  if ($("#set-compact-thin")) $("#set-compact-thin").onchange = (e) => set({ thin: e.target.checked });
   if ($("#set-compact-disk")) $("#set-compact-disk").onchange = (e) => {
     set({ disk: e.target.checked });
     // Windows works on the file in the background: show the new size on disk once it has had a moment
@@ -7165,13 +7197,10 @@ settingsPage.after = (route) => {
   };
   window.addEventListener("scroll", mark, { passive: true }); mark();
   if (route && route.q && route.q.s) setTimeout(() => jump(route.q.s), 60);
-  drawGithubBox();
   drawColours();
   setTableSize(getTableSize());
   drawFontDropdowns();
   $$("[data-theme]", APP).forEach((b) => (b.onclick = () => { setTheme(b.dataset.theme); $$("[data-theme]", APP).forEach((x) => x.classList.toggle("on", x === b)); drawFontDropdowns(); }));
-  drawAutoBox();
-  wireCompact();
   const save = (k, v) => { try { localStorage.setItem(k, v); } catch (e) { /* this session only */ } };
   $("#set-cards").onchange = (e) => { HOVER_CARDS = e.target.checked; save("hrm.hoverCards", HOVER_CARDS ? "1" : "0"); hideCard(); };
   $("#set-pedcol").onchange = (e) => { ANC_COLOURS = e.target.checked; save("hrm.ancColours", ANC_COLOURS ? "1" : "0"); };
@@ -7185,20 +7214,6 @@ settingsPage.after = (route) => {
   $("#set-side").onchange = (e) => setSideMenu(e.target.value);
   const st = $("#set-stable");
   if (st) st.onchange = () => { setMyStable(st.value); renderSidebar(); };
-  const stopBtn = $("#set-stop");
-  if (stopBtn) stopBtn.onclick = async () => {
-    await fetch("/api/quit", { method: "POST" }).catch(() => {});
-    APP.innerHTML = `<div class="welcome"><h1>HRM Viewer has stopped</h1><p>You can close this tab. Open HRM Viewer again to carry on.</p></div>`;
-  };
-  const sc = $("#set-shortcut");
-  if (sc) sc.onclick = async () => {
-    const label = sc.textContent;
-    sc.disabled = true; sc.textContent = "Adding…";
-    const r = await fetch("/api/desktop/shortcut", { method: "POST" });
-    const j = await r.json().catch(() => ({}));
-    sc.textContent = r.ok ? "✓ Added" : label; sc.disabled = r.ok;
-    if (!r.ok) sc.insertAdjacentHTML("afterend", `<div class="err" style="margin-top:6px">${esc(j.error || "Couldn't add the shortcuts.")}</div>`);
-  };
   $("#set-reset").onclick = () => {
     try { Object.keys(localStorage).filter((k) => k.startsWith("hrm.") && !k.startsWith("hrm.favs:") && k !== "hrm.keys").forEach((k) => localStorage.removeItem(k)); } catch (e) { /* nothing stored */ }
     HOVER_CARDS = true; ANC_COLOURS = true; setTableSize(TS_DEFAULT); setSideMenu("full"); setTheme("light"); setFont("Segoe UI", "system"); setInk(""); renderSidebar(); render();
@@ -7212,6 +7227,7 @@ async function databasesPage() {
   const mb = (b) => (b ? (b >= 1 << 30 ? (b / (1 << 30)).toFixed(2) + " GB" : Math.round(b / (1 << 20)) + " MB") : "—");
   let html = settingsTabs("databases") + `<div class="page-head"><div><h1>Databases</h1><div class="sub">Keep several saves side by side and switch between them. Each one is stored and updated separately.</div></div>
     <button class="btn primary" onclick="openLoad()">Load a database</button></div>`;
+  html += settingsBlock("Save file & stored data", "How the open database follows the game, and how its stored copy is kept. Your databases are listed below.", saveFileSettings());
   if (leg) {
     const suggest = leg.player ? `${leg.player}` : "My save";
     html += panel("Move your stored data into the new structure", `<p>Your data from earlier versions is still stored the old way (<code>data\\current.db</code>).
@@ -7228,7 +7244,7 @@ async function databasesPage() {
       <td class="nowrap db-acts">${x.active ? "" : `<button class="btn sm primary" data-dbopen="${x.id}">Open</button>`}
         ${x.legacy ? "" : `<button class="btn sm" data-dbrename="${x.id}">Rename</button>`}
         ${x.active ? "" : `<button class="btn sm danger" data-dbdel="${x.id}">Delete</button>`}</td></tr>`).join("");
-  html += panel("Your databases", `<div class="tbl-wrap"><table class="data"><thead><tr><th>Name</th><th>Player</th><th>Game date</th><th class="num">Size</th>
+  html += `<div id="db-list"></div>` + panel("Your databases", `<div class="tbl-wrap"><table class="data"><thead><tr><th>Name</th><th>Player</th><th>Game date</th><th class="num">Size</th>
       <th>Last loaded</th><th class="num">Loads</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
       <div id="db-msg" class="small" style="margin-top:8px"></div>`,
     `Stored in <code>${esc(d.folder)}${d.folder.includes("\\") ? "\\" : "/"}databases</code>`);
@@ -7268,6 +7284,7 @@ async function afterDbChange(goHome) {
   if (goHome) location.hash = "#/"; else render();
 }
 databasesPage.after = () => {
+  wireSaveFileSettings();
   const msg = (t, bad) => { const el = $("#db-msg"); if (el) el.innerHTML = t ? `<span class="${bad ? "bad-t" : ""}">${esc(t)}</span>` : ""; };
   const mig = $("#mig-go");
   if (mig) mig.onclick = async () => {
