@@ -1528,3 +1528,16 @@ html.dark .delta.good { color: #53c556; } html.dark .delta.bad { color: #ff7b72;
   .set-nav a { border-left: 0; border-bottom: 2px solid transparent; border-radius: 6px 6px 0 0; padding: 6px 10px; }
   .set-nav a.on { border-bottom-color: var(--blue); }
 }
+
+/* ---- 16.7.11: horse page: traits under the details at the top, and the stats & form charts at the foot ---- */
+.hp-traits { margin-top: 8px; }
+.hp-traits .chips { gap: 5px; }
+.hp-traits .chip { font-size: var(--fs-sm); padding: 2px 9px; }
+.cmp { display: grid; gap: 12px; padding: 4px 0 2px; }
+.cmp-row { display: grid; grid-template-columns: 110px 1fr 120px; gap: 14px; align-items: center; }
+.cmp-row .track { position: relative; height: 10px; border-radius: 5px; background: var(--viz-grid); }
+.cmp-row .fill { height: 100%; border-radius: 5px; background: var(--viz-1); }
+.cmp-row .mid, .legend .mid-key { position: absolute; left: 50%; top: -3px; bottom: -3px; width: 2px; margin-left: -1px; background: var(--viz-axis); border-radius: 1px; }
+.legend .mid-key { position: relative; display: inline-block; left: auto; top: auto; bottom: auto; width: 2px; height: 12px; margin: 0 6px 0 0; vertical-align: -2px; }
+.cmp-row .v { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.cmp-row .v small { color: var(--muted); margin-left: 8px; }

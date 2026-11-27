@@ -2,14 +2,17 @@
   {
     "version": "16.7.11",
     "date": "2026-11-28",
-    "title": "Faster stable Rankings, a # column on the Stable table, and tidier Settings",
+    "title": "Faster stable Rankings, Stable table ranks, tidier Settings, and new horse charts",
     "changes": [
       "Stable Rankings opens much faster after starting the viewer or loading a save: its year list no longer waits for the full scan of every race result that People overview does, and the Cash earnings table works out its own figures (the same numbers) instead of waiting for that scan.",
       "The Stables pages are now ready sooner after start-up: the viewer prepares them before People overview, which takes the longest.",
       "Stable table: a new # column shows each stable's rank in the column you sort by (G1 wins, starts, prize money…). The best is #1 whichever way you sort and on every page, stables with the same figure share a rank (1, 2, 2, 4), and with filters on it ranks the stables shown. It's also in Export CSV as “rank”. The # and the stable's name stay in view when you scroll sideways.",
       "Settings → General is laid out again: one column of sections (Your stable, Look, Pages & tables, Racing season, Your save file, Stored data, HRM Viewer app) with a menu beside them to jump to each, shorter descriptions with the details under “More about this”, and a label on each section saying whether it's kept in this browser or for the whole viewer.",
       "Settings: “Updates” (new versions of the viewer) is now “New versions” under HRM Viewer app, and “Automatic updates” (loading the game's new saves) is now “Follow the game as you play” under Your save file, so the two aren't mixed up. Colour choices sit behind a Change colours button.",
-      "“change in Settings” links (Jockey season, Concepts) and the ● Auto button at the top now open Settings at the right section."
+      "“change in Settings” links (Jockey season, Concepts) and the ● Auto button at the top now open Settings at the right section.",
+      "Horse page: a horse's traits now sit under its age, colour and breed at the top of every tab, instead of in a box further down.",
+      "Horse page: the Abilities, Mind & health, Distance preference and Running style charts are gone, and the Physical box no longer lists weather preference, longevity, maturity rate or breeding ability.",
+      "Horse page: new Stats & form charts at the foot of the Overview. How its stats compare shows its speed, stamina, acceleration, strength and intelligence against every living horse that has raced, as a “top x%”, with the middle marked. Season by season shows its starts each year split into wins, 2nds, 3rds and unplaced. Prize money by season, and Race ratings shows the game's rating for each run (its best marked; click a dot to open the race). A horse that hasn't raced shows just how its stats compare."
     ]
   },
   {

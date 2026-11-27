@@ -2273,6 +2273,43 @@ def api_horses(con, q):
     return {"total": total, "page": page, "page_size": page_size(), "rows": data}
 
 
+STAT_KEYS = ("speed", "stamina", "acceleration", "strength", "intelligence")
+STAT_DIST = {}
+
+
+def stat_distribution(con):
+    """Every living horse that has raced: its speed, stamina, acceleration, strength and intelligence, each list sorted,
+    so a horse page can say how its stats compare (16.7.11). Worked out once for the loaded save."""
+    dist = STAT_DIST.get(DB_GEN)
+    if dist is None:
+        hc = columns(con, "horses")
+        keys = [k for k in STAT_KEYS if "horse_" + k in hc]
+        dist = {k: [] for k in keys}
+        if keys and has_table(con, "hrmv_horse_stats"):
+            for r in con.execute("""select %s from horses h join hrmv_horse_stats s on s.horse_id=h.horse_horse_id
+                    where s.starts > 0 and h.horse_deceased_date is null
+                    and h.horse_horse_id not in (select pk from hrmv_removed where tbl='horses')""" % ", ".join("h.horse_" + k for k in keys)):
+                for k, v in zip(keys, r):
+                    if v is not None:
+                        dist[k].append(v)
+            for v in dist.values():
+                v.sort()
+        STAT_DIST.clear()
+        STAT_DIST[DB_GEN] = dist
+    return dist
+
+
+def stat_compare(con, h):
+    """{stat: {"value", "below": share of the group with a lower figure, "n"}} for one horse."""
+    out = {}
+    for k, vals in stat_distribution(con).items():
+        v = h.get("horse_" + k)
+        if v is None or not vals:
+            continue
+        out[k] = {"value": v, "below": bisect.bisect_left(vals, v) / len(vals), "n": len(vals)}
+    return out
+
+
 def api_horse(con, hid):
     h = one(con, "select * from horses where horse_horse_id=?", (hid,))
     if not h:
@@ -2345,6 +2382,7 @@ def api_horse(con, hid):
             from illness_injury_history h left join injury_illness i on i.injury_illness_id=h.illness_injury_history_injury_illness_id
             where h.illness_injury_entity_id=? and h.illness_injury_entity_type='horse' order by h.illness_injury_history_start_date desc""", (hid,))
     out["traits"] = entity_traits(con, hid, "horse")
+    out["stat_compare"] = stat_compare(con, h)
     out["events"] = entity_events(con, hid, "horse")
     awards = rows(con, """select award_category as category, award_year as year, award_date as date, award_rank as rank, award_value as value,
         award_description as description, award_race_id as race_id

@@ -2309,7 +2309,7 @@ function horseHead(d, on) {
     <h1>${esc(h.horse_name)} ${dead ? '<span class="badge dead">Deceased</span>' : ""}${removedBadge(d)}<span class="hn-head" id="hn-head">${horseTagsHtml(id, false)}</span></h1>
     <div class="sub">${a !== null ? a + "yo " : ""}${esc(h.horse_color || "")} ${esc((h.horse_gender || "").toLowerCase())} · ${esc(h.horse_breed || "")}
     · Foaled ${fDate(h.horse_birth_date)}${dead ? ` · Died ${fDate(h.horse_deceased_date)} ${esc(h.horse_death_cause || "")}` : ""}
-    ${d.stable ? ` · ${L.stable(d.stable.id, d.stable.name)}` : ""}</div>${removedNote(d)}</div></div>
+    ${d.stable ? ` · ${L.stable(d.stable.id, d.stable.name)}` : ""}</div>${(d.traits || []).length ? `<div class="hp-traits">${chips(d.traits)}</div>` : ""}${removedNote(d)}</div></div>
     <div style="display:flex;gap:8px"><button class="btn" data-gallery="${h.horse_horse_id}" data-gname="${esc(h.horse_name)}">${ICON_PHOTO}${pic ? "Gallery" : "Add photos"}</button></div></div>
     <div class="subtabs"><a href="#/horse/${id}" class="${on === "overview" ? "on" : ""}">Overview</a><a href="#/horse/${id}/awards" class="${on === "awards" ? "on" : ""}">Awards${(d.awards || []).length ? ` <span class="tab-n">${fNum(d.awards.length)}</span>` : ""}</a><a href="#/horse/${id}/fans" class="${on === "fans" ? "on" : ""}">Fans, sponsors &amp; notes</a><a href="#/horse/${id}/training" class="${on === "training" ? "on" : ""}">Training &amp; plans</a><a href="#/compare?kind=horse&a=${id}" class="st-cmp">Compare…</a></div>`;
 }
@@ -2718,34 +2718,9 @@ async function horsePage(id) {
     ["Preferred jockey", pp("horse_prefered_jockey_id")], ["Caretaker", pp("horse_caretaker_id")],
     ["Running instruction", esc(h.horse_running_style_instruction || "—")],
   ]);
-  // abilities: current level and best so far, plus whether the horse has hit its ceiling (the ceiling itself isn't shown)
-  const near = (x, y) => isNum(x) && isNum(y) && x >= y - 0.05;
-  const abilRows = ["speed", "stamina", "acceleration", "strength"].map((k) => {
-    const cur = h["horse_" + k], peak = h["horse_peak_" + k], max = h["horse_max_" + k];
-    let st;
-    if (near(cur, max)) st = ["Peak reached", "ok", "Has reached its full potential for this ability"];
-    else if (near(peak, max)) st = ["Past peak", "warn", `Reached its full potential (best ${fNum(peak, 1)}) and has dropped back since`];
-    else if (isNum(peak) && isNum(cur) && cur < peak - 0.05) st = ["Below its best", "warn", `Best so far ${fNum(peak, 1)} — not yet at full potential`];
-    else st = ["Still improving", "dev", "Has not yet reached its full potential"];
-    return { label: k[0].toUpperCase() + k.slice(1), cur, peak, st };
-  });
-  const reached = abilRows.filter((x) => x.st[1] === "ok" || x.st[0] === "Past peak").length;
-  const abil = `<div class="bars abil">${abilRows.map((x) => `<div class="bar-row"><div class="lbl">${x.label}</div><div class="bar">
-      ${isNum(x.peak) ? `<div class="peak" style="width:${Math.max(0, Math.min(100, x.peak))}%"></div>` : ""}<div class="cur" style="width:${Math.max(0, Math.min(100, x.cur || 0))}%"></div></div>
-      <div class="val"><b>${fNum(x.cur, 1)}</b> <span class="pk ${x.st[1]}" title="${esc(x.st[2])}">${x.st[0]}</span></div></div>`).join("")}</div>
-    <div class="legend"><span><i style="background:var(--blue)"></i>Current</span><span><i style="background:#9fbdf0"></i>Best so far</span>
-    <span><b>${reached} of 4</b> abilities have reached their peak</span></div>`;
-  const mind = bars([["Intelligence", "intelligence"], ["Temperament", "temperament"], ["Sociability", "sociability"], ["Experience", "experience"], ["Health risk", "health_risk"]]
-    .map(([l, k]) => ({ label: l, cur: h["horse_" + k] })));
-  const dk = [["Sprint", "s"], ["Mile", "m"], ["Intermediate", "i"], ["Long", "l"], ["Extended", "e"]];
-  const dmax = Math.max(1, ...dk.map(([, k]) => h["horse_distance_" + k] || 0));
-  const dist = bars(dk.map(([l, k]) => ({ label: l + (String(h.horse_distance_preference || "").toLowerCase() === k ? " ★" : ""), cur: h["horse_distance_" + k] })), dmax);
-  const smax = Math.max(1, ...["front", "press", "mid", "back"].map((k) => h["horse_style_" + k] || 0));
-  const style = bars([["Front", "front"], ["Press", "press"], ["Mid-pack", "mid"], ["Back", "back"]].map(([l, k]) => ({ label: l, cur: h["horse_style_" + k] })), smax);
   const physical = kv([
     ["Breed", esc(h.horse_breed)], ["Colour", esc(h.horse_color)], ["Height", fNum(h.horse_height, 1) + " cm"], ["Weight", fNum(h.horse_weight, 0) + " kg"],
-    ["Weather preference", esc(h.horse_weather_preference || "—")], ["Longevity", fNum(h.horse_longetivity, 2)], ["Maturity rate", fNum(h.horse_maturity_rate, 2)],
-    ["Breeding ability", fNum(h.horse_breeding_ability, 1)], ["Grade", fNum(h.horse_grade)],
+    ["Grade", fNum(h.horse_grade)],
     ["Stud fee", h.horse_stud_fee ? fMoney(h.horse_stud_fee) : "—"], ["Pregnant", h.horse_is_pregnant ? "Yes" : "No"],
   ]);
 
@@ -2819,9 +2794,6 @@ async function horsePage(id) {
     <div class="rp-h">Held in the past <span class="muted small">· ${former.length} record${former.length === 1 ? "" : "s"} since broken</span></div>${trFormer}${srBlock}`,
     `${trs.length} course record${trs.length === 1 ? "" : "s"} set in all${srs.length ? ` · ${srs.length} sectional record${srs.length === 1 ? "" : "s"}` : ""}`)}</div>`;
 
-  html += `<div class="grid cols-2" style="margin-top:16px">${panel("Abilities", abil)}${panel("Mind & health", mind)}
-    ${panel("Distance preference", dist, "★ = preferred")}${panel("Running style", style)}</div>`;
-
   // charts
   const st = d.stats || [];
   const runs = res.filter((r) => isNum(r.rank) && isNum(r.date)).slice().sort((x, y) => x.date - y.date);
@@ -2839,8 +2811,7 @@ async function horsePage(id) {
   html += `<div style="margin-top:16px">${panel("Finishing positions", finChart + (runs.length ? `<div class="legend"><span><i style="background:${GOLD}"></i>Won</span><span><i style="background:${SILVER}"></i>2nd</span><span><i style="background:${BRONZE}"></i>3rd</span><span>1st is at the top · hover for the race, click a dot to open it · click a legend entry to hide a line</span></div>` : ""),
     runs.length ? `${runs.length} starts` : "")}</div>`;
 
-  html += `<div class="grid cols-2" style="margin-top:16px">${panel("Traits", chips(d.traits))}
-    ${panel("Health history", table([
+  html += `<div style="margin-top:16px">${panel("Health history", table([
       { h: "From", cls: "nowrap", f: (r) => fDate(r.start) }, { h: "To", cls: "nowrap", f: (r) => fDate(r.end) },
       { h: "Condition", f: (r) => esc(r.name) }, { h: "Type", f: (r) => esc(r.type) }, { h: "Severity", cls: "num", f: (r) => fNum(r.severity) },
     ], d.health, { empty: "No illnesses or injuries." }))}</div>`;
@@ -2869,8 +2840,52 @@ async function horsePage(id) {
   ], d.offspring, { empty: "No offspring." }), (d.offspring_total > d.offspring.length ? `Top ${d.offspring.length} of ${fNum(d.offspring_total)} by earnings` : `${fNum(d.offspring_total)} foals`) +
     (d.offspring_total ? ` · <a href="#/horse-table?${h.horse_sex === "Female" ? "dam" : "sire"}=${h.horse_horse_id}&status=all">Open in Horse table</a>` : ""), "tall")}</div>`;
   html += horseRankPanels(more || {}, h);
+  html += horseStatCharts(d, runs);
   html += `<div style="margin-top:16px">${allFields(h)}</div>`;
   return html;
+}
+// 16.7.11: charts at the foot of a horse's Overview: how its stats compare, its seasons, prize money by season, and its race ratings
+function horseStatCharts(d, runs) {
+  const h = d.horse, cmp = d.stat_compare || {};
+  const yOf = (t) => new Date(t * 1000).getUTCFullYear();
+  // how it compares: the share of living racehorses it beats on each stat, the middle marked
+  const names = [["speed", "Speed"], ["stamina", "Stamina"], ["acceleration", "Acceleration"], ["strength", "Strength"], ["intelligence", "Intelligence"]];
+  const cmpRows = names.filter(([k]) => cmp[k]).map(([k, n]) => {
+    const c = cmp[k], beat = Math.round(c.below * 100);
+    return `<div class="cmp-row"><div class="n">${n}</div>
+      <div class="track" role="img" aria-label="${n} ${fNum(c.value, 1)}: better than ${beat}% of living racehorses" data-tip="${n} ${fNum(c.value, 1)} · better than ${beat}% of ${fNum(c.n)} living racehorses"><div class="fill" style="width:${Math.max(1, c.below * 100)}%"></div><i class="mid"></i></div>
+      <div class="v"><b>${fNum(c.value, 1)}</b><small>${pctTop((1 - c.below) * 100)}</small></div></div>`;
+  }).join("");
+  const n = (Object.values(cmp)[0] || {}).n;
+  const cmpPanel = panel("How its stats compare", cmpRows ? `<div class="cmp">${cmpRows}</div><div class="legend"><span>Bar: share of living horses that have raced with a lower figure</span><span><i class="mid-key"></i>Middle</span></div>`
+    : '<div class="empty">No stats to compare.</div>', n ? `Against ${fNum(n)} living racehorses` : "");
+  // its seasons: starts each year split by result, and prize money each year (years in between with no runs are kept, so gaps show)
+  let seasons = "", prize = "";
+  if (runs.length) {
+    const y0 = yOf(runs[0].date), y1 = yOf(runs[runs.length - 1].date), years = [];
+    for (let y = y0; y <= y1; y++) years.push(y);
+    const at = (fn) => years.map((y) => runs.filter((r) => yOf(r.date) === y && fn(r)).length);
+    seasons = colChart({ labels: years.map(String), stacked: true, total: "Starts", fmt: (v) => fNum(v), tip: (v) => fNum(v), title: "Starts each year by result", empty: "No races yet.",
+      series: [{ name: "Won", color: "var(--viz-1)", values: at((r) => r.rank === 1) }, { name: "2nd", color: "var(--viz-2)", values: at((r) => r.rank === 2) },
+        { name: "3rd", color: "var(--viz-3)", values: at((r) => r.rank === 3) }, { name: "Unplaced", color: "var(--viz-other)", values: at((r) => !(r.rank >= 1 && r.rank <= 3)) }] });
+    prize = colChart({ labels: years.map(String), title: "Prize money each year", empty: "No prize money yet.",
+      series: [{ name: "Prize money", color: "var(--viz-1)", values: years.map((y) => runs.filter((r) => yOf(r.date) === y).reduce((a, r) => a + (+r.prize || 0), 0)) }] });
+  }
+  const rated = runs.filter((r) => isNum(r.rating) && r.rating > 0);
+  const best = rated.reduce((m, r) => Math.max(m, r.rating), 0);
+  const ratings = rated.length ? lineChart([{ name: "Race rating", color: "#1d63d6", dots: true,
+    points: rated.map((r) => [r.date, r.rating, `${r.race_name || "Historic race"} · ${r.course || ""} · ${fDist(r.distance)} · ${ord(r.rank)}${r.runners ? ` of ${r.runners}` : ""}`, r.rating === best ? "#d4a017" : null, r.race_id ? `#/race/${r.race_id}` : null]) }],
+    { tipFmt: (v) => fNum(v), yInt: true, height: 240 }) : '<div class="empty">No rated runs yet.</div>';
+  const wins = runs.filter((r) => r.rank === 1).length;
+  // a horse that hasn't raced: just how its stats compare
+  if (!runs.length) return `<div class="panel-head" style="margin-top:20px"><h2>Stats &amp; form charts</h2><span class="note">The season, prize money and rating charts appear once it has raced</span></div>
+    <div class="grid cols-2">${cmpPanel}</div>`;
+  return `<div class="panel-head" style="margin-top:20px"><h2>Stats &amp; form charts</h2></div>
+    <div class="grid cols-2">${cmpPanel}
+    ${panel("Season by season", seasons || '<div class="empty">No races yet.</div>', runs.length ? `${fNum(runs.length)} starts · ${fNum(wins)} wins` : "")}
+    ${panel("Prize money by season", prize || '<div class="empty">No races yet.</div>', `${fMoneyShort(runs.reduce((a, r) => a + (+r.prize || 0), 0))} in all`)}
+    ${panel("Race ratings", ratings + (rated.length ? `<div class="legend"><span><i style="background:#d4a017"></i>Best: ${fNum(best)}</span><span>The game's rating for each run · click a dot to open the race</span></div>` : ""),
+      rated.length ? `${fNum(rated.length)} rated runs` : "")}</div>`;
 }
 
 // ------------------------------------------------------------------ runner lines + form panels (race and meeting pages)
