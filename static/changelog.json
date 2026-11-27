@@ -1,5 +1,15 @@
 [
   {
+    "version": "16.7.17",
+    "date": "2026-11-28",
+    "title": "Update buttons in the header",
+    "changes": [
+      "Update data, at the top beside the search box: loads the newest save from the game's database.db straight away (like Databases → Check now), then shows the new data. If the save hasn't changed it tells you it's already up to date; if the viewer doesn't know where the save is it offers Load new database.",
+      "Update app, beside it: checks GitHub for a new version when you click it. When one is out the button turns green and shows the version number; click it to install.",
+      "On narrower windows both buttons shrink to icons (hover for what they do)."
+    ]
+  },
+  {
     "version": "16.7.16",
     "date": "2026-11-28",
     "title": "Horse owners, and Training & plans in sections",

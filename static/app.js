@@ -259,6 +259,7 @@ const debounce = (fn, ms) => { let t; return (...a) => { clearTimeout(t); t = se
 
 // ------------------------------------------------------------------ menu bar, sidebar, icons
 const ICON_PATHS = {
+  update: '<circle cx="8" cy="8" r="6.2"/><path d="M8 11V5.2M5.6 7.4 8 5l2.4 2.4"/>',
   home: '<path d="M2.5 7.5 8 3l5.5 4.5V13a1 1 0 0 1-1 1h-3v-4h-3v4h-3a1 1 0 0 1-1-1z"/>',
   horse: '<path d="M4.6 13.2 4 9.5a4 4 0 0 1 8 0l-.6 3.7" stroke-width="1.9"/>',
   flag: '<path d="M3.5 14V2.5"/><path d="M3.5 3h8l-1.6 2.5L11.5 8h-8"/>',
@@ -1715,7 +1716,7 @@ let GH_HIDE = false;      // bar closed for this session
 let GH_PROMPTED = false;  // the pop-up is shown once each time the viewer opens
 async function githubCheck(force) {
   try { GH = await (await fetch("/api/github" + (force ? "?force=1" : ""), { cache: "no-store" })).json(); } catch (e) { GH = null; }
-  githubBanner();
+  githubBanner(); if (typeof updButtons === "function") updButtons();
   if (GH && GH.auto !== false && GH.newer && ghSkipped() !== GH.latest && !GH_PROMPTED && !document.querySelector(".overlay")) { GH_PROMPTED = true; githubPrompt(); }
   return GH;
 }
@@ -7198,7 +7199,7 @@ async function autoPoll(soon) {
       ind.title = on ? `Automatic updates on · ${a.message || ""}` : "";
       ind.innerHTML = a.state === "updating" || a.job === "running" && a.running ? '<span class="spin"></span> Updating' : "● Auto";
     }
-    if (AUTO_LAST && a.db === AUTO_LAST.db && a.loaded_at && a.loaded_at !== AUTO_LAST.loaded_at && !$("#load-ov")) {
+    if (AUTO_LAST && a.db === AUTO_LAST.db && a.loaded_at && a.loaded_at !== AUTO_LAST.loaded_at && !$("#load-ov") && !window.UPD_BUSY) {
       await refreshStatus();
       CARD_CACHE.clear(); TABLES_CACHE = null;
       $("#db-banner").insertAdjacentHTML("afterbegin", `<div class="banner" id="auto-banner"><span>✓ Updated from your save — game date <b>${fDate(a.game_date)}</b>.</span>
@@ -8127,3 +8128,68 @@ document.addEventListener("click", (e) => {
   const el = document.getElementById(a.dataset.jump);
   if (el) window.scrollTo({ top: el.getBoundingClientRect().top + window.scrollY - 120, behavior: "smooth" });
 });
+
+
+// ------------------------------------------------------------------ 16.7.17: two buttons in the header, beside the search box:
+// "Update data" loads the newest save from the game's database.db straight away (like Databases → Check now), and
+// "Update app" checks GitHub for a new version of the viewer and installs it
+var UPD_BUSY = false;      // var: the automatic watcher above reads it
+function updButtons() {
+  const d = $("#upd-data"), a = $("#upd-app");
+  if (d && !UPD_BUSY) d.innerHTML = `${icon("refresh")}<span>Update data</span>`;
+  if (a) {
+    const newer = GH && GH.newer;
+    a.classList.toggle("has-new", !!newer);
+    a.innerHTML = `${icon("update")}<span>${newer ? `Update app <b>${esc(GH.latest)}</b>` : "Update app"}</span>`;
+    a.title = newer ? `HRM Viewer ${GH.latest} is available (you have ${GH.current}). Click to install it.` : "Check for a new version of HRM Viewer";
+  }
+}
+async function updData() {
+  const btn = $("#upd-data");
+  if (UPD_BUSY || !btn) return;
+  UPD_BUSY = true; btn.disabled = true;
+  const say = (t) => { btn.innerHTML = `<span class="spin"></span><span>${t}</span>`; };
+  say("Checking…");
+  const done = () => { UPD_BUSY = false; btn.disabled = false; updButtons(); };
+  let a;
+  try {
+    a = await (await fetch("/api/auto/check", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ wait: true }) })).json();
+  } catch (e) { done(); return toast("The viewer couldn't be reached."); }
+  if (a.state === "nofile" || !a.path || !a.exists) {
+    done();
+    return toast("The viewer doesn't know where this save's <b>database.db</b> is. Load it once from the game's folder, or set the file under Databases.", ["Load new database", () => openLoad()], 9000);
+  }
+  if (a.state === "current" && !a.running) { done(); return toast(`✓ Already up to date: the save hasn't changed since it was loaded (game date <b>${fDate(a.game_date)}</b>).`); }
+  if (a.state === "skipped") { done(); autoPoll(true); return toast(esc(a.message || "The save wasn't loaded.")); }
+  if (a.state === "waiting" && !a.running) { done(); return toast(esc(a.message || "Try again in a moment.")); }
+  // loading: follow it until it's finished, then show the new data
+  const before = (AUTO_LAST && AUTO_LAST.loaded_at) || a.loaded_at;
+  say("Updating…");
+  for (let i = 0; i < 1800; i++) {
+    await new Promise((r) => setTimeout(r, 1500));
+    try { a = await (await fetch("/api/auto")).json(); } catch (e) { continue; }
+    if (a.job === "confirm") { done(); autoPoll(true); return; }      // a question about the save: the load window asks it
+    if (!a.running && a.state !== "updating") break;
+  }
+  done();
+  if (a.state === "error") return toast(esc(a.message || "The update failed."), ["Databases", () => (location.hash = "#/databases")], 9000);
+  AUTO_LAST = a;      // so the automatic watcher doesn't show its own "updated" bar as well
+  await refreshStatus(); CARD_CACHE.clear(); TABLES_CACHE = null;
+  render();
+  toast(a.loaded_at !== before ? `✓ Updated from your save: game date <b>${fDate(a.game_date)}</b>.` : "✓ Up to date.");
+}
+async function updApp() {
+  const btn = $("#upd-app");
+  if (GH && GH.newer) return githubInstall("");
+  btn.disabled = true; btn.innerHTML = `<span class="spin"></span><span>Checking…</span>`;
+  await githubCheck(true);
+  btn.disabled = false; updButtons();
+  if (!GH) return toast("GitHub couldn't be reached. Check your internet connection and try again.");
+  if (GH.newer) return toast(`HRM Viewer <b>${esc(GH.latest)}</b> is available.`, ["Install now", () => githubInstall("")], 10000);
+  toast(`✓ You have the latest version (${esc(GH.current)}).`);
+}
+document.addEventListener("click", (e) => {
+  if (e.target.closest("#upd-data")) { e.preventDefault(); updData(); }
+  else if (e.target.closest("#upd-app")) { e.preventDefault(); updApp(); }
+});
+updButtons();

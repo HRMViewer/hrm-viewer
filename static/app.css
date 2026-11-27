@@ -1595,3 +1595,15 @@ table.data tr.muted-row td { color: var(--muted); }
 .ped3 .p.g3 { padding: 2px 9px; }
 .ped3-facts { border-left: 1px solid var(--line); padding-left: 18px; }
 @media (max-width: 1000px) { .ped3-facts { border-left: 0; padding-left: 0; border-top: 1px solid var(--line); padding-top: 12px; } }
+
+/* 16.7.17: Update data / Update app in the header */
+.hdr-upd { display: inline-flex; gap: 8px; flex: none; }
+.topbar .btn.hdr-btn { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; font-size: var(--fs-sm); }
+.topbar .btn.hdr-btn svg { width: 15px; height: 15px; flex: none; }
+.topbar .btn.hdr-btn .spin { width: 12px; height: 12px; }
+.topbar .btn.hdr-btn.has-new { background: #1f9d55; border-color: #1f9d55; color: #fff; }
+.topbar .btn.hdr-btn.has-new:hover { filter: brightness(.92); background: #1f9d55; }
+.topbar .btn.hdr-btn.has-new b { font-weight: 800; }
+@media (max-width: 1350px) { .topbar .btn.hdr-btn:not(.has-new) span:not(.spin) { display: none; } .topbar .btn.hdr-btn { padding: 6px 8px; } }
+@media (max-width: 1100px) { .topbar .btn.hdr-btn.has-new span:not(.spin) { display: none; } }
+html.hdr-light .topbar .btn.hdr-btn.has-new { color: #fff; }

@@ -8203,6 +8203,12 @@ class Handler(BaseHTTPRequestHandler):
                 write_json(CONFIG_FILE, cfg)
                 threading.Thread(target=auto_tick, daemon=True).start()
                 return self.send_json(auto_status())
+            if data.get("wait"):
+                # the header's "Update data" button (16.7.17): check now and say straight away what happened
+                if not auto_watch_path():
+                    return self.send_json(dict(auto_status(), state="nofile"))
+                auto_tick(force=True)
+                return self.send_json(auto_status())
             threading.Thread(target=auto_tick, kwargs={"force": True}, daemon=True).start()
             return self.send_json({"ok": True})
         if path == "/api/desktop/shortcut":
@@ -8316,7 +8322,7 @@ class Handler(BaseHTTPRequestHandler):
 
 # --------------------------------------------------------------------------- in-app updates
 
-VERSION = "16.7.16"
+VERSION = "16.7.17"
 BACKUP_DIR = os.path.join(APP_DIR, "backups")
 UPDATE_PENDING = os.path.join(DATA_DIR, "update_pending.json")
 UPDATE_RESULT = os.path.join(DATA_DIR, "update_result.json")
