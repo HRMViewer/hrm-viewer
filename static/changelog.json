@@ -2,8 +2,10 @@
   {
     "version": "16.7.14",
     "date": "2026-11-28",
-    "title": "Full-width settings on Databases and Versions & changes",
+    "title": "Horse lists: ranks and role filters; full-width settings boxes",
     "changes": [
+      "All horses and the Horse table: a # column shows each horse's rank in the column you sort by (the best is #1 whichever way you sort, on every page; equal figures share a rank). It's also in Export CSV as “rank”.",
+      "All horses and the Horse table: a Role filter (Racing, Breeding, Retired, Not raced yet) and a Sires & mares filter (Sires, Mares). The save has no racing or retired status, so it's worked out: breeding = at stud, leased, in foal or had a foal in the last two years; racing = ran in the last 12 months; not raced yet = no starts and under 5; retired = the rest. A horse you've pinned to one of the game's lists goes there (the latest pin if more than one). Sires = stallions that have sired foals or stand at stud; Mares = mares that have had foals or are in foal. Point at a filter for the rules.",
       "Settings: the Settings boxes at the top of the Databases and Versions & changes tabs are now as wide as the other panels on the page."
     ]
   },

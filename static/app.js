@@ -1942,6 +1942,10 @@ async function listPage(cfg, route) {
 const numberRows = (data) => (data.rows || []).map((r, i) => ({ ...r, _n: "_rank" in r ? r._rank : ((data.page || 1) - 1) * (data.page_size || 0) + i + 1 }));
 const rankCol = (sort) => ({ h: `<span data-tip="Rank in the column you've sorted by: the best is #1, and equal figures share a rank. Click any column heading to rank by it.">#</span>`, cls: "num muted rank-col",
   f: (r) => (r._n === null || r._n === undefined || (sort in r && (r[sort] === null || r[sort] === undefined)) ? "" : fNum(r._n)) });
+// the Role and Sires & mares filters on the horse lists (16.7.14): worked out from the save (see horse_role_where in app.py)
+const roleFilters = (q) => select("role", q, [["", "Any role"], ["racing", "Racing"], ["breeding", "Breeding"], ["retired", "Retired"], ["unraced", "Not raced yet"]],
+  "Racing: ran in the last 12 months · Breeding: at stud, leased, in foal or had a foal in the last two years · Retired: neither · Not raced yet: no starts, under 5. Horses you've pinned to a list in the game go there.") +
+  select("parent", q, [["", "Sires & mares"], ["sires", "Sires"], ["dams", "Mares (broodmares)"]], "Sires: stallions that have sired foals or stand at stud · Mares: mares that have had foals or are in foal");
 // "1 stable", "1 person": the singular of the nouns the lists use
 const singular = (noun) => ({ people: "person", races: "race", horses: "horse", stables: "stable", meetings: "meeting", courses: "course", sires: "sire", dams: "dam",
   "broodmare sires": "broodmare sire", results: "result" }[noun] || noun.replace(/s$/, ""));
@@ -2446,9 +2450,9 @@ tagsPage.after = () => {
 
 async function horsesPage(route) {
   return listPage({
-    title: "Horses", noun: "horses", endpoint: "horses", defaultSort: "earnings", ascDefault: ["name"],
+    title: "Horses", noun: "horses", endpoint: "horses", defaultSort: "earnings", ascDefault: ["name"], rankCol: true,
     filters: (q) => searchBox(q, "Search horses") + statusSeg("horse", q, "alive") +
-      select("gender", q, [["", "Any sex"], ["Colt", "Colts"], ["Filly", "Fillies"], ["Stallion", "Stallions"], ["Mare", "Mares"], ["Gelding", "Geldings"]]) + select("tag", q, tagFilterOpts()),
+      select("gender", q, [["", "Any sex"], ["Colt", "Colts"], ["Filly", "Fillies"], ["Stallion", "Stallions"], ["Mare", "Mares"], ["Gelding", "Geldings"]]) + roleFilters(q) + select("tag", q, tagFilterOpts()),
     cols: [
       { h: "Name", sort: "name", f: (r) => `${horseThumb(r.id)}${L.horse(r.id, r.name)}${r.died ? ' <span class="badge dead">Dead</span>' : ""}${horseTagsHtml(r.id, true, r.auto)}` },
       { h: "Sex", f: (r) => esc(r.gender) },
@@ -6320,10 +6324,10 @@ async function horseTablePage(route) {
   if (q.stable) chip += `<span class="chip">Stable #${esc(q.stable)} <a href="${hashFor(["horse-table"], { ...q, stable: "" })}">✕</a></span>`;
   return listPage({
     title: "Horse table", noun: "horses", endpoint: "horse_table", defaultSort: "earnings",
-    ascDefault: ["name", "gender", "stable", "sire", "dam", "earn_pct"], exportName: "horse_table", wide: true,
+    ascDefault: ["name", "gender", "stable", "sire", "dam", "earn_pct"], exportName: "horse_table", wide: true, rankCol: true,
     intro: "Click any column heading to sort. Export CSV downloads every matching horse, not just this page.",
     filters: (q) => searchBox(q, "Search horses") + searchBox(q, "Search stables", "stableq") + statusSeg("horse", q, "alive") +
-      select("gender", q, [["", "Any sex"], ["Colt", "Colts"], ["Filly", "Fillies"], ["Stallion", "Stallions"], ["Mare", "Mares"], ["Gelding", "Geldings"]]) +
+      select("gender", q, [["", "Any sex"], ["Colt", "Colts"], ["Filly", "Fillies"], ["Stallion", "Stallions"], ["Mare", "Mares"], ["Gelding", "Geldings"]]) + roleFilters(q) +
       select("minstarts", q, [["", "Any starts"], ["1", "Raced"], ["5", "5+ starts"], ["10", "10+ starts"], ["20", "20+ starts"]]) +
       select("stakes", q, [["", "Any class"], ["1", "Stakes winners only"]]) + select("tag", q, tagFilterOpts()) +
       rangeBox("Age", `<input type="number" min="0" data-q="agemin" value="${esc(q.agemin || "")}" placeholder="any" aria-label="Youngest age">`,

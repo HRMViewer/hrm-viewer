@@ -2298,6 +2298,55 @@ HORSE_SORTS = {"earnings": "h.horse_career_earnings", "rating": "h.horse_interna
                "birth": "h.horse_birth_date", "value": "h.horse_value_calculated", "g1": "h.horse_g1_wins"}
 
 
+HORSE_ROLES = ("racing", "breeding", "retired", "unraced")
+
+
+def horse_role_where(con, q, where):
+    """The Role and Sires & dams filters on the horse lists (16.7.14). The save has no racing / retired / breeding status,
+    so it's worked out: breeding = at stud, leased out, in foal, or had a foal in the last two years; racing = ran in the
+    last 12 months; not raced yet = no starts and under 5; retired = the rest. A horse you've pinned to one of the game's
+    lists (racing, breeding, retired) goes there. Uses the hrmv_horse_stats join "s". Returns True when it needs it."""
+    role, parent = q.get("role"), q.get("parent")
+    if role not in HORSE_ROLES and parent not in ("sires", "dams"):
+        return False
+    gd = float(META.get("game_date") or time.time())
+    hc = set(columns(con, "horses"))
+    col = lambda c: ("h.%s is not null" % c) if c in hc else "0"
+    # a pin is the date you put the horse on that list in the game; if it's on more than one, the latest counts
+    pv = lambda c: ("coalesce(h.%s, 0)" % c) if c in hc else "0"
+    b_, r_, ra_ = pv("horse_breeding_pinned"), pv("horse_retired_pinned"), pv("horse_racing_pinned")
+    pin_b = "(%s > 0 and %s >= %s and %s >= %s)" % (b_, b_, r_, b_, ra_)
+    pin_r = "(%s > 0 and %s > %s and %s >= %s)" % (r_, r_, b_, r_, ra_)
+    pin_ra = "(%s > 0 and %s > %s and %s > %s)" % (ra_, ra_, b_, ra_, r_)
+    nopin = "(%s = 0 and %s = 0 and %s = 0)" % (b_, r_, ra_)
+    foal_any = """(exists (select 1 from horses o where o.horse_breeding_parent_mare_id=h.horse_horse_id%s)
+        or exists (select 1 from horses o where o.horse_breeding_parent_stallion_id=h.horse_horse_id%s))"""
+    recent = " and o.horse_birth_date > %r" % (gd - 2 * YEAR)
+    breeding_auto = "(%s or %s or %s or %s)" % (col("horse_stud_date"), col("horse_lease_date"), col("horse_is_pregnant"), foal_any % (recent, recent))
+    alive = "h.horse_deceased_date is null and h.horse_horse_id not in (select pk from hrmv_removed where tbl='horses')"
+    ran_recently = "coalesce(s.last_run, 0) >= %r" % (gd - YEAR)
+    unraced = "coalesce(s.starts, 0) = 0 and h.horse_birth_date > %r" % (gd - 5 * YEAR)
+    if role == "breeding":
+        where.append("(%s and (%s or (%s and %s)))" % (alive, pin_b, nopin, breeding_auto))
+    elif role == "racing":
+        where.append("(%s and (%s or (%s and not %s and %s)))" % (alive, pin_ra, nopin, breeding_auto, ran_recently))
+    elif role == "unraced":
+        where.append("(%s and %s and not %s and %s)" % (alive, nopin, breeding_auto, unraced))
+    elif role == "retired":
+        where.append("(%s and (%s or (%s and not %s and not %s and not (%s))))" % (alive, pin_r, nopin, breeding_auto, ran_recently, unraced))
+    if parent == "sires":
+        where.append("(h.horse_sex='Male' and (%s or exists (select 1 from horses o where o.horse_breeding_parent_stallion_id=h.horse_horse_id)))" % col("horse_stud_date"))
+    elif parent == "dams":
+        where.append("(h.horse_sex='Female' and (%s or exists (select 1 from horses o where o.horse_breeding_parent_mare_id=h.horse_horse_id)))" % col("horse_is_pregnant"))
+    return True
+
+
+def rank_select(sort_expr, natural_asc):
+    """Each row's rank in the sorted column, over every row the filters keep: the best is 1 whichever way it's sorted,
+    equal figures share a rank, an empty figure gets none (16.7.11 on the Stable table; 16.7.14 on the horse lists)."""
+    return ", case when %s is null then null else rank() over (order by %s) end as _rank " % (sort_expr, order_sql(sort_expr, "asc" if natural_asc else "desc"))
+
+
 def api_horses(con, q):
     where, params = [], []
     if q.get("q"):
@@ -2313,15 +2362,17 @@ def api_horses(con, q):
         where.append("h.horse_stable_id=?")
         params.append(to_int(q["stable"]))
     notes_filter(where, q, con=con)
+    needs_stats = horse_role_where(con, q, where)
     sort, d = sort_args(q, HORSE_SORTS, "earnings")
     page, off = page_args(q)
     w = (" where " + " and ".join(where)) if where else ""
-    total = count_rows(con, "select count(*) from horses h" + w, params)
+    sj = " left join hrmv_horse_stats s on s.horse_id=h.horse_horse_id" if needs_stats else ""
+    total = count_rows(con, "select count(*) from horses h" + sj + w, params)
     data = rows(con, """select h.horse_horse_id as id, h.horse_name as name, h.horse_gender as gender, h.horse_birth_date as birth,
         h.horse_deceased_date as died, h.horse_career_earnings as earnings, h.horse_international_rating as rating,
         h.horse_value_calculated as value, h.horse_g1_wins as g1, h.horse_form as form, h.horse_color as color,
-        h.horse_stable_id as stable_id, s.stable_name as stable_name
-        from horses h left join stables s on s.stable_stable_id=h.horse_stable_id""" + w +
+        h.horse_stable_id as stable_id, st.stable_name as stable_name""" + rank_select(sort, (q.get("sort") or "earnings") == "name") + """
+        from horses h left join stables st on st.stable_stable_id=h.horse_stable_id""" + sj + w +
                 " order by %s limit %d offset %d" % (order_sql(sort, d), page_size(), off), params)
     auto = horse_auto(con, [r["id"] for r in data])
     for r in data:
@@ -5653,6 +5704,7 @@ def horse_table_query(con, q):
     if q.get("agemax") not in (None, ""):
         where.append("h.horse_birth_date>?"); params.append(gd - (to_int(q["agemax"], 0) + 1) * YEAR)
     notes_filter(where, q, con=con)
+    horse_role_where(con, q, where)       # its join "s" is in the base query already
     if q.get("stakes") == "1":
         where.append("(coalesce(s.stakes_wins,0)>0 or coalesce(h.horse_g1_wins,0)+coalesce(h.horse_g2_wins,0)+coalesce(h.horse_g3_wins,0)+coalesce(h.horse_listed_wins,0)>0)")
     base = """from horses h left join hrmv_horse_stats s on s.horse_id=h.horse_horse_id
@@ -5688,6 +5740,7 @@ def horse_table_query(con, q):
         h.horse_distance_preference as distance_pref, h.horse_condition as condition, h.horse_breeding_ability as breeding,
         h.horse_color as color, h.horse_breed as breed, %s, %s """ % (gwins("h", "s", "g1"), gwins("h", "s", "g2"), gwins("h", "s", "g3"), gwins("h", "s", "listed"), fan_sel, sp_sel)
     sort, d = sort_args(q, HT_SORTS, "earnings")
+    sel += rank_select(sort, (q.get("sort") or "earnings") in ("name", "gender", "stable", "sire", "dam", "earn_pct"))
     order = " order by " + order_sql(sort, d)
     # the other joins are one-to-one, so the count only needs the ones the filters use
     cbase = "from horses h" + (" left join hrmv_horse_stats s on s.horse_id=h.horse_horse_id" if re.search(r"\bs\.", w) else "") + \
@@ -6636,6 +6689,9 @@ def export_rows(con, which, q):
         finally:
             PAGE_LOCAL.size = None
         rows_ = d.get("rows") or []
+        for r in rows_:          # the rank in the sorted column is called "rank" in the spreadsheet (16.7.14)
+            if "_rank" in r:
+                r["rank"] = r.pop("_rank")
         cols = []
         for r in rows_[:200]:
             for k in r.keys():
