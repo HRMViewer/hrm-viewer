@@ -1429,6 +1429,60 @@ def auto_settings():
     return out
 
 
+GAME_SETTINGS_NAME = "settings.json"
+
+
+def game_settings_file():
+    """The game's own settings.json (16.7.13): it sits in the game's data folder, a level or two above the Saves folder
+    of the save this database follows; otherwise the usual data folder for the platform."""
+    tried = []
+    src = META.get("source_path") or read_json(CONFIG_FILE, {}).get("last_path")
+    if src:
+        d = os.path.dirname(os.path.abspath(src))
+        for _ in range(5):
+            tried.append(os.path.join(d, GAME_SETTINGS_NAME))
+            nd = os.path.dirname(d)
+            if nd == d:
+                break
+            d = nd
+    home = os.path.expanduser("~")
+    for base in (os.environ.get("APPDATA") or os.path.join(home, "AppData", "Roaming"),
+                 os.path.join(home, "Library", "Application Support"), os.path.join(home, ".local", "share")):
+        for godot in ("Godot", "godot"):
+            tried.append(os.path.join(base, godot, "app_userdata", "Horse Racing Manager", GAME_SETTINGS_NAME))
+    for p in tried:
+        try:
+            if os.path.isfile(p):
+                with open(p, encoding="utf-8") as f:
+                    j = json.load(f)
+                if isinstance(j, dict) and isinstance(j.get("LOCALIZATION"), dict):
+                    return p, j
+        except (OSError, ValueError):
+            continue
+    return None, None
+
+
+def api_game_display(con):
+    """The game's display settings (currency, number, date and unit formats) and the currencies in the save."""
+    path, j = game_settings_file()
+    cur = []
+    if con is not None and has_table(con, "countries") and {"country_currency", "country_currency_symbol"} <= set(columns(con, "countries")):
+        seen = {}
+        iso = "country_code_iso2" if "country_code_iso2" in columns(con, "countries") else "''"
+        for code, sym, name, cc in con.execute("select country_currency, country_currency_symbol, country_name, %s from countries where country_currency is not null order by country_name" % iso):
+            if not code:
+                continue
+            # named after its own country (a currency code starts with that country's code: NZD, New Zealand), or the first that uses it
+            if code not in seen or (cc and str(cc).upper() == code[:2] and seen[code].get("cc") != code[:2]):
+                seen[code] = {"code": code, "symbol": sym or code, "country": name, "cc": str(cc or "").upper()}
+        shared = {"EUR": "Euro area", "XOF": "West Africa (CFA)", "XAF": "Central Africa (CFA)", "XCD": "East Caribbean", "XPF": "French Pacific (CFP)", "ANG": "Netherlands Antilles"}
+        for c in seen.values():
+            c["country"] = shared.get(c["code"], c["country"])
+            c.pop("cc", None)
+        cur = sorted(seen.values(), key=lambda x: x["code"])
+    return {"found": bool(path), "path": path, "loc": (j or {}).get("LOCALIZATION") or {}, "currencies": cur}
+
+
 def file_sig(path):
     """(modified time, size) of the save file and its write-ahead log, which together change whenever the game writes."""
     try:
@@ -7181,6 +7235,16 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json(api_dbs())
         if path == "/api/auto":
             return self.send_json(auto_status())
+        if path == "/api/game_display":
+            try:
+                con = connect_ro() if os.path.exists(CURRENT_DB) else None
+                try:
+                    return self.send_json(api_game_display(con))
+                finally:
+                    if con is not None:
+                        con.close()
+            except Exception as e:
+                return self.send_json({"found": False, "error": str(e), "loc": {}, "currencies": []})
         if path == "/api/github":
             return self.send_json(github_check(force=q.get("force") == "1"))
         if path == "/api/github/releases":
@@ -7737,7 +7801,7 @@ class Handler(BaseHTTPRequestHandler):
 
 # --------------------------------------------------------------------------- in-app updates
 
-VERSION = "16.7.12"
+VERSION = "16.7.13"
 BACKUP_DIR = os.path.join(APP_DIR, "backups")
 UPDATE_PENDING = os.path.join(DATA_DIR, "update_pending.json")
 UPDATE_RESULT = os.path.join(DATA_DIR, "update_result.json")

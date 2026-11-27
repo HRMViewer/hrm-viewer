@@ -1557,3 +1557,11 @@ table.tr-grid td.tr-best { font-weight: 700; box-shadow: inset 0 -3px 0 #d4a017;
 .hl-prog i { display: block; height: 100%; background: var(--viz-1); border-radius: 4px; }
 /* a horse's Pedigree tab (the family tree inside the horse page) */
 .ped-tabbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin: 4px 0 14px; }
+
+/* ---- 16.7.13: Settings → Numbers, dates & units ---- */
+.fmt-sample { margin: 8px 0 2px; padding: 8px 12px; background: #f6f7f9; border: 1px solid var(--line); border-radius: 8px; font-size: var(--fs-sm); line-height: 1.6; }
+.fmt-pick { flex-wrap: wrap; }
+.fmt-pick button[disabled] { cursor: default; opacity: .75; }
+.fmt-pick button[disabled].on { opacity: 1; }
+.fx-box { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.fx-box input { width: 110px; padding: 5px 8px; border: 1px solid var(--line); border-radius: 6px; font: inherit; text-align: right; }

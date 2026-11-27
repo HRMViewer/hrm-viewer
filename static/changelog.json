@@ -1,5 +1,16 @@
 [
   {
+    "version": "16.7.13",
+    "date": "2026-11-28",
+    "title": "Currency, numbers, dates and units, matching the game",
+    "changes": [
+      "Settings → General → Numbers, dates & units: the same choices as the game's display settings: currency, number format, currency symbol position and decimal places, odds (decimal, fractional, American or percentage), fraction format, date format and separator, relative date unit, time format, metric or imperial lengths, horse height, race distance difference (lengths, distance or seconds), weight and temperature. A line at the top shows how things will look.",
+      "Follow the game's settings (on to begin with): the viewer reads them from the game's settings.json, a level or two above the Saves folder of the save it follows, so it shows money, odds, dates and units the way the game does, and picks up changes the next time a save loads. Switch it off to choose your own.",
+      "Currencies: money in the save is in US dollars, and another currency is converted at the exchange rate shown in Settings. It starts at a typical market rate; the game uses rates of its own that the save doesn't keep, so to match it exactly, compare one amount in the game and set the rate.",
+      "Every page follows these settings: money and charts, odds, dates and times, race distances, section distances and speeds, horse height and weight, race-day temperature and wind, margins behind the winner, and day counts like days since the last start."
+    ]
+  },
+  {
     "version": "16.7.12",
     "date": "2026-11-28",
     "title": "Settings spread over the tabs they belong to, and a tidier horse page with Pedigree, Health and News tabs",

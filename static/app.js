@@ -22,34 +22,115 @@ async function api(path) {
 }
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+// ------------------------------------------------------------------ numbers, dates & units (16.7.13)
+// Settings → General → Numbers, dates & units. With "Follow the game" on, they come from the game's own settings.json
+// (its Localization section); otherwise the choices here. Money in the save is in US dollars: other currencies are
+// converted at the rate set for them (the game converts too, with rates of its own that the save doesn't keep).
+const FMT_DEFAULT = { follow: true, number: "POINT_SHORT", fractions: true, currency: "USD", symbolPos: "LEFT", moneyDp: 2, odds: "DECIMAL",
+  date: "D_MON_YYYY", sep: "/", rel: "days", time: "24", length: "METRIC", impDist: "MILES_FURLONGS_YARDS", height: "CENTIMETRES",
+  margin: "SECONDS", weight: "KILOGRAM", temp: "CELSIUS", rates: {} };
+// roughly how many of each currency one US dollar buys; change any of them in Settings to match the game's figures
+const FX_DEFAULT = { USD: 1, NZD: 1.68, AUD: 1.52, GBP: 0.75, EUR: 0.88, JPY: 150, CAD: 1.37, HKD: 7.8, SGD: 1.32, CHF: 0.82, CNY: 7.2, ZAR: 18,
+  AED: 3.67, SAR: 3.75, QAR: 3.64, KWD: 0.31, BHD: 0.38, OMR: 0.38, INR: 85, KRW: 1380, SEK: 10.3, NOK: 10.6, DKK: 6.6, PLN: 3.8, CZK: 22,
+  HUF: 360, BRL: 5.5, MXN: 18.5, ARS: 1150, CLP: 950, PEN: 3.7, UYU: 40, COP: 4100, MYR: 4.4, THB: 33, PHP: 57, IDR: 16300, TRY: 38, RUB: 85,
+  ILS: 3.6, EGP: 49, MAD: 9.3, NGN: 1550, KES: 129, MUR: 46, TWD: 31, VND: 26000, PKR: 280, BDT: 122, LKR: 300, ISK: 135, RON: 4.5, BGN: 1.72 };
+let FMT = { ...FMT_DEFAULT }, GAMEFMT = null, CURRENCIES = [];
+const fmtStored = () => { try { return { ...FMT_DEFAULT, ...JSON.parse(localStorage.getItem("hrm.fmt") || "{}") }; } catch (e) { return { ...FMT_DEFAULT }; } };
+// the game's Localization section, in this viewer's terms (values it doesn't recognise keep the viewer's own)
+function fmtFromGame(loc) {
+  const o = {}, up = (v) => String(v == null ? "" : v).toUpperCase();
+  const nf = up(loc.number_format);
+  if (nf) o.number = nf.includes("SHORT") ? (nf.startsWith("COMMA") ? "COMMA_SHORT" : "POINT_SHORT") : (nf.includes("POINT") || nf.includes("DOT") ? "POINT_FULL" : "COMMA_FULL");
+  if (typeof loc.fraction_symbols === "boolean") o.fractions = loc.fraction_symbols;
+  if (loc.currency) o.currency = up(loc.currency);
+  const sp = up(loc.currency_symbol_position);
+  if (sp) o.symbolPos = sp.includes("NONE") || sp.includes("HIDE") ? "NONE" : (sp.includes("RIGHT") || sp.includes("AFTER") ? "RIGHT" : "LEFT") + (sp.includes("SPACE") ? "_SPACE" : "");
+  if (isNum(loc.currency_decimal_precision)) o.moneyDp = Math.max(0, Math.min(2, Math.round(loc.currency_decimal_precision)));
+  const od = up(loc.odds);
+  if (od) o.odds = od.includes("FRAC") ? "FRACTIONAL" : od.includes("AMERIC") || od.includes("MONEY") ? "AMERICAN" : od.includes("PERC") || od.includes("IMPL") || od.includes("PROB") ? "PERCENT" : "DECIMAL";
+  const df = up(loc.date_format);
+  if (df) o.date = df.startsWith("MM") ? "MM-DD-YYYY" : df.startsWith("YY") ? "YYYY-MM-DD" : "DD-MM-YYYY";
+  if (loc.date_separator) o.sep = String(loc.date_separator);
+  const rd = String(loc.relative_date_unit || "").toLowerCase();
+  if (rd) o.rel = rd.startsWith("w") ? "weeks" : rd.startsWith("d") ? "days" : "auto";
+  const tf = String(loc.time_format || "");
+  if (tf) o.time = /a/i.test(tf) ? "12" : "24";
+  const len = up(loc.length);
+  if (len) o.length = len.includes("IMP") ? "IMPERIAL" : "METRIC";
+  if (loc.imperial_distance) o.impDist = up(loc.imperial_distance).includes("MILE") ? "MILES_FURLONGS_YARDS" : up(loc.imperial_distance).includes("YARD") ? "YARDS" : "FURLONGS";
+  const ht = up(o.length === "IMPERIAL" ? loc.imperial_horse_height : loc.metric_horse_height);
+  if (ht) o.height = ht.includes("HAND") ? "HANDS" : ht.includes("FEET") || ht.includes("INCH") ? "FEET_INCHES" : ht.includes("CENTI") ? "CENTIMETRES" : "METERS";
+  const dd = up(loc.distance_difference_mode);
+  if (dd) o.margin = dd.includes("LENGTH") ? "LENGTHS" : "DISTANCE";
+  const wt = up(loc.weight);
+  if (wt) o.weight = wt.includes("STONE") || wt === "ST" ? "STONE" : wt.includes("POUND") || wt.includes("LB") ? "POUND" : "KILOGRAM";
+  const tp = up(loc.temperature);
+  if (tp) o.temp = tp.includes("FAHR") ? "FAHRENHEIT" : tp.includes("RANK") ? "RANKINE" : tp.includes("KELV") ? "KELVIN" : "CELSIUS";
+  return o;
+}
+// the settings in use: your own, or the game's when following it (exchange rates are always yours)
+function applyFmt() {
+  const mine = fmtStored();
+  FMT = mine.follow && GAMEFMT && GAMEFMT.found ? { ...mine, ...fmtFromGame(GAMEFMT.loc || {}), follow: true, rates: mine.rates || {} } : mine;
+  NUMFMT.length = 0;
+}
+const saveFmt = (changes) => { const m = { ...fmtStored(), ...changes }; try { localStorage.setItem("hrm.fmt", JSON.stringify(m)); } catch (e) { /* this session only */ } applyFmt(); };
+async function loadGameFmt() {
+  try { GAMEFMT = await (await fetch("/api/game_display")).json(); CURRENCIES = GAMEFMT.currencies || []; } catch (e) { GAMEFMT = null; }
+  applyFmt();
+}
+const fxRate = (code = FMT.currency) => (FMT.rates && isNum(+FMT.rates[code]) && +FMT.rates[code] > 0 ? +FMT.rates[code] : FX_DEFAULT[code] || 1);
+const curSymbol = (code = FMT.currency) => { const c = CURRENCIES.find((x) => x.code === code); return c ? c.symbol : code === "USD" ? "$" : code; };
+const decComma = () => FMT.number === "COMMA_SHORT" || FMT.number === "COMMA_FULL";
 function fDate(ts) {
   if (!isNum(ts)) return ts == null || ts === "" ? "—" : esc(ts);
-  const d = new Date(ts * 1000);
-  return `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
+  const d = new Date(ts * 1000), dd = String(d.getUTCDate()).padStart(2, "0"), mm = String(d.getUTCMonth() + 1).padStart(2, "0"), y = d.getUTCFullYear(), sp = FMT.sep;
+  if (FMT.date === "DD-MM-YYYY") return `${dd}${sp}${mm}${sp}${y}`;
+  if (FMT.date === "MM-DD-YYYY") return `${mm}${sp}${dd}${sp}${y}`;
+  if (FMT.date === "YYYY-MM-DD") return `${y}${sp}${mm}${sp}${dd}`;
+  return `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]} ${y}`;
 }
+const fClock = (h, m) => (FMT.time === "12" ? `${h % 12 || 12}:${String(m).padStart(2, "0")} ${h < 12 ? "am" : "pm"}` : `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`);
 function fDateTime(ts) {
   if (!isNum(ts)) return fDate(ts);
   const d = new Date(ts * 1000);
-  return `${fDate(ts)} ${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")}`;
+  return `${fDate(ts)} ${fClock(d.getUTCHours(), d.getUTCMinutes())}`;
 }
 // number formatters are made once and reused (toLocaleString builds a new one on every call, which is slow on big tables)
 const NUMFMT = [];
-const numFmt = (dp) => NUMFMT[dp] || (NUMFMT[dp] = new Intl.NumberFormat("en-NZ", { minimumFractionDigits: dp, maximumFractionDigits: dp }));
+const numFmt = (dp) => NUMFMT[dp] || (NUMFMT[dp] = new Intl.NumberFormat(decComma() ? "de-DE" : "en-US", { minimumFractionDigits: dp, maximumFractionDigits: dp }));
 function fNum(v, dp = 0) {
   if (!isNum(v)) return v == null || v === "" ? "—" : esc(v);
   return numFmt(dp).format(v);
 }
+// the currency symbol around an amount, as chosen (before or after, with or without a space, or none)
+function withSym(neg, body) {
+  const sym = curSymbol(), p = FMT.symbolPos, m = neg ? "-" : "";
+  if (p === "NONE") return m + body;
+  if (p === "RIGHT") return `${m}${body}${sym}`;
+  if (p === "RIGHT_SPACE") return `${m}${body} ${sym}`;
+  if (p === "LEFT_SPACE") return `${m}${sym} ${body}`;
+  return `${m}${sym}${body}`;
+}
 function fMoney(v) {
   if (!isNum(v)) return "—";
-  return (v < 0 ? "-$" : "$") + numFmt(0).format(Math.round(Math.abs(v)));
+  const c = v * fxRate();
+  return withSym(c < 0, numFmt(0).format(Math.round(Math.abs(c))));
+}
+// money with pence or cents (share prices)
+function fMoneyDp(v, dp = 2) {
+  if (!isNum(v)) return "—";
+  const c = v * fxRate();
+  return withSym(c < 0, numFmt(dp).format(Math.abs(c)));
 }
 function fMoneyShort(v) {
   if (!isNum(v)) return "—";
-  const a = Math.abs(v), s = v < 0 ? "-$" : "$";
-  if (a >= 1e9) return s + (a / 1e9).toFixed(2) + "B";
-  if (a >= 1e6) return s + (a / 1e6).toFixed(2) + "M";
-  if (a >= 1e4) return s + (a / 1e3).toFixed(0) + "K";
-  return s + numFmt(0).format(Math.round(a));
+  if (FMT.number === "POINT_FULL" || FMT.number === "COMMA_FULL") return fMoney(v);
+  const c = v * fxRate(), a = Math.abs(c), dp = FMT.moneyDp;
+  if (a >= 1e9) return withSym(c < 0, numFmt(dp).format(a / 1e9) + "B");
+  if (a >= 1e6) return withSym(c < 0, numFmt(dp).format(a / 1e6) + "M");
+  if (a >= 1e4) return withSym(c < 0, numFmt(0).format(a / 1e3) + "K");
+  return withSym(c < 0, numFmt(0).format(Math.round(a)));
 }
 function fTime(sec) {
   if (!isNum(sec) || sec <= 0) return "—";
@@ -58,7 +139,90 @@ function fTime(sec) {
   const m = Math.floor(sec / 60), s = sec - m * 60;
   return m ? `${m}:${s.toFixed(3).padStart(6, "0")}` : s.toFixed(3);
 }
-const fDist = (m) => (isNum(m) && m > 0 ? `${numFmt(0).format(Math.round(m))} m` : "—");
+const imperial = () => FMT.length === "IMPERIAL";
+// a race distance: metres, or miles, furlongs and yards (or furlongs, or yards)
+function fDist(m) {
+  if (!(isNum(m) && m > 0)) return "—";
+  if (!imperial()) return `${numFmt(0).format(Math.round(m))} m`;
+  const yd = m / 0.9144;
+  if (FMT.impDist === "YARDS") return `${numFmt(0).format(Math.round(yd))} yd`;
+  if (FMT.impDist === "FURLONGS") return `${numFmt(1).format(yd / 220)}f`;
+  let y = Math.round(yd);
+  const mi = Math.floor(y / 1760); y -= mi * 1760;
+  const f = Math.floor(y / 220); y -= f * 220;
+  return [mi ? `${mi}m` : "", f ? `${f}f` : "", y ? `${y}y` : ""].filter(Boolean).join(" ") || "0y";
+}
+// a short stretch of track (section bounds, distance behind): metres or yards
+const fLen = (m, dp = 0) => (isNum(m) ? (imperial() ? `${numFmt(dp).format(m / 0.9144)} yd` : `${numFmt(dp).format(m)} m`) : "—");
+const fLenRange = (a, b) => (imperial() ? `${numFmt(0).format(a / 0.9144)}–${numFmt(0).format(b / 0.9144)} yd` : `${numFmt(0).format(a)}–${numFmt(0).format(b)} m`);
+// a speed given in km/h: km/h, or mph
+const fSpeed = (kmh, dp = 1) => (isNum(kmh) && isFinite(kmh) ? (imperial() ? `${numFmt(dp).format(kmh / 1.609344)} mph` : `${numFmt(dp).format(kmh)} km/h`) : "—");
+// a horse's height (the save keeps centimetres)
+function fHeight(cm) {
+  if (!isNum(cm)) return "—";
+  if (FMT.height === "METERS") return `${numFmt(2).format(cm / 100)} m`;
+  if (FMT.height === "HANDS") { const inch = Math.round(cm / 2.54), h = Math.floor(inch / 4); return `${h}.${inch - h * 4} hh`; }
+  if (FMT.height === "FEET_INCHES") { const inch = Math.round(cm / 2.54); return `${Math.floor(inch / 12)}′ ${inch % 12}″`; }
+  return `${numFmt(1).format(cm)} cm`;
+}
+function fWeight(kg) {
+  if (!isNum(kg)) return "—";
+  if (FMT.weight === "POUND") return `${numFmt(0).format(kg * 2.20462)} lb`;
+  if (FMT.weight === "STONE") { const lb = Math.round(kg * 2.20462), st = Math.floor(lb / 14); return `${st} st ${lb - st * 14} lb`; }
+  return `${numFmt(0).format(kg)} kg`;
+}
+function fTemp(c) {
+  if (!isNum(c)) return "—";
+  if (FMT.temp === "FAHRENHEIT") return `${numFmt(1).format(c * 9 / 5 + 32)}°F`;
+  if (FMT.temp === "KELVIN") return `${numFmt(1).format(c + 273.15)} K`;
+  if (FMT.temp === "RANKINE") return `${numFmt(1).format((c + 273.15) * 9 / 5)}°Ra`;
+  return `${numFmt(1).format(c)}°C`;
+}
+// a fraction to the nearest quarter (or eighth), as 1¾ or 1 3/4
+const FRAC_SYM = { "1/8": "⅛", "1/4": "¼", "3/8": "⅜", "1/2": "½", "5/8": "⅝", "3/4": "¾", "7/8": "⅞" };
+function fFrac(x, den = 4) {
+  const n = Math.round(x * den), w = Math.floor(n / den), r = n - w * den;
+  if (!r) return String(w);
+  const g = (a, b) => (b ? g(b, a % b) : a), k = g(r, den), fr = `${r / k}/${den / k}`;
+  return FMT.fractions ? `${w || ""}${FRAC_SYM[fr] || fr}` : `${w ? w + " " : ""}${fr}`;
+}
+// betting odds, given as decimal odds: decimal, fractional, American or implied chance
+const ODDS_FRACS = [[1, 5], [2, 9], [1, 4], [2, 7], [1, 3], [2, 5], [4, 9], [1, 2], [4, 7], [8, 13], [4, 6], [8, 11], [4, 5], [5, 6], [10, 11], [1, 1], [11, 10], [6, 5], [5, 4], [11, 8], [6, 4], [13, 8], [7, 4], [15, 8], [2, 1], [9, 4], [5, 2], [11, 4], [3, 1], [10, 3], [7, 2], [4, 1], [9, 2], [5, 1], [11, 2], [6, 1], [13, 2], [7, 1], [15, 2], [8, 1], [17, 2], [9, 1], [10, 1], [11, 1], [12, 1], [14, 1], [16, 1], [18, 1], [20, 1], [25, 1], [33, 1], [40, 1], [50, 1], [66, 1], [80, 1], [100, 1], [150, 1], [200, 1], [250, 1], [500, 1], [1000, 1]];
+function fOdds(dec, dp = 2) {
+  if (!isNum(dec) || dec <= 1) return isNum(dec) ? numFmt(dp).format(dec) : "—";
+  if (FMT.odds === "FRACTIONAL") { const v = dec - 1; let best = ODDS_FRACS[0]; ODDS_FRACS.forEach((f) => { if (Math.abs(f[0] / f[1] - v) < Math.abs(best[0] / best[1] - v)) best = f; }); return `${best[0]}/${best[1]}`; }
+  if (FMT.odds === "AMERICAN") return dec >= 2 ? `+${Math.round((dec - 1) * 100)}` : `-${Math.round(100 / (dec - 1))}`;
+  if (FMT.odds === "PERCENT") return `${numFmt(0).format(100 / dec)}%`;
+  return numFmt(dp).format(dec);
+}
+// how far behind the winner: in lengths (about 2.4 m each, worked out from the time behind and the winner's speed),
+// as a distance, or in seconds
+function fMargin(secBehind, distance, winnerTime) {
+  if (!isNum(secBehind) || secBehind <= 0) return "";
+  const speed = isNum(distance) && isNum(winnerTime) && winnerTime > 0 ? distance / winnerTime : null;
+  if (FMT.margin === "SECONDS" || !speed) return `+${numFmt(2).format(secBehind)}s`;
+  const m = secBehind * speed;
+  if (FMT.margin === "DISTANCE") return `+${fLen(m, 1)}`;
+  const L = m / 2.4;
+  if (L < 0.05) return "nose";
+  if (L < 0.1) return "short head";
+  if (L < 0.2) return "head";
+  if (L < 0.3) return "neck";
+  return `${fFrac(L, L < 10 ? 4 : 1)} L`;
+}
+// a number of days, as days, weeks, or whichever reads best
+function fDays(n) {
+  if (!isNum(n)) return "—";
+  const d = Math.round(n), plural = (x, w) => `${numFmt(0).format(x)} ${w}${x === 1 ? "" : "s"}`;
+  if (FMT.rel === "weeks") return plural(Math.round(d / 7), "week");
+  if (FMT.rel === "auto") {
+    if (d < 14) return plural(d, "day");
+    if (d < 70) return plural(Math.round(d / 7), "week");
+    if (d < 730) return plural(Math.round(d / 30.44), "month");
+    return `${numFmt(1).format(d / 365.25)} years`;
+  }
+  return plural(d, "day");
+}
 function age(birth, died) {
   if (!isNum(birth)) return null;
   const end = isNum(died) ? died : GD();
@@ -2721,7 +2885,7 @@ async function horsePage(id) {
     ["Running instruction", esc(h.horse_running_style_instruction || "—")],
   ]);
   const physical = kv([
-    ["Breed", esc(h.horse_breed)], ["Colour", esc(h.horse_color)], ["Height", fNum(h.horse_height, 1) + " cm"], ["Weight", fNum(h.horse_weight, 0) + " kg"],
+    ["Breed", esc(h.horse_breed)], ["Colour", esc(h.horse_color)], ["Height", fHeight(h.horse_height)], ["Weight", fWeight(h.horse_weight)],
     ["Grade", fNum(h.horse_grade)],
     ["Stud fee", h.horse_stud_fee ? fMoney(h.horse_stud_fee) : "—"], ["Pregnant", h.horse_is_pregnant ? "Yes" : "No"],
   ]);
@@ -2765,19 +2929,19 @@ async function horsePage(id) {
     { h: "Race", f: (r) => `${L.race(r.race_id, r.race_name)} ${grade(r.race_type)}` },
     { h: "Jockey", f: (r) => L.person(r.jockey_id, r.jockey) },
   ];
-  const trHeld = held.length ? table(trCols.concat([{ h: "Standing for", cls: "num", f: (r) => `${fNum(Math.max(0, Math.floor((GD() - r.date) / 86400)))} days` }]), held)
+  const trHeld = held.length ? table(trCols.concat([{ h: "Standing for", cls: "num", f: (r) => fDays(Math.max(0, Math.floor((GD() - r.date) / 86400))) }]), held)
     : '<div class="empty">This horse doesn\'t hold any course records right now.</div>';
   const trFormer = former.length ? table(trCols.concat([
     { h: "Broken by", f: (r) => (r.broken_by ? `${r.broken_by.horse_id === h.horse_horse_id ? "<b>itself</b>" : L.horse(r.broken_by.horse_id, r.broken_by.horse)} <span class="muted small">${fTime(r.broken_by.time)} · ${L.race(r.broken_by.race_id, fDate(r.broken_by.date))}</span>` : "—") },
-    { h: "Held for", cls: "num", f: (r) => (r.broken_by ? `${fNum(Math.floor((r.broken_by.date - r.date) / 86400))} days` : "—") },
+    { h: "Held for", cls: "num", f: (r) => (r.broken_by ? fDays(Math.floor((r.broken_by.date - r.date) / 86400)) : "—") },
     { h: "Record now", f: (r) => (r.record_now ? `${fTime(r.record_now.time)} <span class="muted small">${L.horse(r.record_now.horse_id, r.record_now.horse)}</span>` : "—") },
   ]), former) : '<div class="empty">No earlier course records.</div>';
   const srs = d.section_records || [];
   const srBlock = srs.length ? `<div class="rp-h">Sectional records held <span class="muted small">· fastest ever for that section at that course and distance</span></div>` + table([
     { h: "Racecourse", f: trWhere }, { h: "Distance", cls: "num", f: (r) => fDist(r.distance) },
-    { h: "Section", f: (r) => { const [a, b] = secBounds(r.distance)[r.sec - 1]; return `${SEC_NAMES[r.sec - 1]} <span class="muted small">${fNum(a)}–${fNum(b)} m</span>`; } },
+    { h: "Section", f: (r) => { const [a, b] = secBounds(r.distance)[r.sec - 1]; return `${SEC_NAMES[r.sec - 1]} <span class="muted small">${fLenRange(a, b)}</span>`; } },
     { h: "Time", cls: "num", f: (r) => `<b>${r.time.toFixed(2)}</b>` },
-    { h: "Speed", cls: "num", f: (r) => { const [a, b] = secBounds(r.distance)[r.sec - 1]; return `${(((b - a) / r.time) * 3.6).toFixed(1)} km/h`; } },
+    { h: "Speed", cls: "num", f: (r) => { const [a, b] = secBounds(r.distance)[r.sec - 1]; return fSpeed(((b - a) / r.time) * 3.6); } },
     { h: "Set", cls: "nowrap", f: (r) => L.race(r.race_id, fDate(r.date)) }, { h: "Runs timed", cls: "num", f: (r) => fNum(r.runs) },
   ], srs) : "";
   html += `<div style="margin-top:16px">${panel(`Track records`, `<div class="rp-h" style="margin-top:0">Held now <span class="muted small">· ${held.length} course record${held.length === 1 ? "" : "s"} still standing</span></div>${trHeld}
@@ -2840,7 +3004,7 @@ async function horseHealthPage(id) {
     ["Now", dead ? "Deceased" : open.length ? esc(open.map((r) => r.name).join(", ")) : "Healthy", dead ? esc(h.horse_death_cause || "") : open.length ? `since ${fDate(Math.min(...open.map((r) => r.start)))}` : "No illness or injury"],
     ["Condition", isNum(h.horse_condition) ? fNum(h.horse_condition, 0) + "%" : "—", "Fitness to race right now"],
     ["Health risk", fNum(h.horse_health_risk, 1), isNum(h.horse_health_risk_floor) ? `Lowest it can go: ${fNum(h.horse_health_risk_floor, 1)}` : "Higher means more likely to get ill or hurt"],
-    ["Weight", isNum(h.horse_weight) ? fNum(h.horse_weight, 0) + " kg" : "—", isNum(h.horse_max_weight) ? `Most it has weighed: ${fNum(h.horse_max_weight, 0)} kg` : ""],
+    ["Weight", fWeight(h.horse_weight), isNum(h.horse_max_weight) ? `Most it has weighed: ${fWeight(h.horse_max_weight)}` : ""],
     ["Illnesses & injuries", fNum(hs.length), `${fNum(ill)} illness${ill === 1 ? "" : "es"} · ${fNum(inj)} injur${inj === 1 ? "y" : "ies"}`],
     ["Days affected", fNum(daysOut), hs.length ? `about ${fNum(daysOut / hs.length, 0)} days each` : ""],
   ]);
@@ -2848,7 +3012,7 @@ async function horseHealthPage(id) {
   open.forEach((r) => {
     const p = progress(r);
     html += `<div style="margin-top:16px">${panel(`${esc(r.name)} <span class="badge ${r.type === "injury" ? "warn" : "bad"}">${esc(nice(r.type || ""))}</span>`, `${r.about ? `<p class="small" style="margin-top:0">${esc(r.about)}</p>` : ""}` + kv([
-      ["Since", `${fDate(r.start)} · ${fNum(days(r))} days`], ["Severity", fNum(r.severity)],
+      ["Since", `${fDate(r.start)} · ${fDays(days(r))}`], ["Severity", fNum(r.severity)],
       ["Recovery", !isNum(p) ? "—" : `<span class="hl-prog"><i style="width:${(p * 100).toFixed(0)}%"></i></span> ` + (p >= 1
         ? (r.chronic ? "As far as it goes: it's chronic, so it stays with the horse" : "Recovered, not yet cleared") : `${fNum(p * 100, 0)}% of the way`)],
       ["Usual recovery time", isNum(r.recovery_days) ? `${fNum(r.recovery_days)} days` : "—"],
@@ -2898,13 +3062,13 @@ const raceRecordCols = () => [
   { h: "Stable", f: (r) => L.stable(r.stable_id, r.stable) },
   { h: "Gear", f: (r) => gearAbbr(r.gear) },
   { h: "Time", cls: "num", f: (r) => fTime(r.time) },
-  { h: "Odds", cls: "num", f: (r) => (isNum(r.odds) ? fNum(r.odds, 1) : "—") },
+  { h: "Odds", cls: "num", f: (r) => (isNum(r.odds) ? fOdds(r.odds) : "—") },
   { h: "Rating", cls: "num", f: (r) => fNum(r.rating) },
   { h: "Prize", cls: "num", f: (r) => fMoney(r.prize) },
 ];
 // one timed trial run: the columns shared by a horse's Races & trials tab and a racecourse's Trials tab (16.7.11).
 // The game times each distance as its own run and keeps only the finishing time, so there are no splits to show.
-const trialSpeed = (r) => (r.time > 0 && r.distance ? `${((r.distance / r.time) * 3.6).toFixed(1)} km/h` : "—");
+const trialSpeed = (r) => (r.time > 0 && r.distance ? fSpeed((r.distance / r.time) * 3.6) : "—");
 const trialGap = (r) => (!(r.time > 0) || !isNum(r.best) ? "—" : r.time > r.best ? `+${(r.time - r.best).toFixed(2)}s` : '<b class="ok-t">Fastest</b>');
 const trialCols = (o = {}) => [
   { h: "Date", cls: "nowrap", f: (r) => fDate(r.date) },
@@ -3023,7 +3187,7 @@ async function horseRacesPage(id) {
   const cols = sess.slice(0, 8), dists = [...new Set(tr.map((x) => x.distance))].sort((a, b) => a - b);
   const cell = (s, dist) => s.runs.find((x) => x.distance === dist);
   const timesAt = new Map(dists.map((dist) => [dist, tr.filter((x) => x.distance === dist && x.time > 0).map((x) => x.time)]));
-  const kmh = (dist, t) => `${((dist / t) * 3.6).toFixed(1)} km/h`;
+  const kmh = (dist, t) => fSpeed((dist / t) * 3.6);
   const sumCell = (dist, t, cls) => (isNum(t) && isFinite(t) ? `<td class="num ${cls || ""}"><b>${fTime(t)}</b><div class="tr-sub">${kmh(dist, t)}</div></td>` : `<td class="num muted ${cls || ""}">—</td>`);
   const head = `<tr><th class="num">Distance</th>${cols.map((s) => `<th class="num">${fDate(s.date)}<div class="muted small tr-sub">${esc(s.course || "")}</div></th>`).join("")}
     <th class="num tr-sum">Average</th><th class="num">Slowest</th><th class="num">Best</th></tr>`;
@@ -3098,8 +3262,8 @@ function runnerTable(race, rows, kind) {
     const cls = (kind === "results" ? (x.rank === 1 ? "win" : x.jockey_id === myId ? "me" : "") : x.jockey_id === myId ? "me" : "") + (own ? " own" : "");
     const cells = kind === "results"
       ? `<td>${pos(x.rank)}</td><td class="rhorse">${horse}</td><td>${form}</td><td class="num">${rec(x.career)}</td><td class="num">${wp}</td>
-         <td class="num">${fNum(x.rating)}</td><td class="num">${fTime(x.time)}</td><td class="num">${wt && isNum(x.time) && x.rank > 1 ? "+" + (x.time - wt).toFixed(2) + "s" : ""}</td>
-         <td class="num">${isNum(x.odds) ? `<span class="box">${fNum(x.odds, 1)}</span>` : "—"}</td><td class="num">${fMoney(x.prize)}</td><td>${arrow}</td>`
+         <td class="num">${fNum(x.rating)}</td><td class="num">${fTime(x.time)}</td><td class="num">${wt && isNum(x.time) && x.rank > 1 ? fMargin(x.time - wt, race.distance, wt) : ""}</td>
+         <td class="num">${isNum(x.odds) ? `<span class="box">${fOdds(x.odds)}</span>` : "—"}</td><td class="num">${fMoney(x.prize)}</td><td>${arrow}</td>`
       : `<td class="num"><span class="gate">${isNum(x.gate) ? x.gate : "–"}</span></td><td class="rhorse">${horse}</td><td>${form}</td><td class="num">${rec(x.career)}</td><td class="num">${wp}</td>
          <td>${x.last ? `${ord(x.last.rank)}${x.last.runners ? ` of ${x.last.runners}` : ""} <span class="muted small">${isNum(x.last.days) ? x.last.days + " days ago" : ""}</span>` : '<span class="muted">—</span>'}</td>
          <td class="num"><span class="box">${fNum(x.rating)}</span></td><td>${arrow}</td>`;
@@ -3165,7 +3329,7 @@ function renderRunnerPanel(d, opts = {}) {
       ${gen ? "" : cell("Trainer at this track", d.trainer ? pc(d.trainer.track) : "—")}${cell("Trainer with this jockey", d.trainer ? pc(d.trainer.jockey) : "—")}
     </div>`;
   const runs = d.runs || [];
-  const speed = (r) => (isNum(r.time) && r.time > 0 && r.distance ? ((r.distance / r.time) * 3.6).toFixed(1) + " km/h" : "—");
+  const speed = (r) => (isNum(r.time) && r.time > 0 && r.distance ? fSpeed((r.distance / r.time) * 3.6) : "—");
   const lastRows = runs.map((r, i) => `<tr class="${i >= 6 ? "more-run" : ""} ${r.rank === 1 ? "win" : ""}" ${i >= 6 ? "hidden" : ""}>
       <td class="nowrap"><b>${ord(r.rank)}</b>${r.runners ? ` <span class="muted">of ${r.runners}</span>` : ""}</td>
       <td class="nowrap">${r.race_id ? L.race(r.race_id, fDate(r.date)) : fDate(r.date)}</td>
@@ -3175,11 +3339,11 @@ function renderRunnerPanel(d, opts = {}) {
       <td>${L.person(r.jockey_id, r.jockey)}</td>
       <td>${esc(r.weather || "—")}</td>
       <td class="num">${fTime(r.time)}</td><td class="num">${speed(r)}</td>
-      <td class="num">${isNum(r.winner_time) && isNum(r.time) && r.rank > 1 ? "+" + (r.time - r.winner_time).toFixed(2) + "s" : "—"}</td>
-      <td class="num">${isNum(r.odds) ? "$" + fNum(r.odds, 2) : "—"}</td><td class="num">${isNum(r.days) ? r.days : "—"}</td>
+      <td class="num">${isNum(r.winner_time) && isNum(r.time) && r.rank > 1 ? fMargin(r.time - r.winner_time, r.distance, r.winner_time) : "—"}</td>
+      <td class="num">${isNum(r.odds) ? fOdds(r.odds) : "—"}</td><td class="num">${isNum(r.days) ? r.days : "—"}</td>
       <td class="num">${fMoneyShort(r.purse)}</td><td class="num">${fMoney(r.prize_won)}</td>
       <td class="small">${(r.top3 || []).map((t) => `${t.rank}. ${t.id === h.id ? `<b>${esc(t.name)}</b>` : L.horse(t.id, t.name)}`).join("&nbsp; ")}</td></tr>`).join("");
-  const last = `<div class="rp-h">Last starts <span class="muted small">· ${isNum(sf.days_since) ? sf.days_since + " days since last start" : "no starts yet"}</span></div>
+  const last = `<div class="rp-h">Last starts <span class="muted small">· ${isNum(sf.days_since) ? fDays(sf.days_since) + " since last start" : "no starts yet"}</span></div>
     ${runs.length ? `<div class="tbl-wrap"><table class="data rp-runs"><thead><tr><th>Place</th><th>Date</th><th>Track</th><th class="num">Distance</th><th>Class</th><th class="num">Barrier</th>
       <th>Jockey</th><th>Cond.</th><th class="num">Race time</th><th class="num">Avg speed</th><th class="num">Margin</th><th class="num">SP</th><th class="num">Days</th>
       <th class="num">Prize</th><th class="num">Prize won</th><th>Result</th></tr></thead><tbody>${lastRows}</tbody></table></div>
@@ -3383,18 +3547,18 @@ function fastestSections(list, dist) {
     for (const x of list) { const v = secSplit(x, k); if (isNum(v) && v > 0 && (!best || v < best.v)) best = { v, x }; }
     if (!best) return "";
     const m = b[k - 1][1] - b[k - 1][0];
-    return `<div class="fs"><div class="l">${SEC_NAMES[k - 1]} <span class="muted">${fNum(b[k - 1][0])}–${fNum(b[k - 1][1])} m</span></div>
+    return `<div class="fs"><div class="l">${SEC_NAMES[k - 1]} <span class="muted">${fLenRange(b[k - 1][0], b[k - 1][1])}</span></div>
       <div class="v"><span class="sec-best">${best.v.toFixed(2)}</span> ${L.horse(best.x.horse_id, best.x.horse)}</div>
-      <div class="s">${((m / best.v) * 3.6).toFixed(1)} km/h · finished ${ord(best.x.rank)}</div></div>`;
+      <div class="s">${fSpeed((m / best.v) * 3.6)} · finished ${ord(best.x.rank)}</div></div>`;
   });
   let late = null;
   for (const x of list) { if (isNum(x.t5) && isNum(x.t2) && (!late || x.t5 - x.t2 < late.v)) late = { v: x.t5 - x.t2, x }; }
   let tops = null;
   for (const x of list) { const t = topSpeed(x, D); if (t && (!tops || t.kmh > tops.t.kmh)) tops = { t, x }; }
   if (tops) cells.push(`<div class="fs"><div class="l">Top speed <span class="muted">${SEC_NAMES[tops.t.k - 1]}</span></div>
-      <div class="v"><span class="sec-best">${tops.t.kmh.toFixed(1)} km/h</span> ${L.horse(tops.x.horse_id, tops.x.horse)}</div><div class="s">fastest section speed in the race · finished ${ord(tops.x.rank)}</div></div>`);
-  if (late) cells.push(`<div class="fs"><div class="l">Last 50% <span class="muted">${fNum(Math.round(D / 2))}–${fNum(D)} m</span></div>
-      <div class="v"><b>${late.v.toFixed(2)}</b> ${L.horse(late.x.horse_id, late.x.horse)}</div><div class="s">${((D / 2 / late.v) * 3.6).toFixed(1)} km/h · finished ${ord(late.x.rank)}</div></div>`);
+      <div class="v"><span class="sec-best">${fSpeed(tops.t.kmh)}</span> ${L.horse(tops.x.horse_id, tops.x.horse)}</div><div class="s">fastest section speed in the race · finished ${ord(tops.x.rank)}</div></div>`);
+  if (late) cells.push(`<div class="fs"><div class="l">Last 50% <span class="muted">${fLenRange(Math.round(D / 2), D)}</span></div>
+      <div class="v"><b>${late.v.toFixed(2)}</b> ${L.horse(late.x.horse_id, late.x.horse)}</div><div class="s">${fSpeed((D / 2 / late.v) * 3.6)} · finished ${ord(late.x.rank)}</div></div>`);
   return `<div class="rp-h" style="margin-top:0">Fastest sections</div><div class="fastest">${cells.join("")}</div>`;
 }
 // Top speed: the fastest average speed the runner held over any one section of the race
@@ -3415,25 +3579,25 @@ function sectionalsTable(list, dist) {
   const split = secSplit;
   const best = [1, 2, 3, 4, 5].map((k) => Math.min(...list.map((x) => split(x, k)).filter((v) => isNum(v) && v > 0)));
   const kmh = (m, sec) => (sec > 0 ? ((m / sec) * 3.6).toFixed(1) : "—");
-  const lead = (x, k) => (x["r" + k] === 1 ? "led" : isNum(x["m" + k]) ? `+${fNum(x["m" + k], 1)} m` : "");
+  const lead = (x, k) => (x["r" + k] === 1 ? "led" : isNum(x["m" + k]) ? `+${fLen(x["m" + k], 1)}` : "");
   const topBest = Math.max(...list.map((x) => (topSpeed(x, D) || { kmh: -1 }).kmh));
   const cols = [
     { h: "Fin", f: (x) => pos(x.rank) },
     { h: "Horse", f: (x) => `${L.horse(x.horse_id, x.horse)}${isNum(x.gate) ? ` <span class="muted small">(${x.gate})</span>` : ""}` },
   ].concat([1, 2, 3, 4, 5].map((k) => ({
-    h: `${SEC_NAMES[k - 1]}<div class="sec-m">${fNum(b[k - 1][0])}–${fNum(b[k - 1][1])} m</div>`, cls: "num sec",
+    h: `${SEC_NAMES[k - 1]}<div class="sec-m">${fLenRange(b[k - 1][0], b[k - 1][1])}</div>`, cls: "num sec",
     f: (x) => {
       const v = split(x, k);
       if (!isNum(v)) return "—";
       return `<span class="${Math.abs(v - best[k - 1]) < 1e-6 ? "sec-best" : ""}">${v.toFixed(2)}</span>
-        <div class="sec-sub">${ord(x["r" + k])}${lead(x, k) ? " · " + lead(x, k) : ""} · ${kmh(b[k - 1][1] - b[k - 1][0], v)} km/h</div>`;
+        <div class="sec-sub">${ord(x["r" + k])}${lead(x, k) ? " · " + lead(x, k) : ""} · ${kmh(b[k - 1][1] - b[k - 1][0], v)}</div>`;
     },
   }))).concat([
     { h: "Finish time", cls: "num", f: (x) => `<b>${fTime(x.t5)}</b>` },
     { h: `<span title="Fastest average speed this runner held over any one section of the race">Top speed</span><div class="sec-m">and where</div>`, cls: "num",
-      f: (x) => { const t = topSpeed(x, D); return t ? `<span class="${Math.abs(t.kmh - topBest) < 1e-6 ? "sec-best" : ""}">${t.kmh.toFixed(1)} km/h</span><div class="sec-sub">${SEC_NAMES[t.k - 1]}</div>` : "—"; } },
-    { h: "Last 50% <div class=\"sec-m\">late speed</div>", cls: "num", f: (x) => (isNum(x.t5) && isNum(x.t2) ? `${(x.t5 - x.t2).toFixed(2)}<div class="sec-sub">${kmh(D / 2, x.t5 - x.t2)} km/h</div>` : "—") },
-    { h: `<span title="The game's own speed reading as the horse crossed the line">Speed at finish</span>`, cls: "num", f: (x) => (isNum(x.v5) ? `${(x.v5 * 3.6).toFixed(1)} km/h` : "—") },
+      f: (x) => { const t = topSpeed(x, D); return t ? `<span class="${Math.abs(t.kmh - topBest) < 1e-6 ? "sec-best" : ""}">${fSpeed(t.kmh)}</span><div class="sec-sub">${SEC_NAMES[t.k - 1]}</div>` : "—"; } },
+    { h: "Last 50% <div class=\"sec-m\">late speed</div>", cls: "num", f: (x) => (isNum(x.t5) && isNum(x.t2) ? `${(x.t5 - x.t2).toFixed(2)}<div class="sec-sub">${kmh(D / 2, x.t5 - x.t2)}</div>` : "—") },
+    { h: `<span title="The game's own speed reading as the horse crossed the line">Speed at finish</span>`, cls: "num", f: (x) => (isNum(x.v5) ? fSpeed(x.v5 * 3.6) : "—") },
   ]);
   return `<div class="rp-h">All runners</div>` + table(cols, list, { wide: true });
 }
@@ -3452,7 +3616,7 @@ function sectionRecordsPanel(d, c) {
     const r = g.secs[k];
     if (!r) return '<span class="muted">—</span>';
     const [a, b] = secBounds(g.distance)[k - 1];
-    return `<b>${r.time.toFixed(2)}</b> <span class="muted small">${((b - a) / r.time * 3.6).toFixed(1)} km/h</span>
+    return `<b>${r.time.toFixed(2)}</b> <span class="muted small">${fSpeed((b - a) / r.time * 3.6)}</span>
       <div class="sec-sub">${L.horse(r.horse_id, r.horse)} · ${L.race(r.race_id, fDate(r.date))}</div>`;
   };
   return panel("Sectional records", table([
@@ -3475,12 +3639,12 @@ async function racePage(id) {
   html += tiles([
     ["Purse", fMoney(r.races_prize_money_total)],
     ["Runners", fNum(res.length || (d.entries || []).length)],
-    ["Weather", esc(day.raceday_weather_condition || "—"), isNum(day.raceday_temperature) ? `${fNum(day.raceday_temperature, 1)}°C · wind ${fNum(day.raceday_wind_speed, 0)} km/h` : ""],
+    ["Weather", esc(day.raceday_weather_condition || "—"), isNum(day.raceday_temperature) ? `${fTemp(day.raceday_temperature)} · wind ${fSpeed(day.raceday_wind_speed, 0)}` : ""],
     ["Winning time", fTime(winTime)],
     ["Crowd", day.raceday_capacity ? fNum((day.raceday_vip_sold || 0) + (day.raceday_normal_sold || 0) + (day.raceday_standing_sold || 0)) : "—", day.raceday_capacity ? `Capacity ${fNum(day.raceday_capacity)}` : ""],
     conditionTile(day, d.surface),
   ]);
-  const rinfo = { race_id: r.races_race_id, race_time: r.races_race_date_time };
+  const rinfo = { race_id: r.races_race_id, race_time: r.races_race_date_time, distance: r.races_distance };
   const openAll = `<button class="btn" data-openall>Open all form</button>`;
   html += res.length ? panel("Result", runnerTable(rinfo, res, "results"), `Click ▸ for a runner's form · ${openAll}`)
     : panel("Field", runnerTable(rinfo, d.entries || [], "entries"), `Form is up to the day before the race · click ▸ for a runner's form · ${openAll}`);
@@ -3556,7 +3720,7 @@ async function meetingPage(id) {
     <div class="sub">${fDate(day.raceday_date)} · ${L.course(c.id, c.name)}${c.country ? ", " + esc(c.country) : ""}</div></div>${nav}</div>`;
   html += tiles([
     ["Races", fNum(races.length)], ["Prize money", fMoneyShort(purse)],
-    ["Weather", esc(day.raceday_weather_condition || "—"), isNum(day.raceday_temperature) ? `${fNum(day.raceday_temperature, 1)}°C · wind ${fNum(day.raceday_wind_speed, 0)} km/h` : ""],
+    ["Weather", esc(day.raceday_weather_condition || "—"), isNum(day.raceday_temperature) ? `${fTemp(day.raceday_temperature)} · wind ${fSpeed(day.raceday_wind_speed, 0)}` : ""],
     ["Crowd", day.raceday_capacity ? fNum(crowd) : "—", day.raceday_capacity ? `Capacity ${fNum(day.raceday_capacity)}` : ""],
     conditionTile(day, c.surface),
   ]);
@@ -3571,7 +3735,7 @@ async function meetingPage(id) {
   ], races), "Click a race name to jump to it");
   for (const r of races) {
     const res = r.results || [];
-    let body = runnerTable({ race_id: r.race_id, race_time: r.race_time }, res.length ? res : r.entries || [], res.length ? "results" : "entries");
+    let body = runnerTable({ race_id: r.race_id, race_time: r.race_time, distance: r.distance }, res.length ? res : r.entries || [], res.length ? "results" : "entries");
     if ((r.sectionals || []).length) body += `<details class="secbox" open><summary>Sectionals <span class="muted small">· fastest sections and every runner's splits</span></summary>
       ${fastestSections(r.sectionals, r.distance)}${sectionalsTable(r.sectionals, r.distance)}<div class="help" style="margin-top:6px">${SEC_NOTE}</div></details>`;
     html += `<div style="margin-top:16px" id="race-${r.race_id}">` + panel(`R${fNum(r.number)} · ${hm(r.race_time)} · ${L.race(r.race_id, r.race_name)} ${grade(r.race_type)}`,
@@ -3614,7 +3778,7 @@ async function stableRacesPage(route) {
     { h: "Jockey", sort: "jockey", f: (r) => L.person(r.jockey_id, r.jockey) },
     { h: "Pos", sort: "rank", f: (r) => pos(r.rank, r.runners) },
     { h: "Time", cls: "num", f: (r) => fTime(r.time) },
-    { h: "Odds", cls: "num", f: (r) => (isNum(r.odds) ? `<span class="box">${fNum(r.odds, 1)}</span>` : "—") },
+    { h: "Odds", cls: "num", f: (r) => (isNum(r.odds) ? `<span class="box">${fOdds(r.odds)}</span>` : "—") },
     { h: "Prize", sort: "prize", cls: "num", f: (r) => fMoney(r.prize) },
   ], d.rows, { sort, dir, ascCols: ["horse", "race", "jockey", "rank"], rowClass: (r) => (r.rank === 1 ? "win" : ""), empty: "No runs match." })}${pager(d)}</section>`;
   return html;
@@ -3668,7 +3832,7 @@ async function stablePage(id) {
   html += tiles([
     ["Cash", fMoneyShort(lf.snapshot_cash)], ["Net worth", fMoneyShort(lf.snapshot_net_worth)],
     ["Horses", fNum(d.horses.length), `Capacity ${fNum(s.stable_horse_capacity)}`], ["Staff", fNum(d.staff.length)],
-    ["Prestige", fNum(s.stable_prestige, 1)], ["Share price", isNum(lf.snapshot_share_price) ? "$" + fNum(lf.snapshot_share_price, 2) : "—"],
+    ["Prestige", fNum(s.stable_prestige, 1)], ["Share price", isNum(lf.snapshot_share_price) ? fMoneyDp(lf.snapshot_share_price, 2) : "—"],
   ]);
   const rec = d.record || {};
   html += `<h3 style="margin:4px 0 8px">All-time race record</h3>` + tiles([
@@ -6296,7 +6460,7 @@ async function stableTablePage(route) {
       { h: "Last runner", sort: "last_run", cls: "num", f: (r) => fDate(r.last_run) },
       { h: "Cash", sort: "cash", cls: "num grp-start", f: (r) => fMoneyShort(r.cash) },
       { h: "Net worth", sort: "net_worth", cls: "num", f: (r) => fMoneyShort(r.net_worth) },
-      { h: "Share price", sort: "share_price", cls: "num", f: (r) => (isNum(r.share_price) ? "$" + fNum(r.share_price, 2) : "—") },
+      { h: "Share price", sort: "share_price", cls: "num", f: (r) => (isNum(r.share_price) ? fMoneyDp(r.share_price, 2) : "—") },
       { h: "Staff", sort: "staff", cls: "num grp-start", f: (r) => fNum(r.staff) },
       { h: "Courses", sort: "courses", cls: "num", f: (r) => fNum(r.courses) },
       { h: "Prestige", sort: "prestige", cls: "num", f: (r) => fNum(r.prestige, 1) },
@@ -7048,7 +7212,64 @@ function settingsTabs(on) {
 }
 // Settings → General, laid out again in 16.7.11: one column of sections with a menu beside it to jump between them,
 // short descriptions (the longer explanations are behind "More about this"), and each section says where it's kept
-const SET_SECTIONS = [["stable", "Your stable"], ["look", "Look"], ["pages", "Pages & tables"], ["season", "Racing season"], ["reset", "Reset"]];
+const SET_SECTIONS = [["stable", "Your stable"], ["look", "Look"], ["numbers", "Numbers, dates & units"], ["pages", "Pages & tables"], ["season", "Racing season"], ["reset", "Reset"]];
+// Settings → General → Numbers, dates & units (16.7.13)
+function numbersSection() {
+  const mine = fmtStored(), following = mine.follow && GAMEFMT && GAMEFMT.found, v = FMT, dis = following ? "disabled" : "";
+  const pick = (key, opts) => `<div class="theme-pick fmt-pick" data-fmt="${key}">${opts.map(([val, t]) =>
+    `<button data-v="${esc(String(val))}" class="${String(v[key]) === String(val) ? "on" : ""}" ${dis}>${t}</button>`).join("")}</div>`;
+  const sel = (key, opts) => `<select data-fmt-sel="${key}" ${dis}>${opts.map(([val, t]) => `<option value="${esc(String(val))}" ${String(v[key]) === String(val) ? "selected" : ""}>${esc(t)}</option>`).join("")}</select>`;
+  const curs = CURRENCIES.length ? CURRENCIES : Object.keys(FX_DEFAULT).map((c) => ({ code: c, symbol: c === "USD" ? "$" : c }));
+  const rate = fxRate(), custom = mine.rates && isNum(+mine.rates[v.currency]) && +mine.rates[v.currency] > 0;
+  const sample = `${fMoney(1234567)} · ${fMoneyShort(1234567)} · odds ${fOdds(2.5)} · ${fDateTime(1539441000)} · ${fDist(1400)} · ${fHeight(163)} · ${fWeight(480)} · ${fTemp(18)} · ${fMargin(0.3, 1400, 82)} behind · ${fDays(45)}`;
+  const followRow = setRow("Follow the game's settings", GAMEFMT && GAMEFMT.found
+    ? `Uses the currency, number, date and unit settings from the game's <code>settings.json</code>, so the viewer shows things the way the game does. It picks up changes the next time a save loads.`
+    : `The game's <code>settings.json</code> wasn't found. The viewer looks for it a level or two above the Saves folder of the save it follows (set under Settings → Databases), and in the game's usual data folder.`,
+    `<label class="switch"><input type="checkbox" id="set-fmt-follow" ${mine.follow ? "checked" : ""}><span></span></label>`,
+    GAMEFMT && GAMEFMT.found ? `Reading <code>${esc(GAMEFMT.path)}</code>.` : "");
+  return setSection("numbers", "Numbers, dates & units", "Currency, numbers, odds, dates, times and units, the same choices as the game's own settings.", "browser", [
+    followRow,
+    following ? `<div class="set-h set-foot">These follow the game. Change them in the game, or switch off <b>Follow the game's settings</b> to choose your own here.</div>` : "",
+    `<div class="fmt-sample"><span class="muted small">Looks like:</span> ${sample}</div>`,
+    `<h3 class="set-sub">Money &amp; numbers</h3>`,
+    setRow("Currency", "Amounts are converted from the save's US dollars at the rate below.",
+      sel("currency", curs.map((c) => [c.code, `${c.code} · ${c.symbol}${c.country ? " · " + c.country : ""}`]))),
+    setRow("Exchange rate", v.currency === "USD" ? "Amounts are shown as the save keeps them." : `How many ${esc(v.currency)} one US dollar buys. The game converts with rates of its own that the save doesn't keep: to match it exactly, compare one amount in the game and set the rate here.`,
+      v.currency === "USD" ? "" : `<span class="fx-box">1 USD = <input type="number" id="set-fx" step="any" min="0" value="${rate}"> ${esc(v.currency)}${custom ? ` <button class="btn sm" id="set-fx-reset">Use ${FX_DEFAULT[v.currency] ? fNum(FX_DEFAULT[v.currency], 2) : "1"}</button>` : ""}</span>`),
+    setRow("Number format", "Which marks separate thousands and decimals, and whether big amounts are shortened (1.2M) or written out.",
+      pick("number", [["POINT_SHORT", "1.2M"], ["COMMA_SHORT", "1,2M"], ["POINT_FULL", "1,234"], ["COMMA_FULL", "1.234"]])),
+    setRow("Currency symbol position", "", pick("symbolPos", [["LEFT", "$1"], ["LEFT_SPACE", "$ 1"], ["RIGHT", "1$"], ["RIGHT_SPACE", "1 $"], ["NONE", "1"]])),
+    setRow("Currency decimal places", "For shortened amounts.", pick("moneyDp", [[0, "1M"], [1, "1.2M"], [2, "1.23M"]])),
+    setRow("Odds", "Decimal, fractional, American, or the chance as a percentage.", pick("odds", [["DECIMAL", "2.50"], ["FRACTIONAL", "3/2"], ["AMERICAN", "+150"], ["PERCENT", "40%"]])),
+    setRow("Fraction format", "For margins in lengths.", pick("fractions", [[false, "1 7/8"], [true, "1⅞"]])),
+    `<h3 class="set-sub">Dates &amp; times</h3>`,
+    setRow("Date format", "", sel("date", [["D_MON_YYYY", "31 Jan 2024"], ["DD-MM-YYYY", "31/01/2024"], ["MM-DD-YYYY", "01/31/2024"], ["YYYY-MM-DD", "2024/01/31"]])),
+    setRow("Date separator", "For the number formats above.", pick("sep", [["/", "/"], [".", "."], ["-", "-"]])),
+    setRow("Relative date unit", "How spans like “days since last start” are counted.", pick("rel", [["auto", "Auto"], ["weeks", "Weeks"], ["days", "Days"]])),
+    setRow("Time format", "", pick("time", [["24", "09:05 / 14:30"], ["12", "9:05 am / 2:30 pm"]])),
+    `<h3 class="set-sub">Units</h3>`,
+    setRow("Lengths", "Race distances, sections and speeds.", pick("length", [["METRIC", "Metric"], ["IMPERIAL", "Imperial"]])),
+    v.length === "IMPERIAL" ? setRow("Imperial distances", "", sel("impDist", [["MILES_FURLONGS_YARDS", "Miles, furlongs & yards (1m 2f 30y)"], ["FURLONGS", "Furlongs (7.0f)"], ["YARDS", "Yards (1,531 yd)"]])) : "",
+    setRow("Horse height", "", pick("height", [["METERS", "Meters"], ["CENTIMETRES", "Centimetres"], ["HANDS", "Hands"], ["FEET_INCHES", "Feet & inches"]])),
+    setRow("Race distance difference", "How far each runner finished behind the winner.", pick("margin", [["LENGTHS", "Lengths"], ["DISTANCE", "Units"], ["SECONDS", "Seconds"]])),
+    setRow("Weight", "", pick("weight", [["KILOGRAM", "kg"], ["POUND", "lbs"], ["STONE", "st"]])),
+    setRow("Temperature", "", pick("temp", [["CELSIUS", "°C"], ["FAHRENHEIT", "°F"], ["KELVIN", "K"], ["RANKINE", "°Ra"]])),
+  ].join(""));
+}
+function wireNumbersSection() {
+  const redraw = () => { CARD_CACHE.clear(); const y = window.scrollY; APP.dataset.keep = "1"; render().then(() => window.scrollTo(0, y)); refreshStatus(); };
+  const f = $("#set-fmt-follow");
+  if (f) f.onchange = () => { saveFmt({ follow: f.checked }); redraw(); };
+  $$("[data-fmt] button", APP).forEach((b) => (b.onclick = () => {
+    const key = b.closest("[data-fmt]").dataset.fmt, raw = b.dataset.v;
+    saveFmt({ [key]: key === "moneyDp" ? +raw : key === "fractions" ? raw === "true" : raw }); redraw();
+  }));
+  $$("[data-fmt-sel]", APP).forEach((el) => (el.onchange = () => { saveFmt({ [el.dataset.fmtSel]: el.value }); redraw(); }));
+  const fx = $("#set-fx");
+  if (fx) fx.onchange = () => { const r = +fx.value; if (r > 0) { const m = fmtStored(); saveFmt({ rates: { ...(m.rates || {}), [FMT.currency]: r } }); redraw(); } };
+  const fr = $("#set-fx-reset");
+  if (fr) fr.onclick = () => { const m = fmtStored(), rates = { ...(m.rates || {}) }; delete rates[FMT.currency]; saveFmt({ rates }); redraw(); };
+}
 const setRow = (title, help, control, more) => `<div class="set-row"><div class="set-txt"><div class="set-t">${title}</div><div class="set-h">${help}</div>${more
   ? `<details class="set-more"><summary>More about this</summary><div class="set-h">${more}</div></details>` : ""}</div><div class="set-c">${control}</div></div>`;
 const setSection = (k, title, about, where, body) => `<section class="panel set-sec" id="set-${k}"><div class="set-sec-head"><div><h2>${title}</h2><div class="set-about">${about}</div></div>
@@ -7131,6 +7352,7 @@ function settingsPage() {
     `<div class="set-row set-colours"><div class="set-txt"><div class="set-t">Colours</div><div class="set-h">Pick a colour theme, or your own colours. Light and dark mode each keep their own.</div></div>
       <details class="set-fold"><summary class="btn">Change colours</summary><div id="colour-box" class="colour-box"></div></details></div>`,
   ].join("")));
+  secs.push(numbersSection());
   secs.push(setSection("pages", "Pages & tables", "How menus, tables, charts and hover cards behave.", "browser", [
     row("Side menu", "Full, icons only, or hidden. The ☰ button at the top left does the same.",
       `<select id="set-side"><option value="full">Full</option><option value="mini">Icons only</option><option value="hidden">Hidden</option></select>`),
@@ -7267,6 +7489,7 @@ settingsPage.after = (route) => {
   };
   window.addEventListener("scroll", mark, { passive: true }); mark();
   if (route && route.q && route.q.s) setTimeout(() => jump(route.q.s), 60);
+  wireNumbersSection();
   drawColours();
   setTableSize(getTableSize());
   drawFontDropdowns();
@@ -7286,6 +7509,7 @@ settingsPage.after = (route) => {
   if (st) st.onchange = () => { setMyStable(st.value); renderSidebar(); };
   $("#set-reset").onclick = () => {
     try { Object.keys(localStorage).filter((k) => k.startsWith("hrm.") && !k.startsWith("hrm.favs:") && k !== "hrm.keys").forEach((k) => localStorage.removeItem(k)); } catch (e) { /* nothing stored */ }
+    applyFmt(); CARD_CACHE.clear();
     HOVER_CARDS = true; ANC_COLOURS = true; setTableSize(TS_DEFAULT); setSideMenu("full"); setTheme("light"); setFont("Segoe UI", "system"); setInk(""); renderSidebar(); render();
   };
 };
@@ -7399,6 +7623,7 @@ databasesPage.after = () => {
 bindRunnerToggles(APP);
 async function refreshStatus() {
   try { STATUS = await api("status"); } catch (e) { STATUS = null; }
+  if (STATUS) await loadGameFmt();      // the game's currency, number, date and unit settings (16.7.13)
   if (STATUS && STATUS.loaded) await loadNotes(); else NOTES = { tags: [], items: {} };
   const m = (STATUS && STATUS.meta) || {};
   const dbn = STATUS && STATUS.db ? STATUS.db.name : "";
