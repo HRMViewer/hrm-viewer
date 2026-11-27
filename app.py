@@ -319,15 +319,17 @@ def warm_up(delay=1.0):
         if not PORT or not os.path.exists(CURRENT_DB):
             return
         opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
-        pages = ["home", "meetings", "horses", "races", "races?when=upcoming", "stables", "people", "people_overview", "stable_rankings", "awards", "courses", "pedigrees",
-                 "pedigrees?kind=dams", "pedigrees?kind=damsires", "horse_table", "stable_table", "tables"]
-        if META.get("player_id"):
-            pages.append("person/%s" % META["player_id"])
+        # the Stables pages come before People overview (16.7.11): that one reads every race result and takes a while,
+        # and anything clicked while it runs waits behind it
+        pages = ["home", "meetings", "horses", "races", "races?when=upcoming", "stables", "stable_rankings", "stable_table"]
         if META.get("player_stable_id"):
             ps = META["player_stable_id"]
-            pages += ["stable/%s" % ps, "horse_table?stable=%s" % ps, "stable_races/%s" % ps, "stable_courses/%s" % ps,
+            pages += ["stable/%s" % ps, "stable_more/%s" % ps, "horse_table?stable=%s" % ps, "stable_races/%s" % ps, "stable_courses/%s" % ps,
                       # your stable's money pages, alone and for its whole ownership group
                       "stable_finance/%s" % ps, "stable_finance/%s?group=1" % ps, "stable_horse_money/%s" % ps, "stable_horse_money/%s?group=1" % ps]
+        pages += ["people", "people_overview", "awards", "courses", "pedigrees", "pedigrees?kind=dams", "pedigrees?kind=damsires", "horse_table", "tables"]
+        if META.get("player_id"):
+            pages.append("person/%s" % META["player_id"])
         for pg in pages:
             if DB_GEN != gen:
                 return
@@ -3971,6 +3973,23 @@ def po_years(con):
 
 
 PO_LOCK = threading.Lock()
+RESULT_YEARS = {}
+
+
+def result_years(con):
+    """The same years as po_years (results with a jockey, trainer or head trainer), from one plain query instead of
+    the full People overview scan, so the stable Rankings year picker doesn't wait for it (16.7.11). Kept for the loaded save."""
+    ys = RESULT_YEARS.get(DB_GEN)
+    if ys is None:
+        rc = columns(con, "race_results")
+        who = [c for c in ("race_result_person_jockey_id", "race_result_trainer_id", "race_result_stable_head_trainer_id") if c in rc]
+        if not who or "race_result_date" not in rc:
+            return []
+        ys = [r[0] for r in con.execute("""select distinct cast(strftime('%%Y', race_result_date, 'unixepoch') as int) from race_results
+            where race_result_date is not null and (%s) order by 1 desc""" % " or ".join("+%s > 0" % c for c in who)) if r[0]]   # "+": a plain scan, not three index lookups
+        RESULT_YEARS.clear()
+        RESULT_YEARS[DB_GEN] = ys
+    return ys
 
 
 MGR_TENURE = {}
@@ -5625,7 +5644,22 @@ def sr_figures(con, tab, year):
     if year:
         args = [calendar.timegm((year, 1, 1, 0, 0, 0)), calendar.timegm((year + 1, 1, 1, 0, 0, 0))]
     out = {}
-    if tab == "earnings":
+    if tab == "earnings" and (DB_GEN, "scan") not in PO_AGG and {"race_result_stable_id", "race_result_rank", "race_result_date"} <= set(columns(con, "race_results")):
+        # 16.7.11: one query for just this tab, so it doesn't wait for the People overview's pass over every result
+        # (same figures; that pass is used instead once it has been done)
+        rc = columns(con, "race_results")
+        cash = "coalesce(rr.race_result_cash_received, 0)" if "race_result_cash_received" in rc else "0"
+        graded = has_table(con, "races") and "races_type_of_race" in columns(con, "races")
+        g = lambda t: ("sum(rr.race_result_rank = 1 and r.races_type_of_race = '%s')" % t) if graded else "0"
+        join = " left join races r on r.races_race_id = rr.race_result_race_id" if graded else ""
+        when = " and rr.race_result_date >= ? and rr.race_result_date < ?" if year else ""
+        for r in con.execute("""select rr.race_result_stable_id, count(*), sum(rr.race_result_rank = 1), sum(rr.race_result_rank between 1 and 3), sum(%s), %s, %s, %s, %s
+                from race_results rr%s where rr.race_result_stable_id > 0%s group by 1""" % (cash, g("G1"), g("G2"), g("G3"), g("listed"), join, when), args):
+            out[r[0]] = dict(zip(("starts", "wins", "places", "prize", "g1", "g2", "g3", "listed"), (x or 0 for x in r[1:])))
+        for r in out.values():
+            r["winpct"] = 100.0 * r["wins"] / r["starts"] if r["starts"] else None
+            r["group"] = r["g1"] + r["g2"] + r["g3"]
+    elif tab == "earnings":
         # from the same single pass over the results as the People overview (worked out once per save)
         for (sid, y), a in po_scan(con)["stables"].items():
             if year and y != year:
@@ -5756,7 +5790,7 @@ def sr_table(con, tab, year):
 
 def api_stable_rankings(con, q):
     tab = q.get("tab") if q.get("tab") in SR_TABS else "value"
-    years = po_years(con)
+    years = result_years(con)
     year = to_int(q.get("year")) if SR_TABS[tab]["year"] else None
     if SR_TABS[tab]["year"] and q.get("year") is None and years:
         year = utc_year(META.get("game_date") or time.time())       # this season unless another year (or all time) is picked
@@ -7583,7 +7617,7 @@ class Handler(BaseHTTPRequestHandler):
 
 # --------------------------------------------------------------------------- in-app updates
 
-VERSION = "16.7.10"
+VERSION = "16.7.11"
 BACKUP_DIR = os.path.join(APP_DIR, "backups")
 UPDATE_PENDING = os.path.join(DATA_DIR, "update_pending.json")
 UPDATE_RESULT = os.path.join(DATA_DIR, "update_result.json")

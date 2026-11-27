@@ -1,5 +1,18 @@
 [
   {
+    "version": "16.7.11",
+    "date": "2026-11-28",
+    "title": "Faster stable Rankings, a # column on the Stable table, and tidier Settings",
+    "changes": [
+      "Stable Rankings opens much faster after starting the viewer or loading a save: its year list no longer waits for the full scan of every race result that People overview does, and the Cash earnings table works out its own figures (the same numbers) instead of waiting for that scan.",
+      "The Stables pages are now ready sooner after start-up: the viewer prepares them before People overview, which takes the longest.",
+      "Stable table: a new # column shows each stable's place in whatever order you sort by, carrying on across pages. It and the stable's name stay in view when you scroll sideways.",
+      "Settings → General is laid out again: one column of sections (Your stable, Look, Pages & tables, Racing season, Your save file, Stored data, HRM Viewer app) with a menu beside them to jump to each, shorter descriptions with the details under “More about this”, and a label on each section saying whether it's kept in this browser or for the whole viewer.",
+      "Settings: “Updates” (new versions of the viewer) is now “New versions” under HRM Viewer app, and “Automatic updates” (loading the game's new saves) is now “Follow the game as you play” under Your save file, so the two aren't mixed up. Colour choices sit behind a Change colours button.",
+      "“change in Settings” links (Jockey season, Concepts) and the ● Auto button at the top now open Settings at the right section."
+    ]
+  },
+  {
     "version": "16.7.10",
     "date": "2026-11-27",
     "title": "Horse page: Physical, Pedigree and Connections on one line",

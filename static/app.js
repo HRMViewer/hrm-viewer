@@ -717,7 +717,7 @@ const PAGES = {
   compare: Object.assign((r) => comparePage(r), { after: (r) => comparePage.after(r) }),
   concepts: conceptsPage, concept: conceptPage, qualifying: qualifyingPage,
   pedigrees: pedigreesPage, pedigree: Object.assign((r) => pedigreePage(r.parts[1], r.q), { after: (r) => pedigreePage.after && pedigreePage.after(r) }), "horse-table": horseTablePage, "stable-table": stableTablePage, "stable-rankings": stableRankingsPage,
-  versions: versionsPage, meetings: meetingsPage, awards: (r) => awardsPage(r.q || {}), settings: Object.assign(() => settingsPage(), { after: () => settingsPage.after() }), databases: Object.assign(() => databasesPage(), { after: () => databasesPage.after() }),
+  versions: versionsPage, meetings: meetingsPage, awards: (r) => awardsPage(r.q || {}), settings: Object.assign(() => settingsPage(), { after: (r) => settingsPage.after(r) }), databases: Object.assign(() => databasesPage(), { after: () => databasesPage.after() }),
   shortcuts: Object.assign(() => shortcutsPage(), { after: () => shortcutsPage.after() }),
   meeting: Object.assign((r) => meetingPage(r.parts[1]), { after: (r) => meetingPage.after && meetingPage.after(r) }),
 };
@@ -1322,7 +1322,7 @@ CARD.addEventListener("click", (e) => {
   if (e.target.closest("[data-cards-off]")) {
     e.preventDefault(); HOVER_CARDS = false;
     try { localStorage.setItem("hrm.hoverCards", "0"); } catch (er) { /* session only */ }
-    hideCard(); if (location.hash === "#/settings") render();
+    hideCard(); if ((parseHash().parts[0] || "") === "settings") render();
   }
 });
 window.addEventListener("scroll", () => { TIP.hidden = true; TIP_FOR = null; hideCard(); }, true);
@@ -1767,9 +1767,14 @@ async function listPage(cfg, route) {
   const count = `${fNum(data.total)} ${data.total === 1 ? singular(cfg.noun) : cfg.noun}`;
   return (cfg.noHead ? (cfg.head || "") : `<div class="page-head"><div><h1>${cfg.title}</h1><div class="sub">${count}</div></div>${exp}</div>${savedViewsBar()}`) + `
     <section class="panel">${cfg.noHead ? `<div class="panel-head"><h2>${cfg.title}</h2><span class="note">${count}</span>${exp ? `<span style="margin-left:auto">${exp}</span>` : ""}</div>` : ""}<div class="filters">${cfg.filters(q, data)}</div>${cfg.intro ? `<div class="note-line">${cfg.intro}</div>` : ""}
-    ${table(cfg.cols, data.rows, { sort, dir, rowClass: cfg.rowClass, wide: cfg.wide, ascCols: cfg.ascDefault, empty: "No matches. Try a different search or filter.", ...(cfg.tableOpts || {}) })}
+    ${table(cfg.rankCol ? [rankCol(sort)].concat(cfg.cols) : cfg.cols, cfg.rankCol ? numberRows(data) : data.rows, { sort, dir, rowClass: cfg.rowClass, wide: cfg.wide, ascCols: cfg.ascDefault, empty: "No matches. Try a different search or filter.", ...(cfg.rankCol ? { tcls: "ranked" } : {}), ...(cfg.tableOpts || {}) })}
     ${pager(data)}</section>`;
 }
+// a "#" column (16.7.11): each row's place in the current sort, carrying on across pages (row 1 on page 2 of 100 is #101).
+// A row with nothing in the sorted column (it sits at the bottom) gets no number.
+const numberRows = (data) => (data.rows || []).map((r, i) => ({ ...r, _n: ((data.page || 1) - 1) * (data.page_size || 0) + i + 1 }));
+const rankCol = (sort) => ({ h: `<span data-tip="Place in the current sort. Click any column heading to rank by it.">#</span>`, cls: "num muted rank-col",
+  f: (r) => (sort in r && (r[sort] === null || r[sort] === undefined) ? "" : fNum(r._n)) });
 // "1 stable", "1 person": the singular of the nouns the lists use
 const singular = (noun) => ({ people: "person", races: "race", horses: "horse", stables: "stable", meetings: "meeting", courses: "course", sires: "sire", dams: "dam",
   "broodmare sires": "broodmare sire", results: "result" }[noun] || noun.replace(/s$/, ""));
@@ -2423,7 +2428,7 @@ async function jockeySeasonPage(route) {
   const n = s.now, pv = s.prev, ps = s.prev_same;
   const cmp = ps || pv, cmpLab = ps ? `this time last season` : `last season`;
   html += `<div class="filters" style="margin:4px 0 12px">${select("year", { year: String(s.year) }, (s.years || []).map((y) => [String(y.key), `Season ${y.label}`]))}
-    <span class="small muted">${seasonText().replace(/^./, (x) => x.toUpperCase())} (<a href="#/settings">change in Settings</a>) · compared with ${ps ? "the same point of " : ""}${esc(s.prev_label)}</span></div>`;
+    <span class="small muted">${seasonText().replace(/^./, (x) => x.toUpperCase())} (<a href="#/settings?s=season">change in Settings</a>) · compared with ${ps ? "the same point of " : ""}${esc(s.prev_label)}</span></div>`;
   html += tiles([
     ["Rides", fNum(n.rides), SEASON_DELTA(n.rides, cmp.rides, fNum) + ` <span class="muted small">vs ${fNum(cmp.rides)} ${cmpLab}</span>`],
     ["Wins", fNum(n.wins), SEASON_DELTA(n.wins, cmp.wins, fNum) + ` <span class="muted small">vs ${fNum(cmp.wins)}</span>`],
@@ -3034,7 +3039,7 @@ function sectionTabs(sec, active) {
 async function conceptsPage() {
   const d = await api("concepts?" + seasonQS(true));
   let html = raceSubTabs("concepts") + `<div class="page-head"><div><h1>Concepts</h1><div class="sub">Triple Crowns and other race series: win every race in one season to sweep it.
-    ${seriesOwnSeason() ? "Each series keeps its own season, from its first race to its last" : `Seasons are your ${seasonText()}`} (<a href="#/settings">change in Settings</a>). A horse that has won every race run so far is marked <b>on for the sweep</b>.</div></div></div>`;
+    ${seriesOwnSeason() ? "Each series keeps its own season, from its first race to its last" : `Seasons are your ${seasonText()}`} (<a href="#/settings?s=season">change in Settings</a>). A horse that has won every race run so far is marked <b>on for the sweep</b>.</div></div></div>`;
   const status = (c) => {
     const nx = c.next_season;
     if (!c.season) return `<span class="muted small">Not started yet${nx ? `<br>first race ${fDate(nx.start)}` : ""}</span>`;
@@ -6051,7 +6056,7 @@ async function stableTablePage(route) {
   let countries = [];
   return listPage({
     title: "Stable table", noun: "stables", endpoint: "stable_table", defaultSort: "prestige", ascDefault: ["name", "owner", "country"],
-    exportName: "stable_table", wide: true,
+    exportName: "stable_table", wide: true, rankCol: true,
     intro: "Race figures cover every result recorded under each stable. Cash and net worth are from each stable's latest monthly report.",
     filters: (q, data) => searchBox(q, "Search stables") + statusSeg("stable", q, "active") +
       select("country", q, [["", "Any country"]].concat((data.countries || countries).map((c) => [c, c]))) +
@@ -6421,7 +6426,7 @@ async function autoPoll(soon) {
   const fast = a && (a.state === "updating" || a.state === "waiting" || a.running);
   AUTO_TIMER = setTimeout(autoPoll, soon || fast ? 2500 : 10000);
 }
-document.addEventListener("click", (e) => { if (e.target.closest("#auto-ind")) location.hash = "#/settings"; });
+document.addEventListener("click", (e) => { if (e.target.closest("#auto-ind")) location.hash = "#/settings?s=save"; });
 
 // ------------------------------------------------------------------ export any table to CSV
 function tableToCsv(tbl) {
@@ -6826,47 +6831,69 @@ function settingsTabs(on) {
   return `<div class="subtabs"><a href="#/settings" class="${on === "settings" ? "on" : ""}">General</a><a href="#/databases" class="${on === "databases" ? "on" : ""}">Databases</a>
     <a href="#/tables" class="${on === "tables" ? "on" : ""}">All tables</a><a href="#/shortcuts" class="${on === "shortcuts" ? "on" : ""}">Shortcuts</a><a href="#/tags" class="${on === "tags" ? "on" : ""}">Tags</a><a href="#/versions" class="${on === "versions" ? "on" : ""}">Versions &amp; changes</a></div>`;
 }
+// Settings → General, laid out again in 16.7.11: one column of sections with a menu beside it to jump between them,
+// short descriptions (the longer explanations are behind "More about this"), and each section says where it's kept
+const SET_SECTIONS = [["stable", "Your stable"], ["look", "Look"], ["pages", "Pages & tables"], ["season", "Racing season"],
+  ["save", "Your save file"], ["storage", "Stored data"], ["app", "HRM Viewer app"]];
+const setRow = (title, help, control, more) => `<div class="set-row"><div class="set-txt"><div class="set-t">${title}</div><div class="set-h">${help}</div>${more
+  ? `<details class="set-more"><summary>More about this</summary><div class="set-h">${more}</div></details>` : ""}</div><div class="set-c">${control}</div></div>`;
+const setSection = (k, title, about, where, body) => `<section class="panel set-sec" id="set-${k}"><div class="set-sec-head"><div><h2>${title}</h2><div class="set-about">${about}</div></div>
+  <span class="set-where" data-tip="${where === "browser" ? "Kept in this browser on this computer" : "Kept by the viewer, whichever browser or window you use"}">${where === "browser" ? "This browser" : "Whole viewer"}</span></div>${body}</section>`;
 function settingsPage() {
   const ms = (STATUS && STATUS.my_stables) || [], cur = myStableId();
   const a = (STATUS && STATUS.app) || {};
   const sw = (id, on) => `<label class="switch"><input type="checkbox" id="${id}" ${on ? "checked" : ""}><span></span></label>`;
-  const row = (title, help, control) => `<div class="set-row"><div><div class="set-t">${title}</div><div class="set-h">${help}</div></div><div class="set-c">${control}</div></div>`;
+  const row = setRow;
   const cr = chartDefaultRange();
-  let html = settingsTabs("settings") + `<div class="page-head"><div><h1>Settings</h1><div class="sub">Settings are kept in this browser on this computer.</div></div></div>`;
-  html += `<div class="grid cols-2">` + panel("Display", [
-    row("Font", "The typeface used everywhere in the viewer. Each one is shown in its own style.", `<div id="font-dd" class="dd"></div>`),
-    row("Font colour", "The colour of the main text. Each colour has a lighter version for dark mode.", `<div id="ink-dd" class="dd"></div>`),
-    row("Appearance", "Light, dark, or follow your Windows setting.",
+  const nav = `<nav class="set-nav" aria-label="Settings sections">${SET_SECTIONS.map(([k, t]) => `<a href="#/settings?s=${k}" data-set-jump="${k}">${t}</a>`).join("")}</nav>`;
+  const secs = [];
+  secs.push(setSection("stable", "Your stable", "Which of your stables the left menu opens.", "browser", ms.length ? [
+    row("Main stable", "Opened by “Your stables” and “Your horses” in the left menu.",
+      `<select id="set-stable">${ms.map((x) => `<option value="${x.id}" ${String(x.id) === String(cur) ? "selected" : ""}>${esc(x.name)} — ${esc(x.role)}</option>`).join("")}</select>`),
+    `<div class="set-h set-foot">${ms.length} stable${ms.length === 1 ? "" : "s"} you manage, own or hold shares in. Use ◀ ▶ at the top of their pages to move between them.</div>`,
+  ].join("") : '<div class="empty">No stables found for your player in this database.</div>'));
+  secs.push(setSection("look", "Look", "Light or dark, text size, font and colours.", "browser", [
+    row("Appearance", "Light, dark, or the same as Windows.",
       `<div class="theme-pick">${[["light", "Light"], ["dark", "Dark"], ["auto", "Match Windows"]].map(([k, t]) => `<button data-theme="${k}" class="${themeMode() === k ? "on" : ""}">${t}</button>`).join("")}</div>`),
-    row("Colours", "Pick your own colours. Light and dark mode each keep their own.", `<div id="colour-box" class="colour-box"></div>`),
-    row("Text size", "Changes all text in the app, from 8px to 20px.",
+    row("Text size", "Makes all text bigger or smaller, from 8px to 20px.",
       `<div class="tsize"><button id="ts-down" aria-label="Smaller text">A−</button><span class="val" id="ts-val"></span><button id="ts-up" aria-label="Larger text">A+</button><button id="ts-reset" class="reset">Reset</button></div>`),
-    row("Hover cards", "A small summary pops up when you hover over a horse, person, stable, race or racecourse.", sw("set-cards", HOVER_CARDS)),
-    row("Pedigree gender colours", "Orange for dams and teal for sires in the 8–16 generation family tree lists.", sw("set-pedcol", ANC_COLOURS)),
-    row("Rows per page", "How many rows long tables (Horses, Races, Horse table, All tables…) show on each page. You can also change it under any table.",
-      `<select id="set-rows"><option value="">Standard (50, or 100 for All tables)</option>${PAGE_SIZES.map((n) => `<option value="${n}" ${prefPageSize() === n ? "selected" : ""}>${fNum(n)}</option>`).join("")}</select>`),
-    row("Side menu", "Show the full side menu, just its icons, or hide it. The ☰ button at the left of the menu bar does the same. On small windows the menu slides in over the page instead.",
+    row("Font", "The typeface used everywhere. Each one is shown in its own style.", `<div id="font-dd" class="dd"></div>`),
+    row("Font colour", "The colour of the main text. Dark mode uses a lighter version of it.", `<div id="ink-dd" class="dd"></div>`),
+    `<div class="set-row set-colours"><div class="set-txt"><div class="set-t">Colours</div><div class="set-h">Pick a colour theme, or your own colours. Light and dark mode each keep their own.</div></div>
+      <details class="set-fold"><summary class="btn">Change colours</summary><div id="colour-box" class="colour-box"></div></details></div>`,
+  ].join("")));
+  secs.push(setSection("pages", "Pages & tables", "How menus, tables, charts and hover cards behave.", "browser", [
+    row("Side menu", "Full, icons only, or hidden. The ☰ button at the top left does the same.",
       `<select id="set-side"><option value="full">Full</option><option value="mini">Icons only</option><option value="hidden">Hidden</option></select>`),
-    row("Charts open showing", "The time range charts start on. You can still change it with the buttons on each chart. If a chart has less history than this, it shows all of it.",
+    row("Rows per page", "How many rows long tables show at once. You can also change it under any table.",
+      `<select id="set-rows"><option value="">Standard (50, or 100 for All tables)</option>${PAGE_SIZES.map((n) => `<option value="${n}" ${prefPageSize() === n ? "selected" : ""}>${fNum(n)}</option>`).join("")}</select>`),
+    row("Charts open showing", "The time range charts start on. Each chart still has its own range buttons.",
       `<select id="set-range"><option value="all" ${cr === "all" ? "selected" : ""}>All of the history</option>
         <optgroup label="Years">${RANGES.filter((r) => r[0].endsWith("y")).map((r) => `<option value="${r[0]}" ${r[0] === cr ? "selected" : ""}>Last ${r[1]}</option>`).join("")}</optgroup>
         <optgroup label="Months">${RANGES.filter((r) => r[0].endsWith("m")).map((r) => `<option value="${r[0]}" ${r[0] === cr ? "selected" : ""}>Last ${r[1]}</option>`).join("")}</optgroup></select>`),
-    row("Racing season", "The day your racing season starts. Jockey season and Concepts (and their season pickers) use it. Choose 1 January for calendar years. Seasons that cross the new year are shown like 2018/19.",
+    row("Hover cards", "A quick summary when you point at a horse, person, stable, race or racecourse.", sw("set-cards", HOVER_CARDS)),
+    row("Pedigree gender colours", "Dams in orange and sires in teal in the long family-tree lists.", sw("set-pedcol", ANC_COLOURS)),
+  ].join("")));
+  secs.push(setSection("season", "Racing season", "When your season starts. Jockey season and Concepts use it.", "browser", [
+    row("Season starts on", "Choose 1 January for calendar years. Seasons that cross the new year show like 2018/19.",
       (() => { const [m, d] = seasonStart().split("-").map(Number); return `<span class="season-pick"><select id="set-season-d" aria-label="Day">${Array.from({ length: 28 }, (_, i) => `<option value="${i + 1}" ${i + 1 === d ? "selected" : ""}>${i + 1}</option>`).join("")}</select>
         <select id="set-season-m" aria-label="Month">${MONTHS_LONG.map((n, i) => `<option value="${i + 1}" ${i + 1 === m ? "selected" : ""}>${n}</option>`).join("")}</select></span>`; })()),
-    row("Race series keep their own season", "On: each series in Concepts runs from its first race to its last, whatever your season start (handy when, say, a Northern Hemisphere series runs April to October). Off: Concepts follow your racing season.",
-      sw("set-season-series", seriesOwnSeason())),
-  ].join("")) +
-    // right-hand column: your stables (compact), then the viewer and database panels underneath
-    `<div class="set-stack">` + panel("Your stables", ms.length ? [
-    row("Main stable", "Opened by “Your stables” and “Your horses” in the left menu.",
-      `<select id="set-stable">${ms.map((x) => `<option value="${x.id}" ${String(x.id) === String(cur) ? "selected" : ""}>${esc(x.name)} — ${esc(x.role)}</option>`).join("")}</select>`),
-    `<div class="set-h" style="margin-top:6px">${ms.length} stable${ms.length === 1 ? "" : "s"} you manage, own or hold shares in. Use ◀ ▶ at the top of their pages to move between them.</div>`,
-  ].join("") : '<div class="empty">No stables found for your player in this database.</div>') +
-    panel("Viewer", [
+    row("Race series keep their own season", "On: each series in Concepts runs from its first race to its last. Off: series follow your season.",
+      sw("set-season-series", seriesOwnSeason()), "Handy when a series doesn't fit your season, like a Northern Hemisphere series that runs April to October."),
+  ].join("")));
+  secs.push(setSection("save", "Your save file", "The game save you're looking at, and keeping it up to date as you play.", "viewer", [
+    row("Open database", `<b>${esc((STATUS && STATUS.db && STATUS.db.name) || "—")}</b>${STATUS && STATUS.meta && STATUS.meta.game_date ? ` · game date ${fDate(STATUS.meta.game_date)}` : ""}`,
+      `<a class="btn" href="#/databases">Manage databases</a>`),
+    row("Load a newer save", "Bring in a newer database.db yourself, or load one as a new database.", `<button class="btn" onclick="openLoad()">Load database</button>`),
+    `<h3 class="set-sub">Follow the game as you play</h3><div id="auto-box"><div class="muted">Loading…</div></div>`,
+  ].join("")));
+  secs.push(setSection("storage", "Stored data", "Ways to make the viewer's copy of your save take less space. They all start off.", "viewer", `<div id="compact-box">${compactBox()}</div>`));
+  secs.push(setSection("app", "HRM Viewer app", "Your version, new versions, the Quick Guide, and resetting settings.", "viewer", [
     row("Version", `HRM Viewer <b>${esc(a.version || "")}</b>`, `<a class="btn" href="#/versions">Versions &amp; changes</a>`),
+    row("New versions", "New versions of HRM Viewer come from GitHub. The viewer checks for them, offers to install them, and can go back to an earlier one. (This is separate from loading your save.)", `<div id="gh-box" class="gh-box"><span class="muted small">Checking…</span></div>`),
+    row("Install from a file", "Install an HRM-Viewer-update zip you've downloaded. Your data isn't touched.", `<button class="btn" data-open-update>Install an update</button>`),
     STATUS && STATUS.desktop && STATUS.platform === "mac"
-      ? row("Desktop app", "You're using the HRM Viewer app. Keep it in your Applications folder and drag it to the Dock to open it like any other app. Your data is kept in Library/Application Support/HRM Viewer, so it stays when you replace the app with a newer one.", "")
+      ? row("Desktop app", "You're using the HRM Viewer app. Keep it in Applications and drag it to the Dock to open it like any other app.", "", "Your data is kept in Library/Application Support/HRM Viewer, so it stays when you replace the app with a newer one.")
       : STATUS && STATUS.desktop && STATUS.platform === "linux"
       ? row("Desktop app", "You're using the HRM Viewer app. Add it to your applications menu to open it like any other program.", `<button class="btn" id="set-shortcut">Add to menu</button>`)
       : STATUS && STATUS.desktop
@@ -6875,39 +6902,37 @@ function settingsPage() {
         ? row("Desktop app", "HRM Viewer can open in its own window instead of the browser: close this, then double-click <b>HRM Viewer.exe</b> in the viewer's folder.", "")
         : "",
     STATUS && STATUS.desktop && STATUS.platform === "linux" && !STATUS.windowed
-      ? row("Stop the viewer", `HRM Viewer is running in your browser because it couldn't open its own window${STATUS.window_problem ? `: <b>${esc(STATUS.window_problem)}</b>` : ""}. It needs WebKitGTK (the package is usually called <code>libwebkit2gtk-4.1</code> or <code>webkit2gtk-4.1</code>; version 4.0 works too). Closing the browser tab leaves it running; stop it here when you're done.`, `<button class="btn" id="set-stop">Stop the viewer</button>`)
+      ? row("Stop the viewer", `HRM Viewer is running in your browser because it couldn't open its own window${STATUS.window_problem ? `: <b>${esc(STATUS.window_problem)}</b>` : ""}. Closing the browser tab leaves it running; stop it here when you're done.`, `<button class="btn" id="set-stop">Stop the viewer</button>`,
+        "To get its own window it needs WebKitGTK (the package is usually called <code>libwebkit2gtk-4.1</code> or <code>webkit2gtk-4.1</code>; version 4.0 works too).")
       : "",
-    row("Updates", "New versions come from GitHub. The viewer checks for them, offers to install them, and can go back to an earlier one. Untick “Check for updates automatically” to only check when you press Check now.", `<div id="gh-box" class="gh-box"><span class="muted small">Checking…</span></div>`),
-    row("Install an update", "Or choose an HRM-Viewer-update zip file you've downloaded. Your data isn't touched.", `<button class="btn primary" data-open-update>Install an update</button>`),
-    row("Quick Guide", "How to use the main features, as a PDF. It's updated with every version (also in your HRM Viewer folder).",
+    row("Quick Guide", "How to use the main features, as a PDF. It's updated with every version.",
       `<span style="display:inline-flex;gap:8px"><button class="btn" data-guide>Open the guide</button><a class="btn" href="/quick-guide.pdf" download="HRM Viewer - Quick Guide.pdf">Download PDF</a></span>`),
-    row("Reset settings", "Put every setting on this page back to how it started. Your data, favourites and shortcuts aren't touched.", `<button class="btn" id="set-reset">Reset settings</button>`),
-  ].join("")) +
-    panel("Database", [
-    row("Open database", `<b>${esc((STATUS && STATUS.db && STATUS.db.name) || "—")}</b>${STATUS && STATUS.meta && STATUS.meta.game_date ? ` · game date ${fDate(STATUS.meta.game_date)}` : ""}`,
-      `<a class="btn" href="#/databases">Manage databases</a>`),
-    row("Load a newer save", "Update the open database with a newer database.db, or load one as a new database.", `<button class="btn" onclick="openLoad()">Load database</button>`),
-  ].join("")) + `</div></div>`;
-  html += `<div style="margin-top:16px">` + panel("Stored data", `<div id="compact-box">${compactBox()}</div>`) + `</div>`;
-  html += `<div style="margin-top:16px">` + panel("Automatic updates", `<div id="auto-box"><div class="muted">Loading…</div></div>`) + `</div>`;
-  return html;
+    row("Reset settings", "Puts the settings kept in this browser (look, pages &amp; tables, racing season, main stable) back to how they started.", `<button class="btn" id="set-reset">Reset settings</button>`,
+      "Your data, favourites and shortcuts aren't touched, and nor are the save file, stored data and new-version settings."),
+  ].join("")));
+  return settingsTabs("settings") + `<div class="page-head"><div><h1>Settings</h1><div class="sub">Changes are saved as soon as you make them.</div></div></div>
+    <div class="set-layout">${nav}<div class="set-main">${secs.join("")}</div></div>`;
 }
 // ------------------------------------------------------------------ Settings → Stored data: compacting (16.7)
 const fSize = (b) => (isNum(b) && b > 0 ? (b >= 1000 * (1 << 20) ? (b / (1 << 30)).toFixed(2) + " GB" : Math.round(b / (1 << 20)) + " MB") : "—");
 function compactBox() {
   const c = (STATUS && STATUS.compact) || {}, m = (STATUS && STATUS.meta) || {}, last = m.compact;
   const sw = (id, on, dis) => `<label class="switch"><input type="checkbox" id="${id}" ${on ? "checked" : ""} ${dis ? "disabled" : ""}><span></span></label>`;
-  const row = (t, d, c2) => `<div class="set-row"><div><div class="set-t">${t}</div><div class="set-h">${d}</div></div><div class="set-c">${c2}</div></div>`;
+  const row = setRow;
   return [
-    row("Compact stored data", `Makes the stored copy of your save smaller, with nothing you can see in the viewer lost. Each time a save is loaded it drops what the viewer never shows: the game's rating history and race replays, its <i>Yearly Summary</i> story entries and their hidden data, and other people's horses' raw race positions once their sectional times are worked out (the sectionals are kept). It also rebuilds the biggest tables without a duplicate copy of their ID index. <b>What it drops can't come back</b>: older records the game has since deleted only exist in your stored copy. Loading takes a little longer while it's on.`,
-      sw("set-compact", c.on)),
-    c.disk_available ? row("Compress on disk", `Windows keeps the stored data compressed on your drive (the same as ticking <i>Compress contents to save disk space</i> on the folder), so it takes roughly half the space. Nothing in it is removed and pages read it as normal. Each load compresses the new copy before it's used, so it takes a little longer (about 10 seconds per GB); you can keep using the viewer meanwhile. Switching it on compresses the stored data you have now, and pages are slow for those few seconds. Works on NTFS drives (most Windows drives).${STATUS && STATUS.compressing ? " <b>Compressing now…</b>" : ""}`,
-      sw("set-compact-disk", c.disk)) : "",
-    row("Also thin other horses' charts", `Other people's horses keep one stat and value point per quarter instead of every one, so their charts have fewer points. Your stables' horses, horses you've ridden, bred or traded, their parents and your family are never thinned.`,
-      sw("set-compact-thin", c.thin, !c.on)),
+    row("Compact stored data", `Drops the parts of each save the viewer never shows, so the stored copy is smaller. Loading takes a little longer. <b>What's dropped can't be brought back.</b>`,
+      sw("set-compact", c.on),
+      `Each time a save is loaded it drops the game's rating history and race replays, its <i>Yearly Summary</i> story entries and their hidden data, and other people's horses' raw race positions once their sectional times are worked out (the sectionals are kept). It also rebuilds the biggest tables without a duplicate copy of their ID index. Older records the game has since deleted only exist in your stored copy, which is why what's dropped can't come back.`),
+    row("Also thin other horses' charts", `Other people's horses keep one chart point per quarter instead of every one. Needs Compact stored data on.`,
+      sw("set-compact-thin", c.thin, !c.on),
+      `Applies to stat and value history. Your stables' horses, horses you've ridden, bred or traded, their parents and your family are never thinned.`),
+    c.disk_available ? row("Compress on disk", `Windows keeps the stored copy compressed on your drive, so it takes about half the space. Nothing is removed.${STATUS && STATUS.compressing ? " <b>Compressing now…</b>" : ""}`,
+      sw("set-compact-disk", c.disk),
+      `The same as ticking <i>Compress contents to save disk space</i> on the folder; it works on NTFS drives (most Windows drives). Each load compresses the new copy before it's used, so loading takes a little longer (about 10 seconds per GB) and you can keep using the viewer meanwhile. Switching it on compresses what's stored now, and pages are slow for those few seconds.`) : "",
     row("Size", `${STATUS && STATUS.db_size ? `The stored data is <b>${fSize(STATUS.db_size)}</b>${STATUS.db_disk && STATUS.db_disk < STATUS.db_size * 0.97 ? `, taking <b>${fSize(STATUS.db_disk)}</b> on disk` : ""}.` : "No data stored yet."}${last ? ` Last compacted ${fDate(last.at)}: ${fSize(last.before)} → ${fSize(last.after)}.` : ""}
-      Compacting happens the next time a save is loaded, or now with <b>Compact now</b> (it needs free disk space about the size of the stored data while it runs).`,
-      `<button class="btn" id="compact-run" ${c.on && STATUS && STATUS.db_size ? "" : "disabled"}>Compact now</button>`),
+      Compacting happens on the next load, or now with <b>Compact now</b>.`,
+      `<button class="btn" id="compact-run" ${c.on && STATUS && STATUS.db_size ? "" : "disabled"}>Compact now</button>`,
+      "Compact now needs free disk space about the size of the stored data while it runs."),
   ].join("") + `<div id="compact-msg" class="small"></div>`;
 }
 function wireCompact() {
@@ -6953,22 +6978,21 @@ async function drawAutoBox() {
   const st = a.settings || {};
   const opt = (v, list) => list.map(([x, t]) => `<option value="${x}" ${+v === x ? "selected" : ""}>${t}</option>`).join("");
   const stateTxt = { off: "Off", current: "Up to date", waiting: "Change seen", updating: "Updating…", skipped: "Not loaded", error: "Problem", nofile: "No file to watch" }[a.state] || "";
-  box.innerHTML = `<div class="set-row"><div><div class="set-t">Update automatically when the save file changes</div>
-      <div class="set-h">The viewer watches the <b>database.db</b> this database was loaded from. When the game saves, it waits until the file is finished and loads it the normal way (newest wins, history kept). It only does this for the same save, never for an older file or a different career.</div></div>
-      <div class="set-c"><label class="switch"><input type="checkbox" id="auto-on" ${st.enabled ? "checked" : ""}><span></span></label></div></div>
-    <div class="set-row"><div style="flex:1"><div class="set-t">File being watched</div><div class="set-h">${a.path ? `<code>${esc(a.path)}</code>${a.exists ? (a.file_mtime ? ` · last changed ${new Date(a.file_mtime * 1000).toLocaleString("en-NZ")}` : "") : ' · <b class="bad-t">not found</b>'}` : "None yet — enter the path to the game's database.db below."}</div>
-        <div class="row-f"><input type="text" id="auto-path" value="${esc(a.path || "")}" placeholder="${pathHint("database.db")}" style="flex:1;min-width:320px">
-          <button class="btn primary" id="auto-path-go">Watch this file</button></div>
-        <div class="set-h">Paste the full path to the game's <code>database.db</code> (or the folder it's in). In File Explorer, hold Shift, right-click the file and choose “Copy as path”. It must be the same save as this database; if it's newer than the stored data it's loaded straight away.</div>
-        <div id="auto-path-msg"></div></div>
-      <div class="set-c"><button class="btn" id="auto-check" ${a.path && a.exists ? "" : "disabled"}>Check now</button></div></div>
-    <div class="set-row"><div><div class="set-t">Wait after the file changes</div><div class="set-h">So a save that's still being written isn't loaded half-way.</div></div>
-      <div class="set-c"><select id="auto-quiet">${opt(st.quiet, [[15, "15 seconds"], [30, "30 seconds"], [60, "1 minute"], [120, "2 minutes"], [300, "5 minutes"]])}</select></div></div>
-    <div class="set-row"><div><div class="set-t">At most one update every</div><div class="set-h">Loading a 1 GB save takes a little while, so updates are spaced out if the game saves very often.</div></div>
-      <div class="set-c"><select id="auto-gap">${opt(st.min_gap, [[60, "1 minute"], [120, "2 minutes"], [300, "5 minutes"], [600, "10 minutes"], [1800, "30 minutes"], [3600, "1 hour"]])}</select></div></div>
-    <div class="set-row"><div><div class="set-t">Status</div><div class="set-h"><span class="auto-pill ${esc(a.state)}">${stateTxt}</span> ${esc(a.message || "")}
+  box.innerHTML = setRow("Load new saves automatically", "When the game saves, the viewer loads the new save by itself. Only for this same save, never an older file or a different career.",
+      `<label class="switch"><input type="checkbox" id="auto-on" ${st.enabled ? "checked" : ""}><span></span></label>`,
+      "It watches the <b>database.db</b> this database was loaded from, waits until the game has finished writing it, then loads it the normal way (newest wins, history kept).") +
+    `<div class="set-row set-wide"><div class="set-txt" style="flex:1"><div class="set-t">Save file to follow</div><div class="set-h">${a.path ? `<code>${esc(a.path)}</code>${a.exists ? (a.file_mtime ? ` · last changed ${new Date(a.file_mtime * 1000).toLocaleString("en-NZ")}` : "") : ' · <b class="bad-t">not found</b>'}` : "None yet. Enter the path to the game's database.db below."}</div>
+        <div class="row-f"><input type="text" id="auto-path" value="${esc(a.path || "")}" placeholder="${pathHint("database.db")}" style="flex:1;min-width:280px">
+          <button class="btn primary" id="auto-path-go">Follow this file</button><button class="btn" id="auto-check" ${a.path && a.exists ? "" : "disabled"}>Check now</button></div>
+        <div class="set-h">The full path to the game's <code>database.db</code>, or the folder it's in. In File Explorer, hold Shift, right-click the file and choose “Copy as path”.</div>
+        <div id="auto-path-msg"></div></div></div>` +
+    setRow("Wait after the file changes", "So a save that's still being written isn't loaded half-way.",
+      `<select id="auto-quiet">${opt(st.quiet, [[15, "15 seconds"], [30, "30 seconds"], [60, "1 minute"], [120, "2 minutes"], [300, "5 minutes"]])}</select>`) +
+    setRow("At most one update every", "Spaces updates out if the game saves very often.",
+      `<select id="auto-gap">${opt(st.min_gap, [[60, "1 minute"], [120, "2 minutes"], [300, "5 minutes"], [600, "10 minutes"], [1800, "30 minutes"], [3600, "1 hour"]])}</select>`) +
+    setRow("Status", `<span class="auto-pill ${esc(a.state)}">${stateTxt}</span> ${esc(a.message || "")}
       ${a.last_result && a.last_result.ok ? `<br>Last automatic update: ${new Date(a.last_result.at * 1000).toLocaleString("en-NZ")} · game date ${fDate(a.last_result.game_date)}` : ""}
-      ${lastLoadHtml(a.last_load, a.compressing)}</div></div><div class="set-c"></div></div>`;
+      ${lastLoadHtml(a.last_load, a.compressing)}`, "");
   const post = async (url, body) => { await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}) }); setTimeout(drawAutoBox, 600); autoPoll(true); };
   $("#auto-on").onchange = (e) => post("/api/auto", { enabled: e.target.checked });
   $("#auto-quiet").onchange = (e) => post("/api/auto", { quiet: +e.target.value });
@@ -6981,10 +7005,23 @@ async function drawAutoBox() {
     const j = await r.json().catch(() => ({}));
     if (!r.ok) { $("#auto-path-msg").innerHTML = `<div class="err">${esc(j.error || "Couldn't watch that file.")}</div>`; return; }
     await refreshStatus(); autoPoll(true);
-    setTimeout(async () => { await drawAutoBox(); const m = $("#auto-path-msg"); if (m) m.innerHTML = '<div class="ok-t">✓ Now watching that file.</div>'; }, 700);
+    setTimeout(async () => { await drawAutoBox(); const m = $("#auto-path-msg"); if (m) m.innerHTML = '<div class="ok-t">✓ Now following that file.</div>'; }, 700);
   };
 }
-settingsPage.after = () => {
+settingsPage.after = (route) => {
+  // the menu beside the sections: jump to one, and light up the one you're reading
+  const jump = (k, smooth) => { const el = $("#set-" + k); if (el) window.scrollTo({ top: el.getBoundingClientRect().top + window.scrollY - 110, behavior: smooth ? "smooth" : "auto" }); };
+  $$("[data-set-jump]", APP).forEach((l) => l.addEventListener("click", (e) => { e.preventDefault(); jump(l.dataset.setJump, true); }));
+  const navLinks = $$("[data-set-jump]", APP);
+  const mark = () => {
+    if (!navLinks.length || !navLinks[0].isConnected) return window.removeEventListener("scroll", mark);
+    let on = SET_SECTIONS[0][0];
+    for (const [k] of SET_SECTIONS) { const el = $("#set-" + k); if (el && el.getBoundingClientRect().top < 160) on = k; }
+    if (window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 4) on = SET_SECTIONS[SET_SECTIONS.length - 1][0];
+    navLinks.forEach((l) => l.classList.toggle("on", l.dataset.setJump === on));
+  };
+  window.addEventListener("scroll", mark, { passive: true }); mark();
+  if (route && route.q && route.q.s) setTimeout(() => jump(route.q.s), 60);
   drawGithubBox();
   drawColours();
   setTableSize(getTableSize());
