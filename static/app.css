@@ -1476,7 +1476,7 @@ html.dark .delta.good { color: #53c556; } html.dark .delta.bad { color: #ff7b72;
 .stat-note { color: var(--muted); font-size: var(--fs-xs); }
 
 /* 16.7.10: the horse page's Connections, Pedigree and Physical boxes: smaller, and on one line */
-.hp-trio { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; align-items: start; margin-bottom: 16px; }
+.hp-trio { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; align-items: stretch; margin-bottom: 16px; }
 @media (max-width: 760px) { .hp-trio { grid-template-columns: 1fr; } }
 .panel.compact { padding: 12px 14px; }
 .panel.compact .panel-head { margin-bottom: 6px; }

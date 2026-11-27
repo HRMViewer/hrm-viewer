@@ -2,9 +2,9 @@
   {
     "version": "16.7.10",
     "date": "2026-11-27",
-    "title": "Horse page: Connections, Pedigree and Physical on one line",
+    "title": "Horse page: Physical, Pedigree and Connections on one line",
     "changes": [
-      "On a horse's Overview, the Connections, Pedigree and Physical boxes are smaller (tighter spacing and text) and sit side by side on one line, even in narrower windows (they only stack on very narrow screens). Each box is only as tall as what's in it."
+      "On a horse's Overview, the Physical, Pedigree and Connections boxes (in that order) are smaller (tighter spacing and text), the same size as each other, and sit side by side on one line, even in narrower windows (they only stack on very narrow screens)."
     ]
   },
   {

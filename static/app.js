@@ -2744,7 +2744,7 @@ async function horsePage(id) {
   ]);
 
   // three small boxes on one line (16.7.10): they stay side by side down to narrow windows
-  html += `<div class="hp-trio">${panel("Connections", connections, "", "compact")}${panel("Pedigree", pedigree, `<a href="#/pedigree/${h.horse_horse_id}">Full pedigree</a>`, "compact")}${panel("Physical", physical, "", "compact")}</div>`;
+  html += `<div class="hp-trio">${panel("Physical", physical, "", "compact")}${panel("Pedigree", pedigree, `<a href="#/pedigree/${h.horse_horse_id}">Full pedigree</a>`, "compact")}${panel("Connections", connections, "", "compact")}</div>`;
   const ent = (d.entries || []).slice().sort((x, y) => (x.race_time || 0) - (y.race_time || 0));
   if (ent.length) {
     html += `<div style="margin-top:16px">${panel("Upcoming races", table([
