@@ -1,5 +1,17 @@
 [
   {
+    "version": "16.7.15",
+    "date": "2026-11-28",
+    "title": "Auctions, share offerings and lifestyle assets",
+    "changes": [
+      "A new Auctions section in the top menu. Sales: every sale coming up or already held, with its auction house, what it's for (type, sex, breed, ages), how many horses, entry fee and commission, and for past sales how many sold, the total and the top price. Click a sale for every horse entered (age, sire, dam, rating, earnings, value, starting price, reserve, buyout and any auto-bid) or, once held, what each sold for and who sold and bought it, with the house's cut.",
+      "Auctions → Auction houses: every auction house with its owner, place, prestige, fame, commission, capacity and condition, horses sold, total sales and its cut, and whether it's for sale. Each house has its own page: how it's run (budgets, dividend, licence), its upgrades, cash, sales each year, sales coming up and held, and its 25 best prices.",
+      "Stables: an Auctions tab (when a stable owns auction houses or has sold or bought at auction) with the houses it owns, its horses entered in sales coming up, and every horse it has sold and bought at auction, with totals.",
+      "Stables: a Share offerings tab (when a stable has any): each offering (a listing or new shares) with the shares offered, price, the price existing holders pay, deadline, how many holders took and how many sold on the market, and what it raised; who had the right to buy in and what they did; and investors' offers to buy or sell its shares.",
+      "People → Lifestyle assets: the houses, yachts, cars, watches, jewellery and other things people own, with the owner, when they bought it, what they paid, its price now, upkeep, where it is, and whether it's their main home or for sale. Catalogue shows everything there is to buy (up to a private island) and how many of each people own."
+    ]
+  },
+  {
     "version": "16.7.14",
     "date": "2026-11-28",
     "title": "Horse lists: ranks and role filters; full-width settings boxes",

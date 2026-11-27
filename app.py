@@ -102,6 +102,17 @@ INDEXES = [
     ("children", "child_parent_2_id"),
     ("timing_trials", "tt_horse_id"),       # a horse's trials (16.7.11)
     ("timing_trials", "tt_date"),           # everyone else in the same trial session
+    ("auction_results", "auction_result_shell_id"),          # auctions, share offerings and assets (16.7.15)
+    ("auction_results", "auction_result_auctionhouse_id"),
+    ("auction_results", "auction_result_from_stable_id"),
+    ("auction_results", "auction_result_to_stable_id"),
+    ("auction_participants", "auction_participant_shell_id"),
+    ("auction_shell", "auction_shell_house_id"),
+    ("auction_house", "auction_house_owner_id"),
+    ("share_offerings", "so_stable_id"),
+    ("share_offering_rights", "sor_offering_id"),
+    ("pending_investor_offers", "offer_stable_id"),
+    ("owned_assets", "asset_owner_id"),
 ]
 
 PAGE_SIZE = 50
@@ -2804,6 +2815,305 @@ def api_course_trials(con, cid, q):
     return out
 
 
+# --------------------------------------------------------------------------- 16.7.15: auctions, share offerings, lifestyle assets
+
+def _city_names(con, ids):
+    """{city id: (city, country)}"""
+    ids = [int(i) for i in set(ids) if i]
+    if not ids or not has_table(con, "cities"):
+        return {}
+    out = {}
+    for cid, city, country in con.execute("""select c.city_id, c.city_name, n.country_name from cities c left join countries n on n.country_id=c.city_country_id
+            where c.city_id in (%s)""" % ",".join(str(i) for i in ids)):
+        out[cid] = (city, country)
+    return out
+
+
+def auction_sale_stats(con, shell_ids=None):
+    """{sale id: {entries, sold, total, top, commission}} from the results (and the entries of sales still to come)."""
+    out = {}
+    if has_table(con, "auction_results"):
+        w = (" where auction_result_shell_id in (%s)" % ",".join(str(int(i)) for i in shell_ids)) if shell_ids else ""
+        for sid, n, sold, tot, top, cut in con.execute("""select auction_result_shell_id, count(*), sum(auction_result_accepted in (1,'1','true')),
+                sum(case when auction_result_accepted in (1,'1','true') then auction_result_final_price else 0 end),
+                max(case when auction_result_accepted in (1,'1','true') then auction_result_final_price end), sum(coalesce(auction_result_cut_to_auctionhouse,0))
+                from auction_results%s group by 1""" % w):
+            out[sid] = {"entries": n, "sold": sold or 0, "total": tot or 0, "top": top, "commission": cut or 0}
+    if has_table(con, "auction_participants"):
+        w = (" where auction_participant_shell_id in (%s)" % ",".join(str(int(i)) for i in shell_ids)) if shell_ids else ""
+        for sid, n in con.execute("select auction_participant_shell_id, count(*) from auction_participants%s group by 1" % w):
+            out.setdefault(sid, {"sold": 0, "total": 0, "top": None, "commission": 0})["entries"] = max(n, (out.get(sid) or {}).get("entries") or 0)
+    return out
+
+
+AUCTION_SORTS = {"date": "a.auction_shell_date", "name": "a.auction_shell_name", "house": "h.auction_house_name", "type": "a.auction_shell_horse_type",
+                 "entry": "a.auction_shell_entry_cost", "commission": "a.auction_shell_percentage_of_sale"}
+
+
+def api_auctions(con, q):
+    """Racing → Auctions: every sale, coming up or held (filter by type, house or name)."""
+    if not has_table(con, "auction_shell"):
+        return {"total": 0, "page": 1, "page_size": page_size(), "rows": [], "types": []}
+    gd = META.get("game_date") or time.time()
+    when = q.get("when") or "upcoming"
+    where, params = [], []
+    if when == "upcoming":
+        where.append("a.auction_shell_date >= ?"); params.append(gd)
+    elif when == "past":
+        where.append("a.auction_shell_date < ?"); params.append(gd)
+    if q.get("type"):
+        where.append("a.auction_shell_horse_type = ?"); params.append(q["type"])
+    if q.get("house"):
+        where.append("a.auction_shell_house_id = ?"); params.append(to_int(q["house"]))
+    if q.get("q"):
+        where.append("(a.auction_shell_name like ? or h.auction_house_name like ?)"); params += ["%" + q["q"] + "%"] * 2
+    w = (" where " + " and ".join(where)) if where else ""
+    base = " from auction_shell a left join auction_house h on h.auction_house_id=a.auction_shell_house_id"
+    sort, d = sort_args(dict(q, sort=q.get("sort") or "date", dir=q.get("dir") or ("asc" if when == "upcoming" else "desc")), AUCTION_SORTS, "date")
+    page, off = page_args(q)
+    total = count_rows(con, "select count(*)" + base + w, params)
+    data = rows(con, """select a.auction_shell_id as id, a.auction_shell_name as name, a.auction_shell_date as date, a.auction_shell_horse_type as type,
+        a.auction_shell_entry_cost as entry, a.auction_shell_percentage_of_sale as commission, a.auction_shell_gender_restriction as sex,
+        a.auction_shell_breed_restriction as breed, a.auction_shell_min_birth_date as born_from, a.auction_shell_max_birth_date as born_to,
+        h.auction_house_id as house_id, h.auction_house_name as house, h.auction_house_city_id as city_id, h.auction_house_owner_id as owner_id,
+        h.auction_house_commission_rate as house_commission""" + base + w +
+                " order by %s limit %d offset %d" % (order_sql(sort, d), page_size(), off), params)
+    st = auction_sale_stats(con, [r["id"] for r in data])
+    cities = _city_names(con, [r["city_id"] for r in data])
+    for r in data:
+        r.update(st.get(r["id"]) or {"entries": 0, "sold": 0, "total": 0, "top": None})
+        r["city"], r["country"] = cities.get(r["city_id"], (None, None))
+    types = [x[0] for x in con.execute("select distinct auction_shell_horse_type from auction_shell where auction_shell_horse_type is not null order by 1")]
+    return {"total": total, "page": page, "page_size": page_size(), "rows": data, "types": types}
+
+
+def api_auction(con, aid):
+    """One sale: its details, the horses entered, and (once held) what each sold for and to whom."""
+    a = one(con, """select a.auction_shell_id as id, a.auction_shell_name as name, a.auction_shell_date as date, a.auction_shell_horse_type as type,
+        a.auction_shell_entry_cost as entry, a.auction_shell_percentage_of_sale as commission, a.auction_shell_gender_restriction as sex,
+        a.auction_shell_breed_restriction as breed, a.auction_shell_min_birth_date as born_from, a.auction_shell_max_birth_date as born_to,
+        h.auction_house_id as house_id, h.auction_house_name as house, h.auction_house_city_id as city_id, h.auction_house_owner_id as owner_id,
+        h.auction_house_prestige as prestige, h.auction_house_commission_rate as house_commission, s.stable_name as owner from auction_shell a left join auction_house h on h.auction_house_id=a.auction_shell_house_id
+        left join stables s on s.stable_stable_id=h.auction_house_owner_id where a.auction_shell_id=?""", (aid,)) if has_table(con, "auction_shell") else None
+    if not a:
+        return None
+    a["city"], a["country"] = _city_names(con, [a["city_id"]]).get(a["city_id"], (None, None))
+    hsel = """h.horse_name as horse, h.horse_gender as gender, h.horse_birth_date as birth, h.horse_international_rating as rating,
+        h.horse_career_earnings as earnings, h.horse_value_calculated as value, h.horse_breeding_parent_stallion_id as sire_id, sp.horse_name as sire,
+        h.horse_breeding_parent_mare_id as dam_id, dp.horse_name as dam"""
+    hjoin = """left join horses h on h.horse_horse_id=%s left join horses sp on sp.horse_horse_id=h.horse_breeding_parent_stallion_id
+        left join horses dp on dp.horse_horse_id=h.horse_breeding_parent_mare_id"""
+    entries = rows(con, """select p.auction_participant_horse_id as horse_id, p.auction_participant_starting_price as start, p.auction_participant_reserve_price as reserve,
+        p.auction_participant_buyout_price as buyout, p.auction_participant_autobid_enabled as autobid, p.auction_participant_autobid_max_amount as autobid_max,
+        p.auction_participant_autobid_stable_id as autobid_stable_id, ab.stable_name as autobid_stable, h.horse_stable_id as stable_id, st.stable_name as stable, """ + hsel + """
+        from auction_participants p """ + (hjoin % "p.auction_participant_horse_id") + """ left join stables st on st.stable_stable_id=h.horse_stable_id
+        left join stables ab on ab.stable_stable_id=p.auction_participant_autobid_stable_id
+        where p.auction_participant_shell_id=? order by p.auction_participant_starting_price desc""", (aid,)) if has_table(con, "auction_participants") else []
+    results = rows(con, """select r.auction_result_horse_id as horse_id, r.auction_result_final_price as price, r.auction_result_accepted as sold,
+        r.auction_result_buyout_price as buyout, r.auction_result_cut_to_auctionhouse as cut, r.auction_result_date as date,
+        r.auction_result_from_stable_id as from_id, fs.stable_name as seller, r.auction_result_to_stable_id as to_id, ts.stable_name as buyer, """ + hsel + """
+        from auction_results r """ + (hjoin % "r.auction_result_horse_id") + """ left join stables fs on fs.stable_stable_id=r.auction_result_from_stable_id
+        left join stables ts on ts.stable_stable_id=r.auction_result_to_stable_id where r.auction_result_shell_id=? order by r.auction_result_final_price desc""", (aid,)) \
+        if has_table(con, "auction_results") else []
+    for r in results:
+        r["sold"] = r["sold"] in (1, "1", "true", True)
+    return {"auction": a, "entries": entries, "results": results}
+
+
+AUCTION_HOUSE_SORTS = {"name": "h.auction_house_name", "prestige": "h.auction_house_prestige", "fame": "h.auction_house_fame",
+                       "commission": "h.auction_house_commission_rate", "capacity": "h.auction_house_capacity", "condition": "h.auction_house_condition",
+                       "founded": "h.auction_house_founding_date", "owner": "s.stable_name", "turnover": "t.total", "sold": "t.sold", "price": "h.auction_house_asking_price"}
+
+
+def api_auction_houses(con, q):
+    """Racing → Auctions → Auction houses."""
+    if not has_table(con, "auction_house"):
+        return {"total": 0, "page": 1, "page_size": page_size(), "rows": []}
+    where, params = ["coalesce(h.auction_house_demolished_date, 0) = 0"], []
+    if q.get("q"):
+        where.append("(h.auction_house_name like ? or s.stable_name like ?)"); params += ["%" + q["q"] + "%"] * 2
+    if q.get("forsale") == "1":
+        where.append("h.auction_house_for_sale = 1")
+    if q.get("owner"):
+        where.append("h.auction_house_owner_id = ?"); params.append(to_int(q["owner"]))
+    w = " where " + " and ".join(where)
+    tot = ("""left join (select auction_result_auctionhouse_id as hid, count(*) as sold, sum(auction_result_final_price) as total, sum(coalesce(auction_result_cut_to_auctionhouse,0)) as cut
+        from auction_results where auction_result_accepted in (1,'1','true') group by 1) t on t.hid=h.auction_house_id""" if has_table(con, "auction_results")
+           else "left join (select null as hid, null as sold, null as total, null as cut) t on 0")
+    base = " from auction_house h left join stables s on s.stable_stable_id=h.auction_house_owner_id " + tot
+    sort, d = sort_args(q, AUCTION_HOUSE_SORTS, "turnover")
+    page, off = page_args(q)
+    total = count_rows(con, "select count(*) from auction_house h left join stables s on s.stable_stable_id=h.auction_house_owner_id" + w, params)
+    data = rows(con, """select h.auction_house_id as id, h.auction_house_name as name, h.auction_house_owner_id as owner_id, s.stable_name as owner,
+        h.auction_house_city_id as city_id, h.auction_house_prestige as prestige, h.auction_house_fame as fame, h.auction_house_commission_rate as commission,
+        h.auction_house_capacity as capacity, h.auction_house_condition as condition, h.auction_house_founding_date as founded, h.auction_house_for_sale as for_sale,
+        h.auction_house_asking_price as price, h.auction_house_licence_tier as licence, t.sold as sold, t.total as turnover, t.cut as cut""" + base + w +
+                " order by %s limit %d offset %d" % (order_sql(sort, d), page_size(), off), params)
+    cities = _city_names(con, [r["city_id"] for r in data])
+    for r in data:
+        r["city"], r["country"] = cities.get(r["city_id"], (None, None))
+    return {"total": total, "page": page, "page_size": page_size(), "rows": data}
+
+
+def api_auction_house(con, hid):
+    """One auction house: who owns it, how it's run, its upgrades, its sales coming up and held, and its best sales."""
+    h = one(con, """select h.*, s.stable_name as owner from auction_house h left join stables s on s.stable_stable_id=h.auction_house_owner_id
+        where h.auction_house_id=?""", (hid,)) if has_table(con, "auction_house") else None
+    if not h:
+        return None
+    gd = META.get("game_date") or time.time()
+    out = {"house": h}
+    out["city"], out["country"] = _city_names(con, [h.get("auction_house_city_id")]).get(h.get("auction_house_city_id"), (None, None))
+    out["upgrades"] = rows(con, "select ahu_upgrade_key as key, ahu_active as active, ahu_activated_date as date from auction_house_upgrades where ahu_auction_house_id=? order by ahu_activated_date",
+                           (hid,)) if has_table(con, "auction_house_upgrades") else []
+    out["cash"] = (one(con, "select account_balance as v from accounts where account_owner_type='auction_house' and account_owner_id=? and account_type='cash'", (hid,)) or {}).get("v") \
+        if has_table(con, "accounts") else None
+    sales = rows(con, """select auction_shell_id as id, auction_shell_name as name, auction_shell_date as date, auction_shell_horse_type as type,
+        auction_shell_entry_cost as entry, auction_shell_percentage_of_sale as commission from auction_shell where auction_shell_house_id=? order by auction_shell_date""", (hid,)) \
+        if has_table(con, "auction_shell") else []
+    st = auction_sale_stats(con, [x["id"] for x in sales]) if sales else {}
+    for x in sales:
+        x.update(st.get(x["id"]) or {"entries": 0, "sold": 0, "total": 0, "top": None, "commission_paid": 0})
+    out["upcoming"] = [x for x in sales if (x["date"] or 0) >= gd]
+    out["past"] = sorted([x for x in sales if (x["date"] or 0) < gd], key=lambda x: -(x["date"] or 0))
+    out["top_sales"] = rows(con, """select r.auction_result_horse_id as horse_id, hh.horse_name as horse, r.auction_result_final_price as price, r.auction_result_date as date,
+        r.auction_result_shell_id as sale_id, a.auction_shell_name as sale, r.auction_result_from_stable_id as from_id, fs.stable_name as seller,
+        r.auction_result_to_stable_id as to_id, ts.stable_name as buyer from auction_results r left join horses hh on hh.horse_horse_id=r.auction_result_horse_id
+        left join auction_shell a on a.auction_shell_id=r.auction_result_shell_id left join stables fs on fs.stable_stable_id=r.auction_result_from_stable_id
+        left join stables ts on ts.stable_stable_id=r.auction_result_to_stable_id
+        where r.auction_result_auctionhouse_id=? and r.auction_result_accepted in (1,'1','true') order by r.auction_result_final_price desc limit 25""", (hid,)) \
+        if has_table(con, "auction_results") else []
+    out["years"] = rows(con, """select cast(strftime('%Y', auction_result_date, 'unixepoch') as int) as year, count(*) as sold, sum(auction_result_final_price) as total,
+        sum(coalesce(auction_result_cut_to_auctionhouse,0)) as cut from auction_results where auction_result_auctionhouse_id=? and auction_result_accepted in (1,'1','true')
+        group by 1 order by 1""", (hid,)) if has_table(con, "auction_results") else []
+    return out
+
+
+def stable_auction_counts(con, sid):
+    """How much auction business a stable has: auction houses it owns, and horses it has sold or bought at auction (for its tabs)."""
+    n = 0
+    if has_table(con, "auction_house"):
+        n += con.execute("select count(*) from auction_house where auction_house_owner_id=? and coalesce(auction_house_demolished_date,0)=0", (sid,)).fetchone()[0]
+    if has_table(con, "auction_results"):
+        n += con.execute("select count(*) from auction_results where auction_result_from_stable_id=? or auction_result_to_stable_id=?", (sid, sid)).fetchone()[0]
+    return n
+
+
+def api_stable_auctions(con, sid):
+    """A stable's Auctions tab: the auction houses it owns, its horses entered in sales still to come, and what it has sold and bought at auction."""
+    gd = META.get("game_date") or time.time()
+    out = {"houses": [], "entries": [], "sold": [], "bought": []}
+    if has_table(con, "auction_house"):
+        out["houses"] = api_auction_houses(con, {"owner": str(sid), "size": "500"})["rows"]
+    if has_table(con, "auction_participants") and has_table(con, "auction_shell"):
+        out["entries"] = rows(con, """select p.auction_participant_horse_id as horse_id, h.horse_name as horse, h.horse_gender as gender, h.horse_birth_date as birth,
+            p.auction_participant_starting_price as start, p.auction_participant_reserve_price as reserve, p.auction_participant_buyout_price as buyout,
+            a.auction_shell_id as sale_id, a.auction_shell_name as sale, a.auction_shell_date as date, ah.auction_house_id as house_id, ah.auction_house_name as house
+            from auction_participants p join horses h on h.horse_horse_id=p.auction_participant_horse_id
+            join auction_shell a on a.auction_shell_id=p.auction_participant_shell_id left join auction_house ah on ah.auction_house_id=a.auction_shell_house_id
+            where h.horse_stable_id=? and a.auction_shell_date >= ? order by a.auction_shell_date""", (sid, gd))
+    if has_table(con, "auction_results"):
+        q_ = """select r.auction_result_horse_id as horse_id, h.horse_name as horse, h.horse_gender as gender, h.horse_birth_date as birth,
+            r.auction_result_final_price as price, r.auction_result_accepted as sold, r.auction_result_date as date, r.auction_result_shell_id as sale_id,
+            a.auction_shell_name as sale, ah.auction_house_id as house_id, ah.auction_house_name as house,
+            r.auction_result_from_stable_id as from_id, fs.stable_name as seller, r.auction_result_to_stable_id as to_id, ts.stable_name as buyer
+            from auction_results r left join horses h on h.horse_horse_id=r.auction_result_horse_id left join auction_shell a on a.auction_shell_id=r.auction_result_shell_id
+            left join auction_house ah on ah.auction_house_id=r.auction_result_auctionhouse_id
+            left join stables fs on fs.stable_stable_id=r.auction_result_from_stable_id left join stables ts on ts.stable_stable_id=r.auction_result_to_stable_id
+            where %s order by r.auction_result_date desc"""
+        out["sold"] = rows(con, q_ % "r.auction_result_from_stable_id=?", (sid,))
+        out["bought"] = rows(con, q_ % "r.auction_result_to_stable_id=? and r.auction_result_accepted in (1,'1','true')", (sid,))
+        for r in out["sold"]:
+            r["sold"] = r["sold"] in (1, "1", "true", True)
+    return out
+
+
+def stable_share_counts(con, sid):
+    n = 0
+    if has_table(con, "share_offerings"):
+        n += con.execute("select count(*) from share_offerings where so_stable_id=?", (sid,)).fetchone()[0]
+    if has_table(con, "pending_investor_offers"):
+        n += con.execute("select count(*) from pending_investor_offers where offer_stable_id=?", (sid,)).fetchone()[0]
+    return n
+
+
+def api_stable_shares(con, sid):
+    """A stable's Shares tab: its share offerings (new shares put up for sale), who had the right to buy in and what they did,
+    and investors' offers to buy or sell its shares."""
+    out = {"offerings": [], "offers": []}
+    if has_table(con, "share_offerings"):
+        out["offerings"] = rows(con, """select so_id as id, so_type as type, so_shares_offered as offered, so_price_per_share as price, so_claim_price_per_share as claim_price,
+            so_created_date as created, so_deadline_date as deadline, so_status as status, so_resolved_date as resolved, so_claimed_shares as claimed,
+            so_market_shares as market from share_offerings where so_stable_id=? order by so_created_date desc""", (sid,))
+        if out["offerings"] and has_table(con, "share_offering_rights"):
+            ids = ",".join(str(int(o["id"])) for o in out["offerings"])
+            rights = rows(con, """select r.sor_offering_id as oid, r.sor_person_id as person_id, p.person_full_name as person, r.sor_holder_stable_id as holder_id,
+                s.stable_name as holder, r.sor_entitled as entitled, r.sor_claimed as claimed, r.sor_response as response from share_offering_rights r
+                left join persons p on p.person_person_id=r.sor_person_id left join stables s on r.sor_holder_stable_id > 0 and s.stable_stable_id=r.sor_holder_stable_id
+                where r.sor_offering_id in (%s) order by r.sor_entitled desc""" % ids)
+            for o in out["offerings"]:
+                o["rights"] = [r for r in rights if r["oid"] == o["id"]]
+    if has_table(con, "pending_investor_offers"):
+        out["offers"] = rows(con, """select o.offer_id as id, o.offer_type as type, o.offer_status as status, o.offer_date as date, o.offer_shares as shares,
+            o.offer_price_per_share as price, o.offer_total_price as total, o.offer_investor_person_id as person_id, p.person_full_name as person,
+            o.offer_holder_stable_id as holder_id, s.stable_name as holder from pending_investor_offers o left join persons p on p.person_person_id=o.offer_investor_person_id
+            left join stables s on o.offer_holder_stable_id > 0 and s.stable_stable_id=o.offer_holder_stable_id where o.offer_stable_id=? order by o.offer_date desc""", (sid,))
+    return out
+
+
+ASSET_SORTS = {"price": "a.asset_purchase_price", "date": "a.asset_purchase_date", "name": "c.catalog_name", "category": "c.catalog_category",
+               "owner": "p.person_full_name", "value": "c.catalog_purchase_price", "upkeep": "c.catalog_annual_maintenance", "tier": "c.catalog_tier"}
+
+
+def api_assets(con, q):
+    """People → Lifestyle assets: the houses, yachts, cars, watches and so on that people own (or, view=catalogue, everything there is to buy)."""
+    if not (has_table(con, "owned_assets") and has_table(con, "asset_catalog")):
+        return {"total": 0, "page": 1, "page_size": page_size(), "rows": [], "categories": []}
+    cats = [x[0] for x in con.execute("select distinct catalog_category from asset_catalog where catalog_category is not null order by 1")]
+    if q.get("view") == "catalogue":
+        where, params = [], []
+        if q.get("category"):
+            where.append("c.catalog_category=?"); params.append(q["category"])
+        if q.get("q"):
+            where.append("c.catalog_name like ?"); params.append("%" + q["q"] + "%")
+        w = (" where " + " and ".join(where)) if where else ""
+        sort, d = sort_args(q, {"value": "c.catalog_purchase_price", "name": "c.catalog_name", "category": "c.catalog_category", "upkeep": "c.catalog_annual_maintenance",
+                                "tier": "c.catalog_tier", "owned": "o.n", "prestige": "c.catalog_prestige_bonus"}, "value")
+        data = rows(con, """select c.catalog_id as id, c.catalog_category as category, c.catalog_name as name, c.catalog_description as about, c.catalog_tier as tier,
+            c.catalog_purchase_price as value, c.catalog_annual_maintenance as upkeep, c.catalog_city_id as city_id, c.catalog_prestige_bonus as prestige,
+            c.catalog_travel_speed_multiplier as travel, c.catalog_rarity as rarity, coalesce(o.n, 0) as owned from asset_catalog c
+            left join (select asset_catalog_id as cid, count(*) as n from owned_assets group by 1) o on o.cid=c.catalog_id""" + w + " order by " + order_sql(sort, d), params)
+        cities = _city_names(con, [r["city_id"] for r in data])
+        for r in data:
+            r["city"], r["country"] = cities.get(r["city_id"], (None, None))
+        return {"total": len(data), "page": 1, "page_size": max(1, len(data)), "rows": data, "categories": cats}
+    where, params = [], []
+    if q.get("category"):
+        where.append("c.catalog_category=?"); params.append(q["category"])
+    if q.get("q"):
+        where.append("(c.catalog_name like ? or a.asset_custom_name like ? or p.person_full_name like ?)"); params += ["%" + q["q"] + "%"] * 3
+    if q.get("forsale") == "1":
+        where.append("a.asset_for_sale = 1")
+    if q.get("owner"):
+        where.append("a.asset_owner_id=?"); params.append(to_int(q["owner"]))
+    w = (" where " + " and ".join(where)) if where else ""
+    base = """ from owned_assets a join asset_catalog c on c.catalog_id=a.asset_catalog_id
+        left join persons p on a.asset_owner_type='person' and p.person_person_id=a.asset_owner_id"""
+    sort, d = sort_args(q, ASSET_SORTS, "price")
+    page, off = page_args(q)
+    total = count_rows(con, "select count(*)" + base + w, params)
+    data = rows(con, """select a.asset_id as id, a.asset_custom_name as custom, c.catalog_name as name, c.catalog_category as category, c.catalog_tier as tier,
+        c.catalog_rarity as rarity, c.catalog_description as about, a.asset_owner_type as owner_type, a.asset_owner_id as owner_id, p.person_full_name as owner,
+        a.asset_purchase_date as date, a.asset_purchase_price as price, c.catalog_purchase_price as value, c.catalog_annual_maintenance as upkeep,
+        a.asset_is_primary_home as home, a.asset_city_id as city_id, a.asset_for_sale as for_sale""" + base + w +
+                " order by %s limit %d offset %d" % (order_sql(sort, d), page_size(), off), params)
+    cities = _city_names(con, [r["city_id"] for r in data])
+    for r in data:
+        r["city"], r["country"] = cities.get(r["city_id"], (None, None))
+    summary = rows(con, """select c.catalog_category as category, count(*) as n, sum(a.asset_purchase_price) as spent""" + base + w + " group by 1 order by 3 desc", params)
+    return {"total": total, "page": page, "page_size": page_size(), "rows": data, "categories": cats, "summary": summary}
+
+
 def api_horse_more(con, hid):
     """A horse's Training & plans tab, and the rankings and syndicate panels on its Overview."""
     out = {"training": None, "shoes": None, "schedule": None, "plan": None, "campaigns": [], "qualifying": [], "rankings": {}, "syndicates": []}
@@ -3508,6 +3818,8 @@ def api_stable(con, sid):
     out["record"] = one(con, "select * from hrmv_stable_stats where stable_id=?", (sid,)) if has_table(con, "hrmv_stable_stats") else None
     out["owner"] = one(con, "select person_person_id as id, person_full_name as name from persons where person_person_id=?", (s.get("stable_owner_id"),))
     out["racecourses_owned"] = owned_courses(con, sid)
+    out["auction_n"] = stable_auction_counts(con, sid)      # for its Auctions and Shares tabs (16.7.15)
+    out["shares_n"] = stable_share_counts(con, sid)
     out["city"] = one(con, "select c.city_name as city, n.country_name as country from cities c left join countries n on n.country_id=c.city_country_id where c.city_id=?", (s.get("stable_city_id"),)) if has_table(con, "cities") and has_table(con, "countries") else None
     out["horses"] = rows(con, """select horse_horse_id as id, horse_name as name, horse_gender as gender, horse_birth_date as birth,
         horse_career_earnings as earnings, horse_international_rating as rating, horse_form as form, horse_g1_wins as g1,
@@ -6728,6 +7040,13 @@ ROUTES = [
     (re.compile(r"^/api/horse_more/(-?\d+)$"), lambda con, m, q: api_horse_more(con, int(m.group(1)))),
     (re.compile(r"^/api/horse_trials/(-?\d+)$"), lambda con, m, q: api_horse_trials(con, int(m.group(1)))),
     (re.compile(r"^/api/course_trials/(-?\d+)$"), lambda con, m, q: api_course_trials(con, int(m.group(1)), q)),
+    (re.compile(r"^/api/auctions$"), lambda con, m, q: api_auctions(con, q)),
+    (re.compile(r"^/api/auction/(-?\d+)$"), lambda con, m, q: api_auction(con, int(m.group(1)))),
+    (re.compile(r"^/api/auction_houses$"), lambda con, m, q: api_auction_houses(con, q)),
+    (re.compile(r"^/api/auction_house/(-?\d+)$"), lambda con, m, q: api_auction_house(con, int(m.group(1)))),
+    (re.compile(r"^/api/stable_auctions/(-?\d+)$"), lambda con, m, q: api_stable_auctions(con, int(m.group(1)))),
+    (re.compile(r"^/api/stable_shares/(-?\d+)$"), lambda con, m, q: api_stable_shares(con, int(m.group(1)))),
+    (re.compile(r"^/api/assets$"), lambda con, m, q: api_assets(con, q)),
     (re.compile(r"^/api/stable_more/(-?\d+)$"), lambda con, m, q: api_stable_more(con, int(m.group(1)))),
     (re.compile(r"^/api/jockey_season/(-?\d+)$"), lambda con, m, q: api_jockey_season(con, int(m.group(1)), q)),
     (re.compile(r"^/api/alerts$"), lambda con, m, q: api_alerts(con)),
@@ -7857,7 +8176,7 @@ class Handler(BaseHTTPRequestHandler):
 
 # --------------------------------------------------------------------------- in-app updates
 
-VERSION = "16.7.14"
+VERSION = "16.7.15"
 BACKUP_DIR = os.path.join(APP_DIR, "backups")
 UPDATE_PENDING = os.path.join(DATA_DIR, "update_pending.json")
 UPDATE_RESULT = os.path.join(DATA_DIR, "update_result.json")

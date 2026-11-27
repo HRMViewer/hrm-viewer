@@ -284,6 +284,8 @@ const ICON_PATHS = {
   moon: '<path d="M12.5 10A5.2 5.2 0 0 1 6 3.5a5.2 5.2 0 1 0 6.5 6.5z"/>',
   tag: '<path d="M2.5 2.5h5l6 6-5 5-6-6z"/><circle cx="5.3" cy="5.3" r=".9"/>',
   key: '<rect x="1.5" y="4" width="13" height="8.5" rx="1.5"/><path d="M4 6.8h.5M6.6 6.8h.5M9.2 6.8h.5M11.8 6.8h.2M4.5 9.8h7"/>',
+  gavel: '<path d="m6.2 2.6 4.2 4.2M4.6 4.2l4.2 4.2M5.4 3.4 9.6 7.6"/><path d="m7.5 6.3-5 5 1.2 1.2 5-5"/><path d="M9.5 13.5h5"/>',
+  gem: '<path d="M4 2.5h8l2.5 3.2L8 13.5 1.5 5.7z"/><path d="M1.5 5.7h13M6 2.5 5 5.7l3 7.8 3-7.8-1-3.2"/>',
 };
 const icon = (k) => `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">${ICON_PATHS[k] || ""}</svg>`;
 // Navigation: the top menu holds the main sections (what you're looking at); the side menu shows "You" shortcuts
@@ -293,7 +295,8 @@ const SECTIONS = [
   { k: "racing", label: "Racing", ic: "flag", href: "#/meetings", routes: ["meetings", "meeting", "races", "race", "courses", "course", "concepts", "concept", "qualifying"] },
   { k: "horses", label: "Horses", ic: "horse", href: "#/horses", routes: ["horses", "horse", "horse-table", "pedigrees", "pedigree", "notes"] },
   { k: "stables", label: "Stables", ic: "barn", href: "#/stables", routes: ["stables", "stable", "stable-table", "stable-rankings"] },
-  { k: "people", label: "People", ic: "user", href: "#/people-overview", routes: ["people-overview", "people", "person", "jockeys"] },
+  { k: "auctions", label: "Auctions", ic: "gavel", href: "#/auctions", routes: ["auctions", "auction", "auction-houses", "auction-house"] },
+  { k: "people", label: "People", ic: "user", href: "#/people-overview", routes: ["people-overview", "people", "person", "jockeys", "assets"] },
   { k: "awards", label: "Awards", ic: "trophy", href: "#/awards", routes: ["awards"] },
   { k: "settings", label: "Settings", ic: "cog", href: "#/settings", routes: ["settings", "databases", "tables", "versions", "shortcuts", "tags"], right: true },
 ];
@@ -306,8 +309,10 @@ const SIDE = {
   horses: [["Horses", [["#/horses", "horse", "All horses"], ["#/horse-table", "table", "Horse table"], ["#/notes", "tag", "Notes & tags"]]],
     ["Breeding", [["#/pedigrees", "tree", "Top sires"], ["#/pedigrees?kind=dams", "tree", "Top dams"], ["#/pedigrees?kind=damsires", "tree", "Broodmare sires"]]]],
   stables: [["Stables", [["#/stables", "barn", "All stables"], ["#/stable-table", "grid", "Stable table"], ["#/stable-rankings", "trophy", "Rankings"]]]],
+  auctions: [["Auctions", [["#/auctions", "gavel", "Upcoming sales"], ["#/auctions?when=past", "clock", "Past sales"], ["#/auction-houses", "barn", "Auction houses"]]]],
   people: [["People", [["#/people-overview", "home", "Overview"], ["#/people", "user", "All people"], ["#/jockeys", "trophy", "Jockey stats"], ["#/people?role=Jockey&sort=jockey_wins", "trophy", "Top jockeys"], ["#/people?role=Jockey", "user", "Jockeys"],
-    ["#/people?role=Trainer", "user", "Trainers"], ["#/people?role=Head%20trainer", "user", "Head trainers"], ["#/people?role=Manager", "user", "Managers"]]]],
+    ["#/people?role=Trainer", "user", "Trainers"], ["#/people?role=Head%20trainer", "user", "Head trainers"], ["#/people?role=Manager", "user", "Managers"]]],
+    ["Lifestyle", [["#/assets", "gem", "Lifestyle assets"]]]],
   awards: [["Awards", [["#/awards", "trophy", "Awards by year"], ["#/awards?view=winners", "star", "Most awards"], ["#/awards?group=hof", "star", "Hall of Fame"]]],
     ["By award", [["#/awards?group=year", "trophy", "Horse of the Year"], ["#/awards?group=age", "horse", "Age divisions"], ["#/awards?group=distance", "flag", "Distance champions"],
       ["#/awards?group=breeding", "tree", "Breeding"], ["#/awards?group=people", "user", "People"], ["#/awards?group=stables", "barn", "Stables"], ["#/awards?group=special", "star", "Special awards"]]]],
@@ -315,7 +320,7 @@ const SIDE = {
 };
 // on Home the side menu lists every area, each under its own heading
 SIDE.home = [["Home", [["#/", "home", "Overview"]]]].concat(
-  ["racing", "horses", "stables", "people", "awards", "settings"].map((k) => [SECTIONS.find((x) => x.k === k).label, SIDE[k].flatMap((g) => g[1])]));
+  ["racing", "horses", "stables", "auctions", "people", "awards", "settings"].map((k) => [SECTIONS.find((x) => x.k === k).label, SIDE[k].flatMap((g) => g[1])]));
 function sectionOf(key) { return (SECTIONS.find((x) => x.routes.includes(key)) || SECTIONS[0]).k; }
 const STAR_SVG = `<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="m8 1.9 1.8 3.8 4.1.5-3 2.8.8 4.1L8 11.1l-3.7 2 .8-4.1-3-2.8 4.1-.5z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>`;
 function renderNav() {
@@ -531,7 +536,8 @@ function favIcon(h) {
   if (side) return side[1];
   return ({ "": "home", horse: "horse", horses: "horse", "horse-table": "horse", person: "user", people: "user", jockeys: "trophy", "people-overview": "user", stable: "barn", stables: "barn",
     "stable-table": "grid", "stable-rankings": "trophy", race: "flag", races: "flag", meeting: "list", meetings: "list", course: "pin", courses: "pin", pedigree: "tree", pedigrees: "tree",
-    awards: "trophy", notes: "tag", tags: "tag", settings: "cog", databases: "db", tables: "table", versions: "info", shortcuts: "key" })[k] || "star";
+    awards: "trophy", notes: "tag", tags: "tag", settings: "cog", databases: "db", tables: "table", versions: "info", shortcuts: "key",
+    auctions: "gavel", auction: "gavel", "auction-houses": "barn", "auction-house": "barn", assets: "gem" })[k] || "star";
 }
 function pageTitle() {
   const cur = normHash(location.hash);
@@ -876,7 +882,8 @@ const PAGES = {
       b.textContent = open ? "Close all form" : "Open all form";
     }));
   } }),
-  stables: stablesPage, stable: (r) => (r.parts[2] === "races" ? stableRacesPage(r) : r.parts[2] === "financials" ? stableFinancePage(r) : r.parts[2] === "horse-money" ? stableHorseMoneyPage(r) : r.parts[2] === "awards" ? stableAwardsPage(r) : r.parts[2] === "racecourses" ? stableCoursesPage(r) : stablePage(r.parts[1])), people: peoplePage, "people-overview": peopleOverviewPage, jockeys: careersPage, person: Object.assign((r) => (r.parts[2] === "awards" ? entityAwardsPage("person", r) : r.parts[2] === "family" ? personFamilyPage(r) : r.parts[2] === "tree" ? personTreePage(r)
+  auctions: auctionsPage, auction: (r) => auctionPage(r.parts[1]), "auction-houses": auctionHousesPage, "auction-house": (r) => auctionHousePage(r.parts[1]), assets: assetsPage,
+  stables: stablesPage, stable: (r) => (r.parts[2] === "races" ? stableRacesPage(r) : r.parts[2] === "auctions" ? stableAuctionsPage(r) : r.parts[2] === "shares" ? stableSharesPage(r) : r.parts[2] === "financials" ? stableFinancePage(r) : r.parts[2] === "horse-money" ? stableHorseMoneyPage(r) : r.parts[2] === "awards" ? stableAwardsPage(r) : r.parts[2] === "racecourses" ? stableCoursesPage(r) : stablePage(r.parts[1])), people: peoplePage, "people-overview": peopleOverviewPage, jockeys: careersPage, person: Object.assign((r) => (r.parts[2] === "awards" ? entityAwardsPage("person", r) : r.parts[2] === "family" ? personFamilyPage(r) : r.parts[2] === "tree" ? personTreePage(r)
     : r.parts[2] === "dynasty" ? personDynastyPage(r) : r.parts[2] === "lifespans" ? personLifespansPage(r) : r.parts[2] === "season" ? jockeySeasonPage(r) : personPage(r.parts[1])),
     { after: (r) => (r.parts[2] === "tree" ? tcInit() : r.parts[2] === "dynasty" ? dtInit() : null) }),
   courses: coursesPage, course: Object.assign((r) => courseTabPage(r), { after: (r) => r.parts[2] === "records" && coursePage.after && coursePage.after(r) }), tables: tablesPage,
@@ -907,7 +914,8 @@ async function render() {
     const html = await fn(route);
     if (seq !== RENDER_SEQ) return;
     if (typeof html === "string") {
-      const tabKey = { courses: "racing", horses: "horses", "horse-table": "horses", pedigrees: "horses", stables: "stables", "stable-table": "stables", "stable-rankings": "stables" }[key];
+      const tabKey = { courses: "racing", horses: "horses", "horse-table": "horses", pedigrees: "horses", stables: "stables", "stable-table": "stables", "stable-rankings": "stables",
+        auctions: "auctions", "auction-houses": "auctions" }[key];
       APP.innerHTML = (tabKey && !route.parts[1] ? sectionTabs(tabKey, key) : "") + html;
     }
     if (fn.after) fn.after(route);
@@ -3398,6 +3406,7 @@ const SECTION_TABS = {
   racing: [["meetings", "#/meetings", "Meetings"], ["races", "#/races", "Races"], ["concepts", "#/concepts", "Concepts"], ["qualifying", "#/qualifying", "Qualifying"], ["courses", "#/courses", "Racecourses"]],
   horses: [["horses", "#/horses", "All horses"], ["horse-table", "#/horse-table", "Horse table"], ["pedigrees", "#/pedigrees", "Pedigrees"], ["notes", "#/notes", "Notes &amp; tags"]],
   stables: [["stables", "#/stables", "All stables"], ["stable-table", "#/stable-table", "Stable table"], ["stable-rankings", "#/stable-rankings", "Rankings"]],
+  auctions: [["auctions", "#/auctions", "Sales"], ["auction-houses", "#/auction-houses", "Auction houses"]],
 };
 function sectionTabs(sec, active) {
   return `<div class="subtabs">${(SECTION_TABS[sec] || []).map(([k, h, t]) => `<a href="${h}" class="${k === active ? "on" : ""}">${t}</a>`).join("")}</div>`;
@@ -3824,7 +3833,7 @@ function stableHead(d, on) {
       return mg.length ? ` · Manager ${mg.map((x) => `${L.person(x.id, x.name)}${x.id === (STATUS.meta || {}).player_id ? ' <span class="badge good">You</span>' : ""}`).join(", ")}` : "";
     })()}${d.city ? ` · ${esc(d.city.city)}, ${esc(d.city.country)}` : ""} · Founded ${fDate(s.stable_founded_date)}</div>${removedNote(d)}</div>
     <div style="display:flex;gap:8px"><a class="btn primary" href="#/stable/${id}/races">Every race</a><a class="btn" href="#/horses?stable=${id}&status=all">All horses ever</a></div></div>
-    <div class="subtabs"><a href="#/stable/${id}" class="${on === "overview" ? "on" : ""}">Overview</a><a href="#/stable/${id}/financials" class="${on === "financials" ? "on" : ""}">Financials</a><a href="#/stable/${id}/horse-money" class="${on === "horse-money" ? "on" : ""}">Horse finances</a><a href="#/stable/${id}/awards" class="${on === "awards" ? "on" : ""}">Awards</a>${(d.racecourses_owned || []).length || on === "racecourses" ? `<a href="#/stable/${id}/racecourses" class="${on === "racecourses" ? "on" : ""}">Racecourses <span class="tab-n">${fNum((d.racecourses_owned || []).length)}</span></a>` : ""}</div>`;
+    <div class="subtabs"><a href="#/stable/${id}" class="${on === "overview" ? "on" : ""}">Overview</a><a href="#/stable/${id}/financials" class="${on === "financials" ? "on" : ""}">Financials</a><a href="#/stable/${id}/horse-money" class="${on === "horse-money" ? "on" : ""}">Horse finances</a><a href="#/stable/${id}/awards" class="${on === "awards" ? "on" : ""}">Awards</a>${(d.racecourses_owned || []).length || on === "racecourses" ? `<a href="#/stable/${id}/racecourses" class="${on === "racecourses" ? "on" : ""}">Racecourses <span class="tab-n">${fNum((d.racecourses_owned || []).length)}</span></a>` : ""}${d.auction_n || on === "auctions" ? `<a href="#/stable/${id}/auctions" class="${on === "auctions" ? "on" : ""}">Auctions</a>` : ""}${d.shares_n || on === "shares" ? `<a href="#/stable/${id}/shares" class="${on === "shares" ? "on" : ""}">Share offerings</a>` : ""}</div>`;
 }
 // the stable's money charts (moved here from the Overview tab in 10.2): same data, now on a log scale
 const STABLE_LOG = { scale: "auto", logC: 1000, yFmt: fMoneyShort, tipFmt: fMoney };
@@ -6470,6 +6479,266 @@ async function stableTablePage(route) {
       { h: "Prestige", sort: "prestige", cls: "num", f: (r) => fNum(r.prestige, 1) },
       { h: "Level", sort: "level", cls: "num", f: (r) => fNum(r.level) },
       { h: "Founded", sort: "founded", cls: "num", f: (r) => yr(r.founded) },
+    ],
+  }, route);
+}
+
+// ------------------------------------------------------------------ 16.7.15: Auctions
+const AUCTION_LINK = (id, name) => (id ? `<a href="#/auction/${id}">${esc(name || "Sale")}</a>` : esc(name || "—"));
+const HOUSE_LINK = (id, name) => (id ? `<a href="#/auction-house/${id}">${esc(name || "Auction house")}</a>` : esc(name || "—"));
+// commission: a fraction (0.045) or a percentage (4.5)
+const fCommission = (v) => (isNum(v) && v > 0 ? `${fNum(v < 1 ? v * 100 : v, 1)}%` : "—");
+// a sale's commission: set when it's held; before then, the auction house's usual rate
+const saleCommission = (a) => (isNum(a.commission) && a.commission > 0 ? fCommission(a.commission) : isNum(a.house_commission) && a.house_commission > 0 ? `${fCommission(a.house_commission)}<span class="muted small"> usual</span>` : "—");
+// who a sale is for: horse type, sex, breed, and the ages its birth dates allow on sale day
+function saleRules(a) {
+  const yrs = (t) => (isNum(t) && isNum(a.date) ? Math.floor((a.date - t) / (365.2425 * 86400)) : null);
+  const oldest = yrs(a.born_from), youngest = yrs(a.born_to);
+  const age = isNum(youngest) && isNum(oldest) ? (youngest === oldest ? `${youngest}yo` : `${youngest}–${oldest}yo`) : isNum(youngest) ? `${youngest}yo+` : isNum(oldest) ? `up to ${oldest}yo` : "";
+  return [a.sex === "Female" ? "Fillies & mares" : a.sex === "Male" ? "Colts & stallions" : "", a.breed || "", age].filter(Boolean).join(" · ") || "Open to all";
+}
+const ageAt = (birth, when) => (isNum(birth) && isNum(when) ? `${Math.floor((when - birth) / (365.2425 * 86400))}yo` : "—");
+async function auctionsPage(route) {
+  const when = route.q.when || "upcoming", past = when !== "upcoming";
+  return listPage({
+    title: when === "past" ? "Past sales" : when === "all" ? "All sales" : "Upcoming sales", noun: "sales", endpoint: "auctions", defaultSort: "date", ascDefault: when === "upcoming" ? ["date", "name", "house", "type"] : ["name", "house", "type"],
+    intro: when === "upcoming" ? "Sales still to come, soonest first. Click a sale for the horses entered, with their starting, reserve and buyout prices."
+      : "Sales already held: click one for every horse, what it sold for, and who sold and bought it.",
+    filters: (q, data) => viewSeg("when", q, [["upcoming", "Upcoming"], ["past", "Past"], ["all", "All"]], "upcoming") + searchBox(q, "Search sales or houses") +
+      select("type", q, [["", "Any type"]].concat(((data && data.types) || []).map((t) => [t, t]))),
+    cols: [
+      { h: "Date", sort: "date", cls: "nowrap", f: (r) => fDate(r.date) },
+      { h: "Sale", sort: "name", f: (r) => AUCTION_LINK(r.id, r.name) },
+      { h: "Auction house", sort: "house", f: (r) => `${HOUSE_LINK(r.house_id, r.house)}${r.city ? `<div class="muted small">${esc(r.city)}, ${esc(r.country || "")}</div>` : ""}` },
+      { h: "Type", sort: "type", f: (r) => esc(r.type || "—") },
+      { h: "For", f: (r) => `<span class="small">${esc(saleRules(r))}</span>` },
+      { h: "Horses", cls: "num", f: (r) => fNum(r.entries || 0) },
+    ].concat(past ? [
+      { h: "Sold", cls: "num", f: (r) => fNum(r.sold || 0) },
+      { h: "Sales", cls: "num", f: (r) => (r.total ? fMoneyShort(r.total) : "—") },
+      { h: "Top price", cls: "num", f: (r) => (r.top ? fMoneyShort(r.top) : "—") },
+    ] : []).concat([
+      { h: "Entry fee", sort: "entry", cls: "num", f: (r) => fMoney(r.entry) },
+      { h: "Commission", sort: "commission", cls: "num", f: saleCommission },
+    ]),
+  }, route);
+}
+async function auctionPage(id) {
+  const d = await api("auction/" + id);
+  if (!d) return `<div class="err-box">That sale isn't in this database.</div>`;
+  const a = d.auction, res = d.results || [], ent = d.entries || [], held = res.length > 0, sold = res.filter((r) => r.sold);
+  const total = sold.reduce((x, r) => x + (r.price || 0), 0), cut = res.reduce((x, r) => x + (r.cut || 0), 0);
+  let html = `<div class="page-head"><div><div class="crumb"><a href="#/auctions">Auctions</a></div><h1>${esc(a.name)}</h1>
+    <div class="sub">${fDate(a.date)} · ${HOUSE_LINK(a.house_id, a.house)}${a.city ? ` · ${esc(a.city)}, ${esc(a.country || "")}` : ""}${a.owner_id ? ` · run by ${L.stable(a.owner_id, a.owner)}` : ""}</div></div></div>`;
+  html += tiles([
+    ["Type", esc(a.type || "—"), esc(saleRules(a))],
+    held ? ["Sold", `${fNum(sold.length)} of ${fNum(res.length)}`, sold.length < res.length ? `${fNum(res.length - sold.length)} not sold` : "Every horse sold"] : ["Horses entered", fNum(ent.length), "So far"],
+    held ? ["Sales", fMoneyShort(total), sold.length ? `average ${fMoneyShort(total / sold.length)}` : ""] : ["Total reserve", fMoneyShort(ent.reduce((x, r) => x + (r.reserve || 0), 0)), "Lowest prices the sellers will take"],
+    held ? ["Top price", fMoneyShort(Math.max(0, ...sold.map((r) => r.price || 0))), sold[0] ? esc(sold[0].horse || "") : ""] : ["Highest starting price", fMoneyShort(Math.max(0, ...ent.map((r) => r.start || 0))), ent[0] ? esc(ent[0].horse || "") : ""],
+    ["Entry fee", fMoney(a.entry), "Per horse"],
+    held ? ["Auction house's cut", fMoneyShort(cut), fCommission(a.commission) + " commission"] : ["Commission", fCommission(a.commission > 0 ? a.commission : a.house_commission), a.commission > 0 ? "Of each sale" : "The house's usual rate, set on sale day"],
+  ]);
+  const horseCols = (when) => [
+    { h: "Horse", f: (r) => L.horse(r.horse_id, r.horse) },
+    { h: "Sex", f: (r) => esc(r.gender || "—") },
+    { h: "Age", cls: "num", f: (r) => ageAt(r.birth, when) },
+    { h: "Sire", f: (r) => L.horse(r.sire_id, r.sire) }, { h: "Dam", f: (r) => L.horse(r.dam_id, r.dam) },
+    { h: "Rating", cls: "num", f: (r) => fNum(r.rating) },
+    { h: "Earnings", cls: "num", f: (r) => fMoneyShort(r.earnings) },
+  ];
+  if (held) html += `<div style="margin-top:16px">${panel("Results", table(horseCols(a.date).concat([
+    { h: "Price", cls: "num", f: (r) => `<b>${fMoney(r.price)}</b>` },
+    { h: "Result", f: (r) => (r.sold ? (r.buyout && r.price >= r.buyout ? "Sold at buyout" : "Sold") : '<span class="muted">Not sold</span>') },
+    { h: "Seller", f: (r) => L.stable(r.from_id, r.seller) },
+    { h: "Buyer", f: (r) => (r.sold ? L.stable(r.to_id, r.buyer) : "—") },
+    { h: "House's cut", cls: "num", f: (r) => fMoney(r.cut) },
+  ]), res, { rowClass: (r) => (r.sold ? "" : "muted-row") }), "Highest price first")}</div>`;
+  if (ent.length) html += `<div style="margin-top:16px">${panel(held ? "Entries" : "Horses entered", table(horseCols(a.date).concat([
+    { h: "Value", cls: "num", f: (r) => fMoneyShort(r.value) },
+    { h: "Stable now", f: (r) => L.stable(r.stable_id, r.stable) },
+    { h: "Starting price", cls: "num", f: (r) => fMoney(r.start) },
+    { h: "Reserve", cls: "num", f: (r) => (r.reserve ? fMoney(r.reserve) : "—") },
+    { h: "Buyout", cls: "num", f: (r) => (r.buyout ? fMoney(r.buyout) : "—") },
+    { h: "Auto-bid", f: (r) => (r.autobid ? `${L.stable(r.autobid_stable_id, r.autobid_stable)} <span class="muted small">up to ${fMoneyShort(r.autobid_max)}</span>` : "—") },
+  ]), ent), "Starting price: where bidding opens · reserve: the lowest the seller will take · buyout: buys it outright")}</div>`;
+  if (!held && !ent.length) html += `<div style="margin-top:16px">${panel("Horses entered", '<div class="empty">No horses entered yet.</div>')}</div>`;
+  return html;
+}
+async function auctionHousesPage(route) {
+  return listPage({
+    title: "Auction houses", noun: "auction houses", endpoint: "auction_houses", defaultSort: "turnover", ascDefault: ["name", "owner"], wide: true, rankCol: false,
+    intro: "Every auction house, who owns it and how much it has sold. Click one for its sales and best prices.",
+    filters: (q) => searchBox(q, "Search houses or owners") + select("forsale", q, [["", "Any"], ["1", "For sale"]]),
+    cols: [
+      { h: "Auction house", sort: "name", f: (r) => `${HOUSE_LINK(r.id, r.name)}${r.city ? `<div class="muted small">${esc(r.city)}, ${esc(r.country || "")}</div>` : ""}` },
+      { h: "Owner", sort: "owner", f: (r) => L.stable(r.owner_id, r.owner) },
+      { h: "Prestige", sort: "prestige", cls: "num", f: (r) => fNum(r.prestige, 0) },
+      { h: "Fame", sort: "fame", cls: "num", f: (r) => fNum(r.fame, 0) },
+      { h: "Commission", sort: "commission", cls: "num", f: (r) => fCommission(r.commission) },
+      { h: "Capacity", sort: "capacity", cls: "num", f: (r) => fNum(r.capacity) },
+      { h: "Condition", sort: "condition", cls: "num", f: (r) => (isNum(r.condition) ? fNum(r.condition, 0) + "%" : "—") },
+      { h: "Horses sold", sort: "sold", cls: "num grp-start", f: (r) => fNum(r.sold || 0) },
+      { h: "Sales", sort: "turnover", cls: "num", f: (r) => fMoneyShort(r.turnover) },
+      { h: "Its cut", cls: "num", f: (r) => fMoneyShort(r.cut) },
+      { h: "Founded", sort: "founded", cls: "num", f: (r) => (isNum(r.founded) ? new Date(r.founded * 1000).getUTCFullYear() : "—") },
+      { h: "For sale", sort: "price", cls: "num", f: (r) => (r.for_sale ? `<span class="badge warn">${fMoneyShort(r.price)}</span>` : "—") },
+    ],
+  }, route);
+}
+async function auctionHousePage(id) {
+  const d = await api("auction_house/" + id);
+  if (!d) return `<div class="err-box">That auction house isn't in this database.</div>`;
+  const h = d.house, yrs = d.years || [], soldN = yrs.reduce((a, y) => a + y.sold, 0), tot = yrs.reduce((a, y) => a + (y.total || 0), 0), cut = yrs.reduce((a, y) => a + (y.cut || 0), 0);
+  let html = `<div class="page-head"><div><div class="crumb"><a href="#/auction-houses">Auction houses</a></div><h1>${esc(h.auction_house_name)}${h.auction_house_for_sale ? ' <span class="badge warn">For sale</span>' : ""}</h1>
+    <div class="sub">${d.city ? `${esc(d.city)}, ${esc(d.country || "")} · ` : ""}owned by ${L.stable(h.auction_house_owner_id, h.owner)}${isNum(h.auction_house_founding_date) ? ` · founded ${new Date(h.auction_house_founding_date * 1000).getUTCFullYear()}` : ""}</div></div>
+    <a class="btn" href="#/auctions?when=all&q=${encodeURIComponent(h.auction_house_name)}">All its sales</a></div>`;
+  html += tiles([
+    ["Horses sold", fNum(soldN), `${fNum(d.past.length)} sales held · ${fNum(d.upcoming.length)} to come`],
+    ["Sales", fMoneyShort(tot), soldN ? `average ${fMoneyShort(tot / soldN)}` : ""],
+    ["Its cut", fMoneyShort(cut), `${fCommission(h.auction_house_commission_rate)} commission`],
+    ["Prestige", fNum(h.auction_house_prestige, 0), `Fame ${fNum(h.auction_house_fame, 0)} · awareness ${fNum(h.auction_house_awareness, 0)}`],
+    ["Capacity", fNum(h.auction_house_capacity), `Horses a sale · condition ${fNum(h.auction_house_condition, 0)}%`],
+    isNum(d.cash) ? ["Cash", fMoneyShort(d.cash), h.auction_house_for_sale ? `For sale at ${fMoneyShort(h.auction_house_asking_price)}` : `Monthly dividend ${fMoneyShort(h.auction_house_monthly_dividend)}`] : null,
+  ]);
+  const up = d.upgrades || [];
+  html += `<div class="grid cols-2" style="margin-top:16px">${panel("How it's run", kv([
+    ["Commission", fCommission(h.auction_house_commission_rate)], ["Maintenance budget", fMoney(h.auction_house_maintenance_budget) + " a month"],
+    ["Marketing budget", fMoney(h.auction_house_marketing_budget) + " a month"], ["Monthly dividend", fMoney(h.auction_house_monthly_dividend)],
+    ["Licence", `Tier ${fNum(h.auction_house_licence_tier)}${isNum(h.auction_house_licence_expires) && h.auction_house_licence_expires > 0 ? ` · expires ${fDate(h.auction_house_licence_expires)}` : ""}`],
+    ["Standing", fNum(h.auction_house_standing, 0)], ["Last renovated", fDate(h.auction_house_renovation_date)],
+  ]))}${panel("Upgrades", up.length ? `<div class="chips">${up.map((u) => `<span class="chip ${u.active ? "pos-1" : ""}" title="${u.active ? "Active" : "Not active"}${isNum(u.date) ? " · since " + esc(fDate(u.date)) : ""}">${esc(nice(u.key))}</span>`).join("")}</div>` : '<div class="empty">No upgrades.</div>',
+    up.length ? `${fNum(up.filter((u) => u.active).length)} active` : "")}</div>`;
+  if (yrs.length) html += `<div style="margin-top:16px">${panel("Sales each year", colChart({ labels: yrs.map((y) => String(y.year)), title: "Sales each year", wide: true, height: 200,
+    series: [{ name: "Sales", color: "var(--viz-1)", values: yrs.map((y) => y.total || 0) }] }), `${fNum(soldN)} horses in ${fNum(yrs.length)} year${yrs.length === 1 ? "" : "s"}`)}</div>`;
+  const saleCols = (past) => [
+    { h: "Date", cls: "nowrap", f: (r) => fDate(r.date) }, { h: "Sale", f: (r) => AUCTION_LINK(r.id, r.name) }, { h: "Type", f: (r) => esc(r.type || "—") },
+    { h: "Horses", cls: "num", f: (r) => fNum(r.entries || 0) },
+  ].concat(past ? [{ h: "Sold", cls: "num", f: (r) => fNum(r.sold || 0) }, { h: "Sales", cls: "num", f: (r) => fMoneyShort(r.total) }, { h: "Top price", cls: "num", f: (r) => fMoneyShort(r.top) }]
+    : [{ h: "Entry fee", cls: "num", f: (r) => fMoney(r.entry) }]);
+  html += `<div class="grid cols-2" style="margin-top:16px">${panel("Coming up", table(saleCols(false), d.upcoming, { empty: "No sales coming up." }))}
+    ${panel("Held", table(saleCols(true), d.past, { empty: "No sales held yet." }), d.past.length ? `${fNum(d.past.length)} sales` : "", "tall")}</div>`;
+  html += `<div style="margin-top:16px">${panel("Best prices", table([
+    { h: "Horse", f: (r) => L.horse(r.horse_id, r.horse) }, { h: "Price", cls: "num", f: (r) => `<b>${fMoney(r.price)}</b>` },
+    { h: "Sale", f: (r) => AUCTION_LINK(r.sale_id, r.sale) }, { h: "Date", cls: "nowrap", f: (r) => fDate(r.date) },
+    { h: "Seller", f: (r) => L.stable(r.from_id, r.seller) }, { h: "Buyer", f: (r) => L.stable(r.to_id, r.buyer) },
+  ], d.top_sales, { empty: "Nothing sold yet." }), "The 25 highest prices here")}</div>`;
+  return html;
+}
+// ------------------------------------------------------------------ 16.7.15: a stable's Auctions and Share offerings tabs
+async function stableAuctionsPage(route) {
+  const id = route.parts[1];
+  const [d, a] = await Promise.all([api("stable/" + id), api("stable_auctions/" + id)]);
+  const soldOk = a.sold.filter((r) => r.sold), sTot = soldOk.reduce((x, r) => x + (r.price || 0), 0), bTot = a.bought.reduce((x, r) => x + (r.price || 0), 0);
+  let html = stableHead(d, "auctions");
+  html += tiles([
+    ["Auction houses", fNum(a.houses.length), a.houses.length ? `${fMoneyShort(a.houses.reduce((x, h) => x + (h.turnover || 0), 0))} sold through them` : "None owned"],
+    ["Entered in sales", fNum(a.entries.length), a.entries.length ? `next ${fDate(a.entries[0].date)}` : "Nothing coming up"],
+    ["Sold at auction", fNum(soldOk.length), `${fMoneyShort(sTot)}${a.sold.length > soldOk.length ? ` · ${fNum(a.sold.length - soldOk.length)} not sold` : ""}`],
+    ["Bought at auction", fNum(a.bought.length), fMoneyShort(bTot)],
+    ["Net from auctions", fMoneyShort(sTot - bTot), "Sales less purchases"],
+  ]);
+  if (a.houses.length) html += `<div style="margin-top:16px">${panel("Auction houses it owns", table([
+    { h: "Auction house", f: (r) => `${HOUSE_LINK(r.id, r.name)}${r.city ? `<div class="muted small">${esc(r.city)}, ${esc(r.country || "")}</div>` : ""}` },
+    { h: "Prestige", cls: "num", f: (r) => fNum(r.prestige, 0) }, { h: "Commission", cls: "num", f: (r) => fCommission(r.commission) },
+    { h: "Capacity", cls: "num", f: (r) => fNum(r.capacity) }, { h: "Horses sold", cls: "num", f: (r) => fNum(r.sold || 0) },
+    { h: "Sales", cls: "num", f: (r) => fMoneyShort(r.turnover) }, { h: "Its cut", cls: "num", f: (r) => fMoneyShort(r.cut) },
+    { h: "For sale", cls: "num", f: (r) => (r.for_sale ? fMoneyShort(r.price) : "—") },
+  ], a.houses))}</div>`;
+  if (a.entries.length) html += `<div style="margin-top:16px">${panel("Horses entered in sales coming up", table([
+    { h: "Date", cls: "nowrap", f: (r) => fDate(r.date) }, { h: "Horse", f: (r) => L.horse(r.horse_id, r.horse) }, { h: "Sex", f: (r) => esc(r.gender || "") },
+    { h: "Age", cls: "num", f: (r) => ageAt(r.birth, r.date) }, { h: "Sale", f: (r) => AUCTION_LINK(r.sale_id, r.sale) }, { h: "Auction house", f: (r) => HOUSE_LINK(r.house_id, r.house) },
+    { h: "Starting price", cls: "num", f: (r) => fMoney(r.start) }, { h: "Reserve", cls: "num", f: (r) => (r.reserve ? fMoney(r.reserve) : "—") }, { h: "Buyout", cls: "num", f: (r) => (r.buyout ? fMoney(r.buyout) : "—") },
+  ], a.entries))}</div>`;
+  const histCols = (other) => [
+    { h: "Date", cls: "nowrap", f: (r) => fDate(r.date) }, { h: "Horse", f: (r) => L.horse(r.horse_id, r.horse) }, { h: "Sex", f: (r) => esc(r.gender || "") },
+    { h: "Age", cls: "num", f: (r) => ageAt(r.birth, r.date) }, { h: "Sale", f: (r) => AUCTION_LINK(r.sale_id, r.sale) },
+    { h: "Price", cls: "num", f: (r) => (r.sold === false ? '<span class="muted">Not sold</span>' : `<b>${fMoney(r.price)}</b>`) },
+    other === "buyer" ? { h: "Bought by", f: (r) => (r.sold === false ? "—" : L.stable(r.to_id, r.buyer)) } : { h: "Sold by", f: (r) => L.stable(r.from_id, r.seller) },
+  ];
+  const nH = (n) => (n ? `${fNum(n)} horse${n === 1 ? "" : "s"}` : "");
+  html += `<div class="grid cols-2" style="margin-top:16px">${panel("Sold at auction", table(histCols("buyer"), a.sold, { empty: "Nothing sold at auction." }), nH(a.sold.length), "tall")}
+    ${panel("Bought at auction", table(histCols("seller"), a.bought, { empty: "Nothing bought at auction." }), nH(a.bought.length), "tall")}</div>`;
+  return html;
+}
+async function stableSharesPage(route) {
+  const id = route.parts[1];
+  const [d, sh] = await Promise.all([api("stable/" + id), api("stable_shares/" + id)]);
+  const of = sh.offerings || [], ofs = sh.offers || [];
+  const raised = (o) => (o.claimed || 0) * (o.claim_price || o.price || 0) + (o.market || 0) * (o.price || 0);
+  const open = of.filter((o) => o.status === "open");
+  let html = stableHead(d, "shares");
+  html += tiles([
+    ["Share offerings", fNum(of.length), open.length ? `${fNum(open.length)} open now` : "None open now"],
+    ["Shares offered", fNum(of.reduce((a, o) => a + (o.offered || 0), 0)), "In all its offerings"],
+    ["Raised", fMoneyShort(of.filter((o) => o.status !== "open").reduce((a, o) => a + raised(o), 0)), "From offerings that have closed"],
+    ["Investor offers", fNum(ofs.length), ofs.length ? `${fNum(ofs.filter((o) => o.status === "accepted").length)} accepted` : ""],
+  ]);
+  const typeName = (t) => ({ ipo: "Listing (IPO)", secondary: "New shares" })[t] || nice(t);
+  html += `<div style="margin-top:16px">${panel("Share offerings", table([
+    { h: "Opened", cls: "nowrap", f: (o) => fDate(o.created) },
+    { h: "Kind", f: (o) => esc(typeName(o.type)) },
+    { h: "Status", f: (o) => (o.status === "open" ? '<span class="badge warn">Open</span>' : esc(nice(o.status))) },
+    { h: "Shares offered", cls: "num", f: (o) => fNum(o.offered) },
+    { h: "Price a share", cls: "num", f: (o) => fMoneyDp(o.price, 2) },
+    { h: "Holders' price", cls: "num", f: (o) => (o.claim_price ? fMoneyDp(o.claim_price, 2) : "—") },
+    { h: "Deadline", cls: "nowrap", f: (o) => fDate(o.deadline) },
+    { h: "Taken by holders", cls: "num", f: (o) => fNum(o.claimed || 0) },
+    { h: "Sold on the market", cls: "num", f: (o) => fNum(o.market || 0) },
+    { h: "Raised", cls: "num", f: (o) => (o.status === "open" ? '<span class="muted">—</span>' : fMoneyShort(raised(o))) },
+  ], of, { empty: "No share offerings." }), "Holders' price: what existing shareholders pay to keep their share of the stable")}</div>`;
+  const rights = of.flatMap((o) => (o.rights || []).map((r) => ({ ...r, created: o.created, type: o.type })));
+  if (rights.length) html += `<div style="margin-top:16px">${panel("Who could buy in", table([
+    { h: "Offering", cls: "nowrap", f: (r) => `${fDate(r.created)} <span class="muted small">${esc(typeName(r.type))}</span>` },
+    { h: "Shareholder", f: (r) => L.person(r.person_id, r.person) },
+    { h: "Held through", f: (r) => (r.holder_id ? L.stable(r.holder_id, r.holder) : '<span class="muted">Personally</span>') },
+    { h: "Could take", cls: "num", f: (r) => fNum(r.entitled) },
+    { h: "Took", cls: "num", f: (r) => fNum(r.claimed || 0) },
+    { h: "Answer", f: (r) => (r.response === "claimed" ? "Took them" : r.response === "declined" ? '<span class="muted">Declined</span>' : esc(nice(r.response || "—"))) },
+  ], rights), "Existing shareholders' right to buy new shares in proportion to what they hold", "tall")}</div>`;
+  if (ofs.length) html += `<div style="margin-top:16px">${panel("Investor offers", table([
+    { h: "Date", cls: "nowrap", f: (o) => fDate(o.date) },
+    { h: "Investor", f: (o) => L.person(o.person_id, o.person) },
+    { h: "Wants to", f: (o) => (o.type === "buy" ? "Buy" : o.type === "sell" ? "Sell" : esc(nice(o.type))) },
+    { h: "Shares", cls: "num", f: (o) => fNum(o.shares) },
+    { h: "Price a share", cls: "num", f: (o) => fMoneyDp(o.price, 2) },
+    { h: "Total", cls: "num", f: (o) => fMoney(o.total) },
+    { h: "Through", f: (o) => (o.holder_id ? L.stable(o.holder_id, o.holder) : '<span class="muted">Personally</span>') },
+    { h: "Answer", f: (o) => (o.status === "accepted" ? '<span class="badge good">Accepted</span>' : esc(nice(o.status))) },
+  ], ofs), "Offers from investors to buy (or sell) the stable's shares", "tall")}</div>`;
+  return html;
+}
+// ------------------------------------------------------------------ 16.7.15: People → Lifestyle assets
+const ASSET_ICON = { house: "🏠", yacht: "🛥️", car: "🚗", watch: "⌚", jewelry: "💎", collectible: "🏺", art: "🖼️", private_plane: "✈️", island: "🏝️", pet: "🐾" };
+const assetCat = (c) => `${ASSET_ICON[c] ? ASSET_ICON[c] + " " : ""}${esc(nice(c || ""))}`;
+async function assetsPage(route) {
+  const cat = route.q.view === "catalogue";
+  return listPage({
+    title: "Lifestyle assets", noun: cat ? "items" : "assets", endpoint: "assets", defaultSort: cat ? "value" : "price", ascDefault: ["name", "category", "owner"],
+    intro: cat ? "Everything there is to buy, from cottages to a private island, and how many of each people own."
+      : "The houses, yachts, cars, watches, jewellery and other things people in the world own, with what they paid and what each costs to keep.",
+    filters: (q, data) => viewSeg("view", q, [["", "Owned"], ["catalogue", "Catalogue"]], "") + searchBox(q, cat ? "Search items" : "Search items or owners") +
+      select("category", q, [["", "Any kind"]].concat(((data && data.categories) || []).map((c) => [c, nice(c)]))) + (cat ? "" : select("forsale", q, [["", "Any"], ["1", "For sale"]])),
+    cols: cat ? [
+      { h: "Item", sort: "name", f: (r) => `<span data-tip="${esc(r.about || "")}"><b>${esc(nice(r.name))}</b></span>` },
+      { h: "Kind", sort: "category", f: (r) => assetCat(r.category) },
+      { h: "Tier", sort: "tier", cls: "num", f: (r) => fNum(r.tier) },
+      { h: "Rarity", f: (r) => esc(nice(r.rarity || "")) },
+      { h: "Price", sort: "value", cls: "num", f: (r) => fMoney(r.value) },
+      { h: "Upkeep a year", sort: "upkeep", cls: "num", f: (r) => fMoney(r.upkeep) },
+      { h: "Prestige", sort: "prestige", cls: "num", f: (r) => fNum(r.prestige, 0) },
+      { h: "Where", f: (r) => (r.city ? `${esc(r.city)}, ${esc(r.country || "")}` : '<span class="muted">Anywhere</span>') },
+      { h: "Owned", sort: "owned", cls: "num", f: (r) => (r.owned ? `<a href="#/assets?q=${encodeURIComponent(r.name)}">${fNum(r.owned)}</a>` : "0") },
+    ] : [
+      { h: "Item", sort: "name", f: (r) => `<span data-tip="${esc(r.about || "")}"><b>${esc(r.custom || nice(r.name))}</b></span>${r.custom ? `<div class="muted small">${esc(nice(r.name))}</div>` : ""}` },
+      { h: "Kind", sort: "category", f: (r) => assetCat(r.category) },
+      { h: "Owner", sort: "owner", f: (r) => (r.owner_type === "person" ? L.person(r.owner_id, r.owner) : esc(r.owner || "—")) },
+      { h: "Bought", sort: "date", cls: "nowrap", f: (r) => fDate(r.date) },
+      { h: "Paid", sort: "price", cls: "num", f: (r) => fMoney(r.price) },
+      { h: "Price now", sort: "value", cls: "num", f: (r) => fMoney(r.value) },
+      { h: "Upkeep a year", sort: "upkeep", cls: "num", f: (r) => fMoney(r.upkeep) },
+      { h: "Where", f: (r) => (r.city ? `${esc(r.city)}, ${esc(r.country || "")}` : "—") },
+      { h: "Home", f: (r) => (r.home ? '<span class="badge good">Main home</span>' : "") },
+      { h: "For sale", f: (r) => (r.for_sale ? '<span class="badge warn">For sale</span>' : "") },
     ],
   }, route);
 }
