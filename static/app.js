@@ -1770,11 +1770,12 @@ async function listPage(cfg, route) {
     ${table(cfg.rankCol ? [rankCol(sort)].concat(cfg.cols) : cfg.cols, cfg.rankCol ? numberRows(data) : data.rows, { sort, dir, rowClass: cfg.rowClass, wide: cfg.wide, ascCols: cfg.ascDefault, empty: "No matches. Try a different search or filter.", ...(cfg.rankCol ? { tcls: "ranked" } : {}), ...(cfg.tableOpts || {}) })}
     ${pager(data)}</section>`;
 }
-// a "#" column (16.7.11): each row's place in the current sort, carrying on across pages (row 1 on page 2 of 100 is #101).
-// A row with nothing in the sorted column (it sits at the bottom) gets no number.
-const numberRows = (data) => (data.rows || []).map((r, i) => ({ ...r, _n: ((data.page || 1) - 1) * (data.page_size || 0) + i + 1 }));
-const rankCol = (sort) => ({ h: `<span data-tip="Place in the current sort. Click any column heading to rank by it.">#</span>`, cls: "num muted rank-col",
-  f: (r) => (sort in r && (r[sort] === null || r[sort] === undefined) ? "" : fNum(r._n)) });
+// a "#" column (16.7.11): each row's rank in the sorted column. The server works it out (_rank) over everything the filters
+// keep, so the best is #1 whichever way it's sorted and on any page, and equal figures share a rank. Without one from the
+// server it's the row's place in the list. A row with nothing in the sorted column gets no number.
+const numberRows = (data) => (data.rows || []).map((r, i) => ({ ...r, _n: "_rank" in r ? r._rank : ((data.page || 1) - 1) * (data.page_size || 0) + i + 1 }));
+const rankCol = (sort) => ({ h: `<span data-tip="Rank in the column you've sorted by: the best is #1, and equal figures share a rank. Click any column heading to rank by it.">#</span>`, cls: "num muted rank-col",
+  f: (r) => (r._n === null || r._n === undefined || (sort in r && (r[sort] === null || r[sort] === undefined)) ? "" : fNum(r._n)) });
 // "1 stable", "1 person": the singular of the nouns the lists use
 const singular = (noun) => ({ people: "person", races: "race", horses: "horse", stables: "stable", meetings: "meeting", courses: "course", sires: "sire", dams: "dam",
   "broodmare sires": "broodmare sire", results: "result" }[noun] || noun.replace(/s$/, ""));

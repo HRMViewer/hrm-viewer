@@ -5577,6 +5577,11 @@ def stable_table_query(con, q):
         t.last_run, t.cash, t.net_worth, t.share_price, t.staff, t.courses, s.stable_prestige as prestige, s.stable_level as level,
         s.stable_founded_date as founded """
     sort, d = sort_args(q, STT_SORTS, "prestige")
+    # each stable's rank in the sorted column (16.7.11), over every stable the filters keep: the best is 1 whichever way
+    # it's sorted and on any page, stables with the same figure share a rank (1, 2, 2, 4), and an empty figure gets none.
+    # Best is the highest number, or A first for names, owners and countries.
+    best = order_sql(sort, "asc" if sort in (STT_SORTS["name"], STT_SORTS["owner"], STT_SORTS["country"]) else "desc")
+    sel += ", case when %s is null then null else rank() over (order by %s) end as _rank " % (sort, best)
     order = " order by " + order_sql(sort, d)
     return sel + base + w + order, "select count(*) " + base + w, params
 
@@ -6476,7 +6481,8 @@ def export_rows(con, which, q):
     else:
         sql, _, params = EXPORTS[which](con, q)
     cur = con.execute(sql, params)
-    return [d[0] for d in cur.description], cur
+    # the Stable table's rank in the sorted column is called "rank" in the spreadsheet (16.7.11)
+    return [("rank" if d[0] == "_rank" else d[0]) for d in cur.description], cur
 
 
 # --------------------------------------------------------------------------- HTTP
