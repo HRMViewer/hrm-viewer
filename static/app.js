@@ -703,7 +703,9 @@ function hashFor(parts, q = {}) {
 function go(parts, q) { location.hash = hashFor(parts, q); }
 
 const PAGES = {
-  "": homePage, horses: horsesPage, notes: notesPage, tags: Object.assign(() => tagsPage(), { after: () => tagsPage.after() }), horse: (r) => (r.parts[2] === "awards" ? entityAwardsPage("horse", r) : r.parts[2] === "fans" ? horseFansPage(r.parts[1]) : r.parts[2] === "training" ? horseTrainingPage(r.parts[1]) : r.parts[2] === "races" ? horseRacesPage(r.parts[1]) : horsePage(r.parts[1])), races: racesPage, race: Object.assign((r) => racePage(r.parts[1]), { after: () => {
+  "": homePage, horses: horsesPage, notes: notesPage, tags: Object.assign(() => tagsPage(), { after: () => tagsPage.after() }), horse: Object.assign((r) => (r.parts[2] === "awards" ? entityAwardsPage("horse", r) : r.parts[2] === "fans" ? horseFansPage(r.parts[1]) : r.parts[2] === "training" ? horseTrainingPage(r.parts[1]) : r.parts[2] === "races" ? horseRacesPage(r.parts[1])
+    : r.parts[2] === "pedigree" ? horsePedigreePage(r) : r.parts[2] === "health" ? horseHealthPage(r.parts[1]) : r.parts[2] === "news" ? horseNewsPage(r.parts[1]) : horsePage(r.parts[1])),
+    { after: (r) => (r.parts[2] === "pedigree" ? horsePedigreePage.after(r) : null) }), races: racesPage, race: Object.assign((r) => racePage(r.parts[1]), { after: () => {
     $$("[data-openall]", APP).forEach((b) => b.addEventListener("click", () => {
       const open = b.textContent.startsWith("Open");
       $$(".rtoggle", APP).forEach((t) => { if (t.classList.contains("open") !== open) t.click(); });
@@ -2311,7 +2313,7 @@ function horseHead(d, on) {
     · Foaled ${fDate(h.horse_birth_date)}${dead ? ` · Died ${fDate(h.horse_deceased_date)} ${esc(h.horse_death_cause || "")}` : ""}
     ${d.stable ? ` · ${L.stable(d.stable.id, d.stable.name)}` : ""}</div>${(d.traits || []).length ? `<div class="hp-traits">${chips(d.traits)}</div>` : ""}${removedNote(d)}</div></div>
     <div style="display:flex;gap:8px"><button class="btn" data-gallery="${h.horse_horse_id}" data-gname="${esc(h.horse_name)}">${ICON_PHOTO}${pic ? "Gallery" : "Add photos"}</button></div></div>
-    <div class="subtabs"><a href="#/horse/${id}" class="${on === "overview" ? "on" : ""}">Overview</a><a href="#/horse/${id}/races" class="${on === "races" ? "on" : ""}">Races &amp; trials${(d.results || []).length ? ` <span class="tab-n">${fNum(d.results.length)}</span>` : ""}</a><a href="#/horse/${id}/awards" class="${on === "awards" ? "on" : ""}">Awards${(d.awards || []).length ? ` <span class="tab-n">${fNum(d.awards.length)}</span>` : ""}</a><a href="#/horse/${id}/fans" class="${on === "fans" ? "on" : ""}">Fans, sponsors &amp; notes</a><a href="#/horse/${id}/training" class="${on === "training" ? "on" : ""}">Training &amp; plans</a><a href="#/compare?kind=horse&a=${id}" class="st-cmp">Compare…</a></div>`;
+    <div class="subtabs"><a href="#/horse/${id}" class="${on === "overview" ? "on" : ""}">Overview</a><a href="#/horse/${id}/races" class="${on === "races" ? "on" : ""}">Races &amp; trials${(d.results || []).length ? ` <span class="tab-n">${fNum(d.results.length)}</span>` : ""}</a><a href="#/horse/${id}/pedigree" class="${on === "pedigree" ? "on" : ""}">Pedigree</a><a href="#/horse/${id}/health" class="${on === "health" ? "on" : ""}">Health${(d.health || []).length ? ` <span class="tab-n">${fNum(d.health.length)}</span>` : ""}</a><a href="#/horse/${id}/news" class="${on === "news" ? "on" : ""}">News${(d.events || []).length ? ` <span class="tab-n">${fNum(d.events.length)}</span>` : ""}</a><a href="#/horse/${id}/awards" class="${on === "awards" ? "on" : ""}">Awards${(d.awards || []).length ? ` <span class="tab-n">${fNum(d.awards.length)}</span>` : ""}</a><a href="#/horse/${id}/fans" class="${on === "fans" ? "on" : ""}">Fans, sponsors &amp; notes</a><a href="#/horse/${id}/training" class="${on === "training" ? "on" : ""}">Training &amp; plans</a><a href="#/compare?kind=horse&a=${id}" class="st-cmp">Compare…</a></div>`;
 }
 // ------------------------------------------------------------------ 16.5: training, shoes, plans, rankings and syndicates on a horse
 const nice = (s) => String(s || "").replace(/_/g, " ").replace(/^./, (x) => x.toUpperCase());
@@ -2725,7 +2727,7 @@ async function horsePage(id) {
   ]);
 
   // three small boxes on one line (16.7.10): they stay side by side down to narrow windows
-  html += `<div class="hp-trio">${panel("Physical", physical, "", "compact")}${panel("Pedigree", pedigree, `<a href="#/pedigree/${h.horse_horse_id}">Full pedigree</a>`, "compact")}${panel("Connections", connections, "", "compact")}</div>`;
+  html += `<div class="hp-trio">${panel("Physical", physical, "", "compact")}${panel("Pedigree", pedigree, `<a href="#/horse/${h.horse_horse_id}/pedigree">Full pedigree</a>`, "compact")}${panel("Connections", connections, "", "compact")}</div>`;
   const ent = (d.entries || []).slice().sort((x, y) => (x.race_time || 0) - (y.race_time || 0));
   if (ent.length) {
     html += `<div style="margin-top:16px">${panel("Upcoming races", table([
@@ -2802,36 +2804,86 @@ async function horsePage(id) {
       `${runs.length} starts`)}</div>`;
   } else html += `<div style="margin-top:16px">${valuePanel}</div>`;
 
-  html += `<div style="margin-top:16px">${panel("Health history", table([
-      { h: "From", cls: "nowrap", f: (r) => fDate(r.start) }, { h: "To", cls: "nowrap", f: (r) => fDate(r.end) },
-      { h: "Condition", f: (r) => esc(r.name) }, { h: "Type", f: (r) => esc(r.type) }, { h: "Severity", cls: "num", f: (r) => fNum(r.severity) },
-    ], d.health, { empty: "No illnesses or injuries." }))}</div>`;
-
-  const AWARD_NAMES = { g1_race: "G1 win", g2_race: "G2 win", g3_race: "G3 win", listed_race: "Listed win" };
-  const AWARD_GRADE = { g1_race: "G1", g2_race: "G2", g3_race: "G3", listed_race: "listed" };
-  const aw = d.awards || [], SHOW = 5;
-  const nRace = (c) => aw.filter((x) => x.category === c).length;
-  const awSummary = ["g1_race", "g2_race", "g3_race", "listed_race"].map((c) => [c, nRace(c)]).filter(([, n]) => n).map(([c, n]) => `${n}× ${AWARD_NAMES[c].replace(" win", "")}`).join(" · ");
-  const awTable = table([
-    { h: "Year", f: (r) => esc(r.year ?? "") },
-    { h: "Award", f: (r) => AWARD_GRADE[r.category] ? `${grade(AWARD_GRADE[r.category])} <span class="small muted">win</span>` : esc((r.category || "").replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase())) + (isNum(r.rank) ? ` <span class="small muted">(${ord(r.rank)})</span>` : "") },
-    { h: "For", f: (r) => (r.race_id ? L.race(r.race_id, r.description || "race") : esc(r.description || "")) },
-    { h: "Value", cls: "num", f: (r) => (r.value ? fMoney(r.value) : "—") },
-  ], aw, { empty: "No awards.", rowClass: (r) => (aw.indexOf(r) >= SHOW ? "more-row" : "") });
-  const ev = d.events || [];
-  html += `<div class="grid cols-2" style="margin-top:16px">
-    ${panel("Awards", expandable(awTable, aw.length, SHOW), (aw.length ? (awSummary ? awSummary + " · " : "") + `${aw.length} in all · ` : "") + `<a href="#/horse/${h.horse_horse_id}/awards">Awards tab</a>`)}
-    ${panel("News", events(ev, SHOW), ev.length > SHOW ? `latest ${SHOW} of ${ev.length}` : "")}</div>`;
-
-  html += `<div style="margin-top:16px">${panel("Offspring", table([
+  html += horseRankPanels(more || {}, h);
+  html += `<div style="margin-top:16px">${allFields(h)}</div>`;
+  return html;
+}
+// ------------------------------------------------------------------ 16.7.11: a horse's Pedigree (offspring), Health and News tabs
+function horseOffspringPanel(d) {
+  const h = d.horse;
+  return panel("Offspring", table([
     { h: "Name", f: (r) => `${L.horse(r.id, r.name)}${r.died ? ' <span class="badge dead">Dead</span>' : ""}` },
     { h: "Sex", f: (r) => esc(r.gender) }, { h: "Foaled", cls: "nowrap", f: (r) => fDate(r.birth) }, { h: "Age", cls: "num nowrap", f: (r) => ageCell(r.birth, r.died) },
     { h: h.horse_sex === "Female" ? "Sire" : "Dam", f: (r) => L.horse(r.mate_id, r.mate_name) },
     { h: "G1 wins", cls: "num", f: (r) => fNum(r.g1) }, { h: "Earnings", cls: "num", f: (r) => fMoney(r.earnings) },
-  ], d.offspring, { empty: "No offspring." }), (d.offspring_total > d.offspring.length ? `Top ${d.offspring.length} of ${fNum(d.offspring_total)} by earnings` : `${fNum(d.offspring_total)} foals`) +
-    (d.offspring_total ? ` · <a href="#/horse-table?${h.horse_sex === "Female" ? "dam" : "sire"}=${h.horse_horse_id}&status=all">Open in Horse table</a>` : ""), "tall")}</div>`;
-  html += horseRankPanels(more || {}, h);
-  html += `<div style="margin-top:16px">${allFields(h)}</div>`;
+  ], d.offspring, { empty: "No offspring." }), (d.offspring_total > (d.offspring || []).length ? `Top ${d.offspring.length} of ${fNum(d.offspring_total)} by earnings` : `${fNum(d.offspring_total || 0)} foals`) +
+    (d.offspring_total ? ` · <a href="#/horse-table?${h.horse_sex === "Female" ? "dam" : "sire"}=${h.horse_horse_id}&status=all">Open in Horse table</a>` : ""), "tall");
+}
+async function horseNewsPage(id) {
+  const d = await api("horse/" + id);
+  const ev = d.events || [];
+  return horseHead(d, "news") + panel("News", events(ev), ev.length ? `${fNum(ev.length)} item${ev.length === 1 ? "" : "s"}, newest first` : "");
+}
+async function horseHealthPage(id) {
+  const d = await api("horse/" + id);
+  const h = d.horse, hs = d.health || [], now = GD();
+  const days = (r) => (isNum(r.start) ? Math.max(0, Math.round(((isNum(r.end) ? r.end : now) - r.start) / 86400)) : null);
+  const open = hs.filter((r) => !isNum(r.end) || r.end > now);
+  const inj = hs.filter((r) => r.type === "injury").length, ill = hs.filter((r) => r.type === "illness").length;
+  const daysOut = hs.reduce((a, r) => a + (days(r) || 0), 0);
+  const progress = (r) => (isNum(r.start_points) && r.start_points > 0 && isNum(r.points) ? Math.max(0, Math.min(1, 1 - r.points / r.start_points)) : null);
+  const impact = (r) => (isNum(r.race_impact) ? `${fNum(r.race_impact * 100, 0)}% of its ability` : "—");
+  const yesNo = (v) => (v ? "Yes" : "No");
+  const dead = isNum(h.horse_deceased_date);
+  let html = horseHead(d, "health");
+  html += tiles([
+    ["Now", dead ? "Deceased" : open.length ? esc(open.map((r) => r.name).join(", ")) : "Healthy", dead ? esc(h.horse_death_cause || "") : open.length ? `since ${fDate(Math.min(...open.map((r) => r.start)))}` : "No illness or injury"],
+    ["Condition", isNum(h.horse_condition) ? fNum(h.horse_condition, 0) + "%" : "—", "Fitness to race right now"],
+    ["Health risk", fNum(h.horse_health_risk, 1), isNum(h.horse_health_risk_floor) ? `Lowest it can go: ${fNum(h.horse_health_risk_floor, 1)}` : "Higher means more likely to get ill or hurt"],
+    ["Weight", isNum(h.horse_weight) ? fNum(h.horse_weight, 0) + " kg" : "—", isNum(h.horse_max_weight) ? `Most it has weighed: ${fNum(h.horse_max_weight, 0)} kg` : ""],
+    ["Illnesses & injuries", fNum(hs.length), `${fNum(ill)} illness${ill === 1 ? "" : "es"} · ${fNum(inj)} injur${inj === 1 ? "y" : "ies"}`],
+    ["Days affected", fNum(daysOut), hs.length ? `about ${fNum(daysOut / hs.length, 0)} days each` : ""],
+  ]);
+  // anything it has now, in full
+  open.forEach((r) => {
+    const p = progress(r);
+    html += `<div style="margin-top:16px">${panel(`${esc(r.name)} <span class="badge ${r.type === "injury" ? "warn" : "bad"}">${esc(nice(r.type || ""))}</span>`, `${r.about ? `<p class="small" style="margin-top:0">${esc(r.about)}</p>` : ""}` + kv([
+      ["Since", `${fDate(r.start)} · ${fNum(days(r))} days`], ["Severity", fNum(r.severity)],
+      ["Recovery", !isNum(p) ? "—" : `<span class="hl-prog"><i style="width:${(p * 100).toFixed(0)}%"></i></span> ` + (p >= 1
+        ? (r.chronic ? "As far as it goes: it's chronic, so it stays with the horse" : "Recovered, not yet cleared") : `${fNum(p * 100, 0)}% of the way`)],
+      ["Usual recovery time", isNum(r.recovery_days) ? `${fNum(r.recovery_days)} days` : "—"],
+      ["Treatment", r.treatment ? `${esc(nice(String(r.treatment).toLowerCase()))}${isNum(r.treated) && String(r.treatment).toUpperCase() !== "UNTREATED" ? ` · from ${fDate(r.treated)}` : ""}` : "—"],
+      ["Complications", fNum(r.complications || 0)], ["Racing while affected", impact(r)],
+      ["Contagious", yesNo(r.contagious)], ["Chronic", yesNo(r.chronic)], r.restriction ? ["Restriction", esc(nice(r.restriction))] : null,
+    ].filter(Boolean)), "Now")}</div>`;
+  });
+  // condition over time, and illnesses and injuries each year
+  const st = (d.stats || []).filter((x) => isNum(x.condition));
+  const yOf = (t) => new Date(t * 1000).getUTCFullYear();
+  let yearChart = "";
+  if (hs.length) {
+    const ys = hs.filter((r) => isNum(r.start)).map((r) => yOf(r.start)), y0 = Math.min(...ys), y1 = Math.max(...ys, yOf(now)), years = [];
+    for (let y = y0; y <= y1; y++) years.push(y);
+    yearChart = colChart({ labels: years.map(String), stacked: true, total: "In all", fmt: (v) => fNum(v), tip: (v) => fNum(v), w: 600, title: "Illnesses and injuries each year",
+      series: [{ name: "Illness", color: "var(--viz-1)", values: years.map((y) => hs.filter((r) => r.type === "illness" && yOf(r.start) === y).length) },
+        { name: "Injury", color: "var(--viz-2)", values: years.map((y) => hs.filter((r) => r.type === "injury" && yOf(r.start) === y).length) }] });
+  }
+  html += `<div class="grid cols-2" style="margin-top:16px">${panel("Condition over time", lineChart([{ name: "Condition", points: st.map((x) => [x.date, x.condition]) }],
+    { yFmt: (v) => fNum(v, 0) + "%", tipFmt: (v) => fNum(v, 1) + "%", height: 230 }), "From the game's monthly stat records")}
+    ${panel("Illnesses & injuries by year", yearChart || '<div class="empty">No illnesses or injuries.</div>', hs.length ? `${fNum(hs.length)} in all` : "")}</div>`;
+  html += `<div style="margin-top:16px">${panel("Health history", table([
+    { h: "From", cls: "nowrap", f: (r) => fDate(r.start) },
+    { h: "To", cls: "nowrap", f: (r) => (isNum(r.end) && r.end <= now ? fDate(r.end) : '<span class="badge warn">Ongoing</span>') },
+    { h: "Days", cls: "num", f: (r) => fNum(days(r)) },
+    { h: "Condition", f: (r) => `<span ${r.about ? `data-tip="${esc(r.about)}"` : ""}>${esc(r.name || "—")}</span>` },
+    { h: "Type", f: (r) => esc(nice(r.type || "")) },
+    { h: "Severity", cls: "num", f: (r) => fNum(r.severity) },
+    { h: "Treatment", f: (r) => (r.treatment ? esc(nice(String(r.treatment).toLowerCase())) : '<span class="muted">—</span>') },
+    { h: "Complications", cls: "num", f: (r) => fNum(r.complications || 0) },
+    { h: "Racing while affected", cls: "num", f: impact },
+    { h: "Contagious", f: (r) => yesNo(r.contagious) },
+    { h: "Chronic", f: (r) => yesNo(r.chronic) },
+  ], hs, { empty: "No illnesses or injuries.", rowClass: (r) => (!isNum(r.end) || r.end > now ? "own" : "") }), "Point at a condition for what it is", "tall")}</div>`;
   return html;
 }
 // a horse's race record: the columns used by Last 5 starts (Overview) and the Races & trials tab
@@ -5801,7 +5853,19 @@ function pedGens(q) {
 function gensText(gens) {
   return Object.entries(gens).sort((a, b) => a[0] - b[0]).map(([g, c]) => (c > 1 ? `${g}×${c}` : g)).join(", ");
 }
-async function pedigreePage(id, q) {
+// the family tree as its own page (#/pedigree/<id>), or as a horse's Pedigree tab (#/horse/<id>/pedigree, 16.7.5):
+// in the tab, names in the tree open that horse's Pedigree tab, so the horse page's tabs stay at the top
+let PED_TAB = false;
+const pedHref = (hid) => (PED_TAB ? `#/horse/${hid}/pedigree` : `#/pedigree/${hid}`);
+async function horsePedigreePage(route) {
+  const id = route.parts[1];
+  const head = await api("horse/" + id);
+  // the family tree, then the horse's offspring (16.7.11)
+  return (await pedigreePage(id, route.q, head)) + `<div style="margin-top:16px">${horseOffspringPanel(head)}</div>`;
+}
+horsePedigreePage.after = (route) => pedigreePage.after(route);
+async function pedigreePage(id, q, horse) {
+  PED_TAB = !!horse;
   const depth = pedGens(q || {});
   const d = await api(`pedigree/${id}?gens=${depth}`);
   const keepSel = PED && PED.horse && d.horse && PED.horse.id === d.horse.id && PED.sel ? PED.sel : null;
@@ -5820,13 +5884,13 @@ async function pedigreePage(id, q) {
     const bits = [yr(h.birth), h.starts ? `${h.wins}/${h.starts} wins` : "unraced", h.earnings ? fMoneyShort(h.earnings) : ""].filter(Boolean);
     return `<div class="node g${gen} ${sexCls} ${rep ? "rep" : ""}" style="${style}${rep ? `--rep:${rep};` : ""}" title="${esc(h.name)}">
       <a class="go" href="#/horse/${h.id}" title="Open horse page">↗</a>
-      <div class="nm"><a href="#/pedigree/${h.id}">${esc(h.name)}</a> ${h.g1 ? `<span class="badge G1">${h.g1}× G1</span>` : h.stakes_wins ? '<span class="badge listed">SW</span>' : ""}</div>
+      <div class="nm"><a href="${pedHref(h.id)}">${esc(h.name)}</a> ${h.g1 ? `<span class="badge G1">${h.g1}× G1</span>` : h.stakes_wins ? '<span class="badge listed">SW</span>' : ""}</div>
       ${gen <= 3 ? `<div class="meta">${bits.join(" · ")}</div>` : `<div class="meta">${bits.slice(0, 2).join(" · ")}</div>`}</div>`;
   };
   const sumKV = (x) => (x && x.foals ? kv([["Foals", fNum(x.foals)], ["Runners", fNum(x.runners)], ["Winners", `${fNum(x.winners)} (${pct(x.winners, x.runners)} of runners)`],
     ["Stakes winners", fNum(x.stakes_winners)], ["Progeny earnings", fMoney(x.earnings)]]) : '<div class="empty">No foals recorded.</div>');
   const sibCols = (otherLabel) => [
-    { h: "Horse", f: (r) => `${L.horse(r.id, r.name)} <a class="small" href="#/pedigree/${r.id}">tree</a>` },
+    { h: "Horse", f: (r) => `${L.horse(r.id, r.name)} <a class="small" href="${pedHref(r.id)}">tree</a>` },
     { h: "Sex", f: (r) => esc(r.gender) }, { h: "Born", cls: "num", f: (r) => yr(r.birth) }, { h: "Age", cls: "num nowrap", f: (r) => ageCell(r.birth, r.died) },
     otherLabel ? { h: otherLabel, f: (r) => L.horse(r.other_id, r.other) } : null,
     { h: "Record", cls: "num", f: (r) => (r.starts ? `${r.wins}/${r.starts}` : "unraced") },
@@ -5836,7 +5900,8 @@ async function pedigreePage(id, q) {
   const ps = d.progeny_summary;
   const genBtns = `<div class="seg" title="How many generations to go back">${PED_GENS.map((g) =>
     `<button data-gens="${g}" class="${g === depth ? "on" : ""}">${g} generations</button>`).join("")}</div>`;
-  let html = `<div class="page-head"><div><div class="crumb"><a href="#/pedigrees">Pedigrees</a></div>
+  let html = horse ? horseHead(horse, "pedigree") + `<div class="ped-tabbar"><span class="muted small">${esc(me.name)}'s family tree</span>${genBtns}</div>` :
+    `<div class="page-head"><div><div class="crumb"><a href="#/pedigrees">Pedigrees</a></div>
     <h1>${esc(me.name)} <span class="muted" style="font-weight:400;font-size:calc(var(--tf) + 5px)">family tree</span></h1>
     <div class="sub">${esc(me.sex === "Female" ? "Filly / mare" : "Colt / stallion")} · born ${yr(me.birth)} · ${esc(me.color || "")}
     · ${me.starts ? `${me.wins} wins from ${me.starts} starts` : "unraced"} · ${fMoney(me.earnings)}</div></div>
@@ -5871,7 +5936,7 @@ async function pedigreePage(id, q) {
     const blood = (a) => `<span class="blood" style="width:${Math.max(2, Math.min(80, a.blood * 160))}px"></span>${(100 * a.blood).toFixed(a.blood >= 0.1 ? 1 : 2)}%`;
     const ancCols = [
       { h: "Show", cls: "nowrap", f: (a) => `<label class="pick" title="Highlight where this horse appears in the family tree"><input type="checkbox" class="anc-pick" data-id="${a.id}"><i class="sw"></i></label>` },
-      { h: "Ancestor", f: (a) => `${L.horse(a.id, a.name)} <a class="small" href="#/pedigree/${a.id}">tree</a>` },
+      { h: "Ancestor", f: (a) => `${L.horse(a.id, a.name)} <a class="small" href="${pedHref(a.id)}">tree</a>` },
       { h: "Born", cls: "num", f: (a) => yr(a.birth) },
       { h: "Appears", cls: "num", f: (a) => `${fNum(a.times)}×` },
       { h: "In generations", f: (a) => `<span class="small">${esc(gensText(a.gens))}</span>` },
@@ -5938,7 +6003,7 @@ function pickColour(id) { return PED && PED.sel ? PED.sel.get(String(id)) : null
 function ancItem(id, path) {
   const n = PED.deep.nodes[String(id)], t = PED.deep.times[String(id)], pc = pickColour(id);
   const tip = `${n.name} · born ${yr(n.birth)}${isNum(n.died) ? " · died " + yr(n.died) : ""} · ${n.starts ? `${n.wins}/${n.starts} wins` : "unraced"}${n.earnings ? " · " + fMoneyShort(n.earnings) : ""}${n.g1 ? ` · ${n.g1}× G1` : ""}${t > 1 ? ` · appears ${t} times` : ""}`;
-  return `<span class="ai ${path.endsWith("D") ? "f" : "m"}${pc ? " hl" : ""}" data-id="${id}" ${pc ? `style="--hl:${pc}"` : ""} title="${esc(tip)}"><b>${path}:</b> ${isNum(n.died) && !/^†/.test(n.name) ? "† " : ""}<a href="#/pedigree/${id}">${esc(n.name)}</a> ${yr(n.birth)}</span>`;
+  return `<span class="ai ${path.endsWith("D") ? "f" : "m"}${pc ? " hl" : ""}" data-id="${id}" ${pc ? `style="--hl:${pc}"` : ""} title="${esc(tip)}"><b>${path}:</b> ${isNum(n.died) && !/^†/.test(n.name) ? "† " : ""}<a href="${pedHref(id)}">${esc(n.name)}</a> ${yr(n.birth)}</span>`;
 }
 function genRowBody(g) {
   const list = PED.ancGens[g - 1];
@@ -6057,7 +6122,7 @@ document.addEventListener("change", (e) => {
 
 pedigreePage.after = (route) => {
   const id = route.parts[1], depth = pedGens(route.q || {});
-  $$("[data-gens]", APP).forEach((b) => b.addEventListener("click", () => { APP.dataset.keep = "1"; go(["pedigree", id], { gens: b.dataset.gens }); }));
+  $$("[data-gens]", APP).forEach((b) => b.addEventListener("click", () => { APP.dataset.keep = "1"; go(PED_TAB ? ["horse", id, "pedigree"] : ["pedigree", id], { gens: b.dataset.gens }); }));
   fetch(`/api/coi/${id}?gens=${depth}`).then((r) => r.json()).then((j) => {
     const el = $("#coi-val");
     if (el && isNum(j.coi)) el.textContent = (100 * j.coi).toFixed(j.coi < 0.001 && j.coi > 0 ? 3 : 2) + "%";

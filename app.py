@@ -2342,10 +2342,20 @@ def api_horse(con, hid):
     if has_table(con, "horse_valuation_history"):
         out["valuation"] = rows(con, "select valuation_history_date as date, valuation_history_value as value from horse_valuation_history where valuation_history_horse_id=? order by valuation_history_date", (hid,))
     if has_table(con, "illness_injury_history"):
+        # 16.7.11: with the details the Health tab shows (treatment, recovery, complications, what it does to racing)
+        hc_, ic_ = set(columns(con, "illness_injury_history")), set(columns(con, "injury_illness")) if has_table(con, "injury_illness") else set()
+        hx = lambda c, a_: ("h.%s as %s" % (c, a_)) if c in hc_ else "null as %s" % a_
+        ix = lambda c, a_: ("i.%s as %s" % (c, a_)) if c in ic_ else "null as %s" % a_
         out["health"] = rows(con, """select h.illness_injury_history_start_date as start, h.illness_injury_history_end_date as end,
-            i.injury_illness_name as name, i.injury_illness_type as type, i.injury_illness_severity as severity
+            i.injury_illness_name as name, i.injury_illness_type as type, i.injury_illness_severity as severity, %s
             from illness_injury_history h left join injury_illness i on i.injury_illness_id=h.illness_injury_history_injury_illness_id
-            where h.illness_injury_entity_id=? and h.illness_injury_entity_type='horse' order by h.illness_injury_history_start_date desc""", (hid,))
+            where h.illness_injury_entity_id=? and h.illness_injury_entity_type='horse' order by h.illness_injury_history_start_date desc""" % ", ".join([
+            hx("illness_injury_history_treatment_plan", "treatment"), hx("illness_injury_history_treatment_started_date", "treated"),
+            hx("illness_injury_history_complications_count", "complications"), hx("illness_injury_history_start_points", "start_points"),
+            hx("illness_injury_history_current_points", "points"), hx("illness_injury_history_contagious", "contagious"),
+            hx("illness_injury_history_restriction", "restriction"), hx("illness_injury_history_disaster_event_id", "disaster_id"),
+            ix("injury_illness_description", "about"), ix("injury_illness_recovery_time", "recovery_days"), ix("injury_illness_race_impact", "race_impact"),
+            ix("injury_illness_chronic", "chronic"), ix("injury_illness_can_be_fatal", "fatal_chance")]), (hid,))
     out["traits"] = entity_traits(con, hid, "horse")
     out["events"] = entity_events(con, hid, "horse")
     awards = rows(con, """select award_category as category, award_year as year, award_date as date, award_rank as rank, award_value as value,

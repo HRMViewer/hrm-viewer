@@ -1550,3 +1550,11 @@ table.tr-grid td.tr-best { font-weight: 700; box-shadow: inset 0 -3px 0 #d4a017;
 .set-block-ic svg { width: 20px; height: 20px; }
 .set-block-k { font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--blue); }
 .set-block-h h2 { margin: 0; font-size: var(--fs-lg, 17px); }
+
+/* ---- 16.7.11: a horse's Health tab ---- */
+.badge.warn { background: #fbefd5; color: #8a5a00; }
+.badge.bad { background: #fbe0de; color: #a3231b; }
+.hl-prog { display: inline-block; width: 120px; height: 8px; border-radius: 4px; background: var(--viz-grid); vertical-align: middle; margin-right: 6px; overflow: hidden; }
+.hl-prog i { display: block; height: 100%; background: var(--viz-1); border-radius: 4px; }
+/* a horse's Pedigree tab (the family tree inside the horse page) */
+.ped-tabbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin: 4px 0 14px; }
