@@ -2848,6 +2848,66 @@ const raceRecordCols = () => [
   { h: "Rating", cls: "num", f: (r) => fNum(r.rating) },
   { h: "Prize", cls: "num", f: (r) => fMoney(r.prize) },
 ];
+// one timed trial run: the columns shared by a horse's Races & trials tab and a racecourse's Trials tab (16.7.11).
+// The game times each distance as its own run and keeps only the finishing time, so there are no splits to show.
+const trialSpeed = (r) => (r.time > 0 && r.distance ? `${((r.distance / r.time) * 3.6).toFixed(1)} km/h` : "—");
+const trialGap = (r) => (!(r.time > 0) || !isNum(r.best) ? "—" : r.time > r.best ? `+${(r.time - r.best).toFixed(2)}s` : '<b class="ok-t">Fastest</b>');
+const trialCols = (o = {}) => [
+  { h: "Date", cls: "nowrap", f: (r) => fDate(r.date) },
+].concat(o.horse ? [{ h: "Horse", f: (r) => L.horse(r.horse_id, r.horse) }, { h: "Stable", f: (r) => L.stable(r.stable_id, r.stable) }] : [])
+  .concat(o.course ? [{ h: "Racecourse", f: (r) => L.course(r.course_id, r.course) }] : [])
+  .concat([
+    { h: "Track", f: (r) => `${esc(r.track || "—")}${r.surface ? ` <span class="muted small">${esc(r.surface)}</span>` : ""}` },
+    { h: "Distance", cls: "num", f: (r) => fDist(r.distance) },
+    { h: "Time", cls: "num", f: (r) => `<b>${fTime(r.time)}</b>` },
+    { h: "Average speed", cls: "num", f: trialSpeed },
+    { h: "Place", cls: "num", f: (r) => (isNum(r.place) ? `${ord(r.place)} <span class="muted small">of ${fNum(r.field)}</span>` : "—") },
+    { h: "Behind fastest", cls: "num", f: trialGap },
+    { h: "Jockey", f: (r) => L.person(r.jockey_id, r.jockey) },
+    { h: "Condition", cls: "num", f: (r) => (isNum(r.condition) ? fNum(r.condition, 0) + "%" : "—") },
+  ]).concat(o.revealed ? [{ h: "Speed shown", cls: "num", f: (r) => (isNum(r.speed_revealed) ? fNum(r.speed_revealed, 1) : "—") },
+    { h: "Stamina shown", cls: "num", f: (r) => (isNum(r.stamina_revealed) ? fNum(r.stamina_revealed, 1) : "—") }] : []);
+// ------------------------------------------------------------------ 16.7.11: a racecourse's Trials tab
+async function courseTrialsPage(route) {
+  const id = route.parts[1], q = route.q || {};
+  const [d, t] = await Promise.all([api("course/" + id), api("course_trials/" + id + "?" + new URLSearchParams(q))]);
+  let html = courseHead(d, "trials");
+  const ss = t.sessions || [];
+  if (!ss.length) return html + panel("Trials", `<div class="empty">No timing trials have been run at this racecourse.</div>`);
+  const horses = new Set((t.rows || []).map((r) => r.horse_id));
+  html += tiles([
+    ["Trial sessions", fNum(ss.length), `${fNum(t.tracks.length)} track${t.tracks.length === 1 ? "" : "s"}: ${esc(t.tracks.join(", "))}`],
+    ["Last session", fDate(ss[0].date), `${fNum(ss[0].horses)} horse${ss[0].horses === 1 ? "" : "s"} timed · ${esc(ss[0].track || "")}`],
+    ["Timed runs", fNum(ss.reduce((a, s) => a + s.runs, 0)), `at ${fNum(t.distances.length)} distances, ${fDist(t.distances[0])} to ${fDist(t.distances[t.distances.length - 1])}`],
+    ["Most horses in a session", fNum(Math.max(...ss.map((s) => s.horses))), ""],
+  ]);
+  const anyRevealed = (t.rows || []).some((r) => isNum(r.speed_revealed) || isNum(r.stamina_revealed));
+  html += `<div class="grid cols-2" style="margin-top:16px">${panel("Trial sessions", table([
+    { h: "Date", cls: "nowrap", f: (s) => `<a href="#/course/${id}/trials?date=${Math.round(s.date)}">${fDate(s.date)}</a>` },
+    { h: "Track", f: (s) => `${esc(s.track || "—")} <span class="muted small">${esc(s.surface || "")}</span>` },
+    { h: "Horses", cls: "num", f: (s) => fNum(s.horses) },
+    { h: "Distances", cls: "num", f: (s) => `${fNum(s.distances)} <span class="muted small">${fDist(s.dmin)}–${fDist(s.dmax)}</span>` },
+    { h: "Fastest most often", f: (s) => (s.top_id ? `${L.horse(s.top_id, s.top)} <span class="muted small">${fNum(s.top_n)} distance${s.top_n === 1 ? "" : "s"}</span>` : "—") },
+  ], ss), "A session is a day on one track · click a date to see its runs")}
+    ${panel("Fastest trial times", table([
+      { h: "Track", f: (r) => esc(r.track || "—") },
+      { h: "Distance", cls: "num", f: (r) => fDist(r.distance) },
+      { h: "Time", cls: "num", f: (r) => `<b>${fTime(r.time)}</b>` },
+      { h: "Speed", cls: "num", f: trialSpeed },
+      { h: "Horse", f: (r) => L.horse(r.horse_id, r.horse) },
+      { h: "Jockey", f: (r) => L.person(r.jockey_id, r.jockey) },
+      { h: "Date", cls: "nowrap", f: (r) => fDate(r.date) },
+    ], t.fastest), "The quickest trial at each track and distance here", "tall")}</div>`;
+  const filters = searchBox(q, "Search horse, stable or jockey") +
+    select("date", q, [["", "Any session"]].concat(t.dates.map((x) => [String(Math.round(x)), fDate(x)]))) +
+    (t.tracks.length > 1 ? select("track", q, [["", "Any track"]].concat(t.tracks.map((x) => [x, x]))) : "") +
+    select("distance", q, [["", "Any distance"]].concat(t.distances.map((x) => [String(x), fDist(x)])));
+  html += `<div style="margin-top:16px">${panel("Every trial run", `<div class="filters">${filters}</div>
+    ${table(trialCols({ horse: true, revealed: anyRevealed }), t.rows, { empty: "No runs match. Try a different search or filter.", rowClass: (r) => (r.place === 1 ? "win" : "") })}
+    ${t.total > t.rows.length ? `<div class="muted small">Showing the first ${fNum(t.rows.length)}; filter by session or distance to see the rest.</div>` : ""}`,
+    `${fNum(t.total)} timed run${t.total === 1 ? "" : "s"} · green: fastest at that distance that day`, "tall")}</div>`;
+  return html;
+}
 // ------------------------------------------------------------------ 16.7.11: a horse's Races & trials tab
 // every start, then its timing trials: each session (a day at a course), and its times at every distance side by side
 async function horseRacesPage(id) {
@@ -2920,6 +2980,8 @@ async function horseRacesPage(id) {
   html += `<div style="margin-top:16px">${panel("Trial times by distance", `<div class="wide-wrap"><table class="data wide tr-grid"><thead>${head}</thead><tbody>${body}</tbody></table></div>
     <div class="legend"><span><i class="tr-key top"></i>Fastest horse timed at that distance that day</span>${sess.length > 1 ? `<span><i class="tr-key best"></i>Its best time at that distance</span>` : ""}<span>Under each time: its place among the horses timed with it, and how far behind the fastest</span></div>`,
     sess.length > cols.length ? `Latest ${cols.length} of ${sess.length} sessions` : `${fNum(sess.length)} session${sess.length === 1 ? "" : "s"}`)}</div>`;
+  html += `<div style="margin-top:16px">${panel("Every trial run", table(trialCols({ course: true, revealed: anyRevealed }), tr, { rowClass: (r) => (r.place === 1 ? "win" : "") }),
+    `${fNum(tr.length)} timed runs · green: fastest at that distance that day · the game keeps each run's finishing time only, not splits`, "tall")}</div>`;
   return html;
 }
 // 16.7.11: charts at the foot of a horse's Overview: its seasons, prize money by season, and its race ratings
@@ -5115,12 +5177,13 @@ function courseHead(d, on) {
     <h1>${esc(c.racecourse_name)}</h1><div class="sub">${esc(c.racecourse_location_city || "")}, ${esc(c.racecourse_location_country || "")}
     ${c.racecourse_nickname ? " · “" + esc(c.racecourse_nickname) + "”" : ""}${d.owner ? ` · owned by ${L.stable(d.owner.id, d.owner.name)}` : ""}</div>${removedNote(d)}</div>
     <a class="btn" href="#/races?course=${id}&when=all">All races here</a></div>
-    <div class="subtabs">${tab("", "Overview")}${tab("upcoming", "Upcoming races")}${tab("results", "Results")}${tab("records", "Track records")}${tab("sectionals", "Sectional records")}${tab("finances", "Finances")}</div>`;
+    <div class="subtabs">${tab("", "Overview")}${tab("upcoming", "Upcoming races")}${tab("results", "Results")}${tab("records", "Track records")}${tab("sectionals", "Sectional records")}${tab("trials", "Trials")}${tab("finances", "Finances")}</div>`;
 }
 async function courseTabPage(route) {
   const id = route.parts[1], on = route.parts[2];
   if (on === "upcoming" || on === "results") return courseRacesPage(route);
   if (on === "finances") return courseFinancePage(route);
+  if (on === "trials") return courseTrialsPage(route);
   const d = await api("course/" + id);
   if (on === "records") return courseHead(d, "records") + trackRecordsPanel(d, d.course);
   if (on === "sectionals") return courseHead(d, "sectionals") + sectionRecordsPanel(d, d.course);

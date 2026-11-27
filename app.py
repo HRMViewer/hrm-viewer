@@ -2591,7 +2591,7 @@ def _t(con, t):
 
 def api_horse_trials(con, hid):
     """A horse's timing trials (16.7.11): each run with its course, track, distance, time, jockey and condition, and how it
-    went against the other horses timed at the same course, distance and day ("place" of "field", the fastest time)."""
+    went against the other horses timed at the same course, track and distance that day ("place" of "field", the fastest time)."""
     if not has_table(con, "timing_trials"):
         return {"trials": []}
     tc = set(columns(con, "timing_trials"))
@@ -2609,15 +2609,84 @@ def api_horse_trials(con, hid):
     dates = sorted({t["date"] for t in trials if t["date"] is not None})
     field = {}
     if dates:
-        for d, c, dist, tm in con.execute("select tt_date, tt_racecourse_id, tt_distance, tt_time_result from timing_trials where tt_date in (%s) and tt_time_result > 0"
-                                          % ",".join("?" * len(dates)), dates):
-            field.setdefault((d, c, dist), []).append(tm)
+        trk = "tt_track" if "tt_track" in tc else "null"
+        for d, c, tk, dist, tm in con.execute("select tt_date, tt_racecourse_id, %s, tt_distance, tt_time_result from timing_trials where tt_date in (%s) and tt_time_result > 0"
+                                              % (trk, ",".join("?" * len(dates))), dates):
+            field.setdefault((d, c, tk, dist), []).append(tm)
     for t in trials:
-        times = sorted(field.get((t["date"], t["course_id"], t["distance"]), []))
+        times = sorted(field.get((t["date"], t["course_id"], t["track"], t["distance"]), []))
         t["field"] = len(times)
         t["best"] = times[0] if times else None
         t["place"] = (sum(1 for x in times if x < t["time"]) + 1) if times and t["time"] else None
     return {"trials": trials}
+
+
+def api_course_trials(con, cid, q):
+    """Timing trials held at a racecourse (16.7.11): its sessions (a day on one track), the fastest trial time at each track
+    and distance, and every timed run (filtered by session, track, distance or horse) with its place against the others
+    timed at that distance that day."""
+    out = {"sessions": [], "fastest": [], "rows": [], "dates": [], "tracks": [], "distances": [], "total": 0}
+    if not has_table(con, "timing_trials") or not {"tt_racecourse_id", "tt_date", "tt_distance", "tt_time_result"} <= set(columns(con, "timing_trials")):
+        return out
+    tc = set(columns(con, "timing_trials"))
+    col = lambda c, a: ("t.%s as %s" % (c, a)) if c in tc else "null as %s" % a
+    allr = rows(con, """select %s, h.horse_name as horse, h.horse_stable_id as stable_id, st.stable_name as stable, p.person_full_name as jockey
+        from timing_trials t left join horses h on h.horse_horse_id=t.tt_horse_id left join stables st on st.stable_stable_id=h.horse_stable_id
+        left join persons p on p.person_person_id=t.tt_person_jockey_id where t.tt_racecourse_id=? order by t.tt_date desc, t.tt_distance, t.tt_time_result""" % ", ".join([
+        col("tt_id", "id"), col("tt_horse_id", "horse_id"), col("tt_date", "date"), col("tt_distance", "distance"), col("tt_time_result", "time"),
+        col("tt_track", "track"), col("tt_surface", "surface"), col("tt_person_jockey_id", "jockey_id"), col("tt_condition_at_trial", "condition"),
+        col("tt_speed_revealed", "speed_revealed"), col("tt_stamina_revealed", "stamina_revealed")]), (cid,))
+    # places against everyone timed on the same track and distance here that day
+    field = {}
+    for r in allr:
+        if r["time"] and r["time"] > 0:
+            field.setdefault((r["date"], r["track"], r["distance"]), []).append(r["time"])
+    for v in field.values():
+        v.sort()
+    for r in allr:
+        times = field.get((r["date"], r["track"], r["distance"]), [])
+        r["field"] = len(times)
+        r["best"] = times[0] if times else None
+        r["place"] = (sum(1 for x in times if x < r["time"]) + 1) if times and r["time"] else None
+    # sessions: one per day and track
+    sess = {}
+    for r in allr:
+        k = (r["date"], r["track"])
+        s_ = sess.setdefault(k, {"date": r["date"], "track": r["track"], "surface": r["surface"], "horses": set(), "runs": 0, "distances": set(), "tops": {}})
+        s_["horses"].add(r["horse_id"]); s_["runs"] += 1; s_["distances"].add(r["distance"])
+        if r["place"] == 1:
+            s_["tops"][r["horse_id"]] = s_["tops"].get(r["horse_id"], 0) + 1
+    names = {r["horse_id"]: r["horse"] for r in allr}
+    for s_ in sorted(sess.values(), key=lambda x: -(x["date"] or 0)):
+        top = max(s_["tops"].items(), key=lambda kv: kv[1]) if s_["tops"] else None
+        out["sessions"].append({"date": s_["date"], "track": s_["track"], "surface": s_["surface"], "horses": len(s_["horses"]), "runs": s_["runs"],
+                                "distances": len(s_["distances"]), "dmin": min(s_["distances"]), "dmax": max(s_["distances"]),
+                                "top_id": top[0] if top else None, "top": names.get(top[0]) if top else None, "top_n": top[1] if top else 0})
+    # the fastest trial time at each track and distance
+    best = {}
+    for r in allr:
+        k = (r["track"], r["distance"])
+        if r["time"] and r["time"] > 0 and (k not in best or r["time"] < best[k]["time"]):
+            best[k] = r
+    out["fastest"] = [{k: b[k] for k in ("track", "surface", "distance", "time", "horse_id", "horse", "date", "jockey_id", "jockey", "stable_id", "stable")}
+                      for _, b in sorted(best.items(), key=lambda kv: (kv[0][0] or "", kv[0][1] or 0))]
+    out["dates"] = sorted({r["date"] for r in allr if r["date"] is not None}, reverse=True)
+    out["tracks"] = sorted({r["track"] for r in allr if r["track"]})
+    out["distances"] = sorted({r["distance"] for r in allr if r["distance"]})
+    # the filtered list of every run
+    data = allr
+    if q.get("date"):
+        data = [r for r in data if str(int(r["date"] or 0)) == str(q["date"])]
+    if q.get("track"):
+        data = [r for r in data if r["track"] == q["track"]]
+    if to_int(q.get("distance")):
+        data = [r for r in data if r["distance"] == to_int(q["distance"])]
+    if q.get("q"):
+        t = q["q"].strip().lower()
+        data = [r for r in data if t in (r["horse"] or "").lower() or t in (r["stable"] or "").lower() or t in (r["jockey"] or "").lower()]
+    out["total"] = len(data)
+    out["rows"] = data[:3000]
+    return out
 
 
 def api_horse_more(con, hid):
@@ -6538,6 +6607,7 @@ ROUTES = [
     (re.compile(r"^/api/lifespans/(-?\d+)$"), lambda con, m, q: api_lifespans(con, int(m.group(1)))),
     (re.compile(r"^/api/horse_more/(-?\d+)$"), lambda con, m, q: api_horse_more(con, int(m.group(1)))),
     (re.compile(r"^/api/horse_trials/(-?\d+)$"), lambda con, m, q: api_horse_trials(con, int(m.group(1)))),
+    (re.compile(r"^/api/course_trials/(-?\d+)$"), lambda con, m, q: api_course_trials(con, int(m.group(1)), q)),
     (re.compile(r"^/api/stable_more/(-?\d+)$"), lambda con, m, q: api_stable_more(con, int(m.group(1)))),
     (re.compile(r"^/api/jockey_season/(-?\d+)$"), lambda con, m, q: api_jockey_season(con, int(m.group(1)), q)),
     (re.compile(r"^/api/alerts$"), lambda con, m, q: api_alerts(con)),
