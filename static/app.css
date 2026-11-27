@@ -1537,10 +1537,9 @@ html.dark .delta.good { color: #53c556; } html.dark .delta.bad { color: #ff7b72;
 /* ---- 16.7.11: a horse's Races & trials tab: trial times by distance ---- */
 table.tr-grid th, table.tr-grid td { text-align: right; }
 table.tr-grid .tr-sub { font-size: var(--fs-xs); color: var(--muted); font-weight: 400; margin-top: 1px; }
-table.tr-grid td.tr-top { background: var(--win); }
+table.tr-grid .tr-sum { border-left: 2px solid var(--line); }
 table.tr-grid td.tr-best { font-weight: 700; box-shadow: inset 0 -3px 0 #d4a017; }
 .legend .tr-key { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 6px; vertical-align: -2px; border: 1px solid var(--line); }
-.legend .tr-key.top { background: var(--win); }
 .legend .tr-key.best { background: transparent; box-shadow: inset 0 -3px 0 #d4a017; }
 
 /* ---- 16.7.11: settings blocks at the top of the Databases and Versions & changes tabs ---- */

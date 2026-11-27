@@ -12,7 +12,8 @@
       "Horse page: the Awards box is gone from the Overview (it's on the Awards tab), and News, Health history and Offspring have moved to their own tabs, so the Overview is shorter.",
       "Horse page: a new Pedigree tab with the horse's full family tree (4 to 16 generations, inbreeding, siblings, the parents' foals; names in the tree open their own Pedigree tab) and its offspring underneath. The Pedigree box's “Full pedigree” link opens it.",
       "Horse page: a new Health tab: whether it's healthy now, condition, health risk, weight, and how many illnesses and injuries it has had and for how many days. Anything it has now is shown in full (since when, recovery, usual recovery time, treatment, complications, how much of its ability it races with, contagious, chronic), then charts of its condition over time and of illnesses and injuries each year, and the full health history with those details.",
-      "Horse page: a new News tab with all of the horse's news."
+      "Horse page: a new News tab with all of the horse's news.",
+      "Horse Races & trials tab: Trial times by distance now ends with the horse's average, slowest and best time at each distance (over every session, with average speed), and trials tables no longer colour the fastest runs green (the Behind fastest column still says Fastest)."
     ]
   },
   {
