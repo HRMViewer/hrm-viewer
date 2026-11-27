@@ -2844,21 +2844,9 @@ async function horsePage(id) {
   html += `<div style="margin-top:16px">${allFields(h)}</div>`;
   return html;
 }
-// 16.7.11: charts at the foot of a horse's Overview: how its stats compare, its seasons, prize money by season, and its race ratings
+// 16.7.11: charts at the foot of a horse's Overview: its seasons, prize money by season, and its race ratings
 function horseStatCharts(d, runs) {
-  const h = d.horse, cmp = d.stat_compare || {};
   const yOf = (t) => new Date(t * 1000).getUTCFullYear();
-  // how it compares: the share of living racehorses it beats on each stat, the middle marked
-  const names = [["speed", "Speed"], ["stamina", "Stamina"], ["acceleration", "Acceleration"], ["strength", "Strength"], ["intelligence", "Intelligence"]];
-  const cmpRows = names.filter(([k]) => cmp[k]).map(([k, n]) => {
-    const c = cmp[k], beat = Math.round(c.below * 100);
-    return `<div class="cmp-row"><div class="n">${n}</div>
-      <div class="track" role="img" aria-label="${n} ${fNum(c.value, 1)}: better than ${beat}% of living racehorses" data-tip="${n} ${fNum(c.value, 1)} · better than ${beat}% of ${fNum(c.n)} living racehorses"><div class="fill" style="width:${Math.max(1, c.below * 100)}%"></div><i class="mid"></i></div>
-      <div class="v"><b>${fNum(c.value, 1)}</b><small>${pctTop((1 - c.below) * 100)}</small></div></div>`;
-  }).join("");
-  const n = (Object.values(cmp)[0] || {}).n;
-  const cmpPanel = panel("How its stats compare", cmpRows ? `<div class="cmp">${cmpRows}</div><div class="legend"><span>Bar: share of living horses that have raced with a lower figure</span><span><i class="mid-key"></i>Middle</span></div>`
-    : '<div class="empty">No stats to compare.</div>', n ? `Against ${fNum(n)} living racehorses` : "");
   // its seasons: starts each year split by result, and prize money each year (years in between with no runs are kept, so gaps show)
   let seasons = "", prize = "";
   if (runs.length) {
@@ -2875,16 +2863,14 @@ function horseStatCharts(d, runs) {
   const best = rated.reduce((m, r) => Math.max(m, r.rating), 0);
   const ratings = rated.length ? lineChart([{ name: "Race rating", color: "#1d63d6", dots: true,
     points: rated.map((r) => [r.date, r.rating, `${r.race_name || "Historic race"} · ${r.course || ""} · ${fDist(r.distance)} · ${ord(r.rank)}${r.runners ? ` of ${r.runners}` : ""}`, r.rating === best ? "#d4a017" : null, r.race_id ? `#/race/${r.race_id}` : null]) }],
-    { tipFmt: (v) => fNum(v), yInt: true, height: 240 }) : '<div class="empty">No rated runs yet.</div>';
+    { tipFmt: (v) => fNum(v), yInt: true, height: 240, width: 1400 }) : '<div class="empty">No rated runs yet.</div>';
   const wins = runs.filter((r) => r.rank === 1).length;
-  // a horse that hasn't raced: just how its stats compare
-  if (!runs.length) return `<div class="panel-head" style="margin-top:20px"><h2>Stats &amp; form charts</h2><span class="note">The season, prize money and rating charts appear once it has raced</span></div>
-    <div class="grid cols-2">${cmpPanel}</div>`;
-  return `<div class="panel-head" style="margin-top:20px"><h2>Stats &amp; form charts</h2></div>
-    <div class="grid cols-2">${cmpPanel}
+  if (!runs.length) return "";     // nothing to chart until it has raced
+  return `<div class="panel-head" style="margin-top:20px"><h2>Form charts</h2></div>
+    <div class="grid cols-2">
     ${panel("Season by season", seasons || '<div class="empty">No races yet.</div>', runs.length ? `${fNum(runs.length)} starts · ${fNum(wins)} wins` : "")}
     ${panel("Prize money by season", prize || '<div class="empty">No races yet.</div>', `${fMoneyShort(runs.reduce((a, r) => a + (+r.prize || 0), 0))} in all`)}
-    ${panel("Race ratings", ratings + (rated.length ? `<div class="legend"><span><i style="background:#d4a017"></i>Best: ${fNum(best)}</span><span>The game's rating for each run · click a dot to open the race</span></div>` : ""),
+    </div><div style="margin-top:16px">${panel("Race ratings", ratings + (rated.length ? `<div class="legend"><span><i style="background:#d4a017"></i>Best: ${fNum(best)}</span><span>The game's rating for each run · click a dot to open the race</span></div>` : ""),
       rated.length ? `${fNum(rated.length)} rated runs` : "")}</div>`;
 }
 
