@@ -882,7 +882,7 @@ const PAGES = {
       b.textContent = open ? "Close all form" : "Open all form";
     }));
   } }),
-  auctions: auctionsPage, auction: (r) => auctionPage(r.parts[1]), "auction-houses": auctionHousesPage, "auction-house": (r) => auctionHousePage(r.parts[1]), assets: assetsPage,
+  auctions: auctionsPage, auction: (r) => auctionPage(r.parts[1]), "auction-houses": auctionHousesPage, "auction-house": (r) => (r.parts[2] === "finances" ? auctionHouseFinancePage(r.parts[1]) : auctionHousePage(r.parts[1])), assets: assetsPage,
   stables: stablesPage, stable: (r) => (r.parts[2] === "races" ? stableRacesPage(r) : r.parts[2] === "auctions" ? stableAuctionsPage(r) : r.parts[2] === "shares" ? stableSharesPage(r) : r.parts[2] === "financials" ? stableFinancePage(r) : r.parts[2] === "horse-money" ? stableHorseMoneyPage(r) : r.parts[2] === "awards" ? stableAwardsPage(r) : r.parts[2] === "racecourses" ? stableCoursesPage(r) : stablePage(r.parts[1])), people: peoplePage, "people-overview": peopleOverviewPage, jockeys: careersPage, person: Object.assign((r) => (r.parts[2] === "awards" ? entityAwardsPage("person", r) : r.parts[2] === "family" ? personFamilyPage(r) : r.parts[2] === "tree" ? personTreePage(r)
     : r.parts[2] === "dynasty" ? personDynastyPage(r) : r.parts[2] === "lifespans" ? personLifespansPage(r) : r.parts[2] === "season" ? jockeySeasonPage(r) : personPage(r.parts[1])),
     { after: (r) => (r.parts[2] === "tree" ? tcInit() : r.parts[2] === "dynasty" ? dtInit() : null) }),
@@ -6564,6 +6564,86 @@ async function auctionPage(id) {
   if (!held && !ent.length) html += `<div style="margin-top:16px">${panel("Horses entered", '<div class="empty">No horses entered yet.</div>')}</div>`;
   return html;
 }
+// an auction house's heading and its tabs (Overview · Financials, 16.7.15)
+function auctionHouseHead(d, on) {
+  const h = d.house, id = h.auction_house_id;
+  return `<div class="page-head"><div><div class="crumb"><a href="#/auction-houses">Auction houses</a></div><h1>${esc(h.auction_house_name)}${h.auction_house_for_sale ? ' <span class="badge warn">For sale</span>' : ""}</h1>
+    <div class="sub">${d.city ? `${esc(d.city)}, ${esc(d.country || "")} · ` : ""}owned by ${L.stable(h.auction_house_owner_id, h.owner)}${isNum(h.auction_house_founding_date) ? ` · founded ${new Date(h.auction_house_founding_date * 1000).getUTCFullYear()}` : ""}</div></div>
+    <a class="btn" href="#/auctions?when=all&q=${encodeURIComponent(h.auction_house_name)}">All its sales</a></div>
+    <div class="subtabs"><a href="#/auction-house/${id}" class="${on === "overview" ? "on" : ""}">Overview</a><a href="#/auction-house/${id}/finances" class="${on === "finances" ? "on" : ""}">Financials</a></div>`;
+}
+// an auction house's Financials tab (16.7.15): the payment log, like a racecourse's
+const AH_INCOME_COLOR = { "Sponsorship": "var(--viz-1)", "Commission on sales": "var(--viz-2)", "Entry fees": "var(--viz-3)", "Sponsor event bonuses": "var(--viz-4)" };
+async function auctionHouseFinancePage(id) {
+  const [d, f] = await Promise.all([api("auction_house/" + id), api("auction_house_finances/" + id)]);
+  if (!d) return `<div class="err-box">That auction house isn't in this database.</div>`;
+  const l = f.last12, p = f.prev12 || {}, cmp = p.complete;
+  const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const margin = (r) => (r.income ? r.profit / r.income : null), pctTxt = (x) => (isNum(x) ? `${Math.round(x * 100)}%` : "—");
+  const sales = {};
+  (d.years || []).forEach((y) => { sales[y.year] = y; });
+  const salesNow = (d.past || []).filter((x) => x.date >= (GD() - 365 * 86400));
+  let html = auctionHouseHead(d, "finances");
+  html += tiles([
+    ["Income", fMoneyShort(l.income), cmp ? deltaHtml(l.income, p.income) : "last 12 months"],
+    ["Expenses", fMoneyShort(l.expenses), cmp ? deltaHtml(l.expenses, p.expenses, { lowerIsBetter: true }) : "running costs, tax and setting up sales"],
+    ["Profit", `<span class="${l.profit >= 0 ? "up" : "dn"}">${fMoneyShort(l.profit)}</span>`, `${pctTxt(margin(l))} of income kept${cmp && p.profit ? " · " + deltaHtml(l.profit, p.profit) : ""}`],
+    ["Commission on sales", fMoneyShort((l.income_cats || {})["Commission on sales"] || 0), `${fNum(salesNow.reduce((a, x) => a + (x.sold || 0), 0))} horses sold in ${fNum(salesNow.length)} sales`],
+    ["Paid to its owner", fMoneyShort(l.dividends), l.capital ? `${fMoneyShort(l.capital)} put in by the owner` : "Dividends · last 12 months"],
+    isNum(d.cash) ? ["Cash", fMoneyShort(d.cash), "Now"] : null,
+  ]);
+  if (!cmp && (p.income || p.expenses)) html += `<div class="stat-note" style="margin:-6px 0 12px">No comparison with the 12 months before: the game only keeps a yearly total for some of them.</div>`;
+  const incRows = Object.entries(l.income_cats || {}).map(([k, v]) => ({ name: k, value: v, share: l.income ? v / l.income : null, color: AH_INCOME_COLOR[k] || "var(--viz-other)" }));
+  const expRows = Object.entries(l.expense_cats || {}).map(([k, v]) => ({ name: k, value: v, share: l.expenses ? v / l.expenses : null, color: "var(--viz-2)" }));
+  const split = splitBar(Object.keys(AH_INCOME_COLOR).concat(["Other"]).map((n) => ({ name: n, value: n === "Other" ? incRows.filter((r) => !AH_INCOME_COLOR[r.name]).reduce((a, r) => a + r.value, 0) : (l.income_cats || {})[n] || 0, color: AH_INCOME_COLOR[n] || "var(--viz-other)" })));
+  html += `<div class="grid cols-2">${panel("Where the money comes from", split + meterList(incRows, { empty: "No income in the last 12 months." }), "Last 12 months")}
+    ${panel("Where it goes", meterList(expRows, { empty: "No expenses in the last 12 months." }) + (l.dividends || l.capital ? `<div class="stat-note" style="margin-top:10px">Also ${l.dividends ? `${fMoney(l.dividends)} paid to its owner as dividends` : ""}${l.dividends && l.capital ? ", and " : ""}${l.capital ? `${fMoney(l.capital)} put in by its owner` : ""} (not counted as income or expenses).</div>` : ""), "Last 12 months")}</div>`;
+  const ms = f.months12 || [];
+  const short = ms.map((m) => `${MON[m.month - 1]} ${String(m.year).slice(2)}`), long = ms.map((m) => `${MONTHS_LONG[m.month - 1]} ${m.year}`);
+  const ie = (rows) => [{ name: "Income", color: "var(--viz-1)", values: rows.map((r) => r.income) }, { name: "Expenses", color: "var(--viz-2)", values: rows.map((r) => r.expenses) }];
+  html += `<div class="grid cols-2" style="margin-top:16px">
+    ${panel("Income and expenses, month by month", colChart({ labels: short, long, series: ie(ms), title: "Income and expenses by month" }), "Last 12 months")}
+    ${panel("Profit, month by month", colChart({ labels: short, long, series: [{ name: "Profit", color: "var(--viz-1)", values: ms.map((m) => m.profit) }], signed: true, title: "Profit by month" }), "Above the line: made money · below: lost money")}</div>`;
+  const stackCats = Object.keys(AH_INCOME_COLOR);
+  html += `<div style="margin-top:16px">${panel("Income by type, month by month", colChart({ labels: short, long, stacked: true, total: "Total income", wide: true, title: "Income by type by month",
+    series: stackCats.map((c) => ({ name: c, color: AH_INCOME_COLOR[c], values: ms.map((m) => (m.income_cats || {})[c] || 0) }))
+      .concat([{ name: "Other", color: "var(--viz-other)", values: ms.map((m) => Object.entries(m.income_cats || {}).filter(([k]) => !AH_INCOME_COLOR[k]).reduce((a, [, v]) => a + v, 0)) }]) }) + table([
+      { h: "Month", f: (m) => `<b>${MONTHS_LONG[m.month - 1]} ${m.year}</b>` },
+      { h: "Income", cls: "num", f: (m) => fMoney(m.income) },
+      { h: "Commission", cls: "num", f: (m) => fMoney((m.income_cats || {})["Commission on sales"] || 0) },
+      { h: "Sponsorship", cls: "num", f: (m) => fMoney(((m.income_cats || {})["Sponsorship"] || 0) + ((m.income_cats || {})["Sponsor event bonuses"] || 0)) },
+      { h: "Expenses", cls: "num", f: (m) => fMoney(m.expenses) },
+      { h: "Profit", cls: "num", f: (m) => `<span class="${m.profit >= 0 ? "up" : "dn"}">${fMoney(m.profit)}</span>` },
+      { h: "To its owner", cls: "num", f: (m) => (m.dividends ? fMoney(m.dividends) : '<span class="muted">—</span>') },
+    ], ms.slice().reverse()), "By the month the money was paid")}</div>`;
+  const ys = f.years || [], yl = ys.map((y) => String(y.year));
+  if (ys.length) {
+    html += `<div class="grid cols-2" style="margin-top:16px">
+      ${panel("Income and expenses, year by year", colChart({ labels: yl, series: ie(ys), title: "Income and expenses by year" }), "Calendar years")}
+      ${panel("Profit, year by year", colChart({ labels: yl, series: [{ name: "Profit", color: "var(--viz-1)", values: ys.map((y) => y.profit) }], signed: true, title: "Profit by year" }), "Above the line: made money · below: lost money")}</div>`;
+    html += `<div style="margin-top:16px">${panel("Year by year", table([
+      { h: "Year", f: (y) => `<b>${y.year}</b>${y.itemised ? "" : ' <span class="muted small" title="The game only keeps a yearly total of these payments">yearly total</span>'}` },
+      { h: "Horses sold", cls: "num", f: (y) => fNum((sales[y.year] || {}).sold || 0) },
+      { h: "Sales", cls: "num", f: (y) => fMoneyShort((sales[y.year] || {}).total || 0) },
+      { h: "Income", cls: "num", f: (y) => fMoney(y.income) },
+      { h: "Commission", cls: "num", f: (y) => (y.itemised ? fMoney((y.income_cats || {})["Commission on sales"] || 0) : '<span class="muted">—</span>') },
+      { h: "Expenses", cls: "num", f: (y) => fMoney(y.expenses) },
+      { h: "Profit", cls: "num", f: (y) => `<span class="${y.profit >= 0 ? "up" : "dn"}">${fMoney(y.profit)}</span>` },
+      { h: "Margin", cls: "num", f: (y) => pctTxt(margin(y)) },
+      { h: "Paid to its owner", cls: "num", f: (y) => (y.dividends ? fMoney(y.dividends) : '<span class="muted">—</span>') },
+      { h: "Put in by its owner", cls: "num", f: (y) => (y.capital ? fMoney(y.capital) : '<span class="muted">—</span>') },
+    ], ys.slice().reverse()), "Margin is the share of income kept as profit · years marked “yearly total” only have one total in the save")}</div>`;
+    const itemYears = ys.filter((y) => y.itemised && (y.income || y.expenses)).slice(-6);
+    if (itemYears.length) {
+      const cats = (key) => [...new Set(itemYears.flatMap((y) => Object.keys(y[key])))];
+      const rowsFor = (key, label) => cats(key).map((cat) => ({ cat, label, vals: itemYears.map((y) => y[key][cat] || 0) }));
+      html += `<div style="margin-top:16px">${panel("By type, year by year", table([{ h: "", f: (r) => `${esc(r.cat)} <span class="muted small">${r.label.toLowerCase()}</span>` }]
+        .concat(itemYears.map((y, k) => ({ h: String(y.year), cls: "num", f: (r) => (r.vals[k] ? fMoney(r.vals[k]) : '<span class="muted">—</span>') }))),
+        rowsFor("income_cats", "Income").concat(rowsFor("expense_cats", "Expense"))), "The years the game keeps every payment for")}</div>`;
+    }
+  } else html += `<div style="margin-top:16px">${panel("Year by year", '<div class="empty">No money recorded for this auction house yet.</div>')}</div>`;
+  return html;
+}
 async function auctionHousesPage(route) {
   return listPage({
     title: "Auction houses", noun: "auction houses", endpoint: "auction_houses", defaultSort: "turnover", ascDefault: ["name", "owner"], wide: true, rankCol: false,
@@ -6589,9 +6669,7 @@ async function auctionHousePage(id) {
   const d = await api("auction_house/" + id);
   if (!d) return `<div class="err-box">That auction house isn't in this database.</div>`;
   const h = d.house, yrs = d.years || [], soldN = yrs.reduce((a, y) => a + y.sold, 0), tot = yrs.reduce((a, y) => a + (y.total || 0), 0), cut = yrs.reduce((a, y) => a + (y.cut || 0), 0);
-  let html = `<div class="page-head"><div><div class="crumb"><a href="#/auction-houses">Auction houses</a></div><h1>${esc(h.auction_house_name)}${h.auction_house_for_sale ? ' <span class="badge warn">For sale</span>' : ""}</h1>
-    <div class="sub">${d.city ? `${esc(d.city)}, ${esc(d.country || "")} · ` : ""}owned by ${L.stable(h.auction_house_owner_id, h.owner)}${isNum(h.auction_house_founding_date) ? ` · founded ${new Date(h.auction_house_founding_date * 1000).getUTCFullYear()}` : ""}</div></div>
-    <a class="btn" href="#/auctions?when=all&q=${encodeURIComponent(h.auction_house_name)}">All its sales</a></div>`;
+  let html = auctionHouseHead(d, "overview");
   html += tiles([
     ["Horses sold", fNum(soldN), `${fNum(d.past.length)} sales held · ${fNum(d.upcoming.length)} to come`],
     ["Sales", fMoneyShort(tot), soldN ? `average ${fMoneyShort(tot / soldN)}` : ""],

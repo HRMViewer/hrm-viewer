@@ -3114,6 +3114,91 @@ def api_assets(con, q):
     return {"total": total, "page": page, "page_size": page_size(), "rows": data, "categories": cats, "summary": summary}
 
 
+# --------------------------------------------------------------------------- 16.7.15: auction house finances
+# The same payment log as racecourses (entity type "auction_house"), with the same rule for the years the game only keeps
+# as one "Yearly Summary" payment each way. Dividends to the owner and capital put in by the owner are kept apart: they
+# move money between the house and its owner and aren't income or running costs.
+AH_INCOME_LABEL = {"Venue Sponsorship": "Sponsorship", "Venue Sponsor Event Bonus": "Sponsor event bonuses", "Auction Commission": "Commission on sales",
+                   "Fee": "Entry fees"}
+AH_EXPENSE_LABEL = {"Operating Expenses": "Operating expenses", "Tax Payment": "Tax", "Auction Arrangement": "Setting up sales"}
+AH_OWNER = {"Dividend": "dividends", "Capital Injection": "capital"}
+
+
+def _ah_bucket():
+    return {"income": 0.0, "expenses": 0.0, "dividends": 0.0, "capital": 0.0, "income_cats": {}, "expense_cats": {}}
+
+
+def _ah_add(b, side, typ, amount):
+    amount = amount or 0
+    if typ in AH_OWNER:
+        b[AH_OWNER[typ]] += amount
+    elif side == "to":
+        lab = AH_INCOME_LABEL.get(typ, typ or "Other")
+        b["income"] += amount
+        b["income_cats"][lab] = b["income_cats"].get(lab, 0) + amount
+    else:
+        lab = AH_EXPENSE_LABEL.get(typ, typ or "Other")
+        b["expenses"] += amount
+        b["expense_cats"][lab] = b["expense_cats"].get(lab, 0) + amount
+
+
+def api_auction_house_finances(con, hid):
+    """An auction house's Financials tab: the last 12 months (against the 12 before), month by month, and year by year."""
+    out = {"months12": [], "last12": _ah_bucket(), "prev12": _ah_bucket(), "years": []}
+    if not has_table(con, "transactions"):
+        return out
+    gd = META.get("game_date") or time.time()
+    w0 = course_window_start(gd)
+    py, pm = time.gmtime(w0)[:2]
+    p0 = calendar.timegm((py - 1, pm, 1, 0, 0, 0))
+    # month keys for the last 12 months
+    keys = []
+    y, m = py, pm
+    for _ in range(12):
+        keys.append("%04d-%02d" % (y, m))
+        m += 1
+        if m > 12:
+            y, m = y + 1, 1
+    months = {k: dict(_ah_bucket(), key=k, year=int(k[:4]), month=int(k[5:])) for k in keys}
+    summary_years = set()
+    years = {}
+    for side in ("to", "from"):
+        for ts, typ, amount in con.execute("""select transaction_date, transaction_type, transaction_amount from transactions
+                where transaction_%s_entity_type='auction_house' and transaction_%s_entity_id=?""" % (side, side), (hid,)):
+            if ts is None:
+                continue
+            yr = time.gmtime(ts)[0]
+            yb = years.setdefault(yr, dict(_ah_bucket(), year=yr, summary_in=0.0, summary_out=0.0))
+            if typ == "Yearly Summary":
+                summary_years.add(yr)
+                yb["summary_in" if side == "to" else "summary_out"] += amount or 0
+                continue
+            _ah_add(yb, side, typ, amount)
+            if ts > gd:
+                continue
+            if ts >= w0:
+                mk = "%04d-%02d" % time.gmtime(ts)[:2]
+                if mk in months:
+                    _ah_add(months[mk], side, typ, amount)
+                _ah_add(out["last12"], side, typ, amount)
+            elif ts >= p0:
+                _ah_add(out["prev12"], side, typ, amount)
+    for b in list(months.values()) + [out["last12"], out["prev12"]]:
+        b["profit"] = b["income"] - b["expenses"]
+    out["months12"] = [months[k] for k in keys]
+    # the 12 months before are only comparable when the game still keeps them in detail
+    out["prev12"]["complete"] = not any(yr in summary_years for yr in range(time.gmtime(p0)[0], time.gmtime(w0 - 1)[0] + 1))
+    for yr in sorted(years):
+        b = years[yr]
+        if yr in summary_years:      # a yearly total stands for the whole year (any detail kept from earlier loads is only part of it)
+            b.update(income=b["summary_in"], expenses=b["summary_out"], income_cats={}, expense_cats={}, itemised=False)
+        else:
+            b["itemised"] = True
+        b["profit"] = b["income"] - b["expenses"]
+        out["years"].append(b)
+    return out
+
+
 def api_horse_more(con, hid):
     """A horse's Training & plans tab, and the rankings and syndicate panels on its Overview."""
     out = {"training": None, "shoes": None, "schedule": None, "plan": None, "campaigns": [], "qualifying": [], "rankings": {}, "syndicates": []}
@@ -7044,6 +7129,7 @@ ROUTES = [
     (re.compile(r"^/api/auction/(-?\d+)$"), lambda con, m, q: api_auction(con, int(m.group(1)))),
     (re.compile(r"^/api/auction_houses$"), lambda con, m, q: api_auction_houses(con, q)),
     (re.compile(r"^/api/auction_house/(-?\d+)$"), lambda con, m, q: api_auction_house(con, int(m.group(1)))),
+    (re.compile(r"^/api/auction_house_finances/(-?\d+)$"), lambda con, m, q: api_auction_house_finances(con, int(m.group(1)))),
     (re.compile(r"^/api/stable_auctions/(-?\d+)$"), lambda con, m, q: api_stable_auctions(con, int(m.group(1)))),
     (re.compile(r"^/api/stable_shares/(-?\d+)$"), lambda con, m, q: api_stable_shares(con, int(m.group(1)))),
     (re.compile(r"^/api/assets$"), lambda con, m, q: api_assets(con, q)),
