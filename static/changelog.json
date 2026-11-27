@@ -1,5 +1,16 @@
 [
   {
+    "version": "16.7.16",
+    "date": "2026-11-28",
+    "title": "Horse owners, and Training & plans in sections",
+    "changes": [
+      "A horse's Overview has a new Owners box beside Physical, Pedigree and Connections: every stable that has owned it, oldest first, with the date it took over, the price paid and how it changed hands (bred, at auction with a link to the sale, private sale, or free transfer). The current owner is marked Now.",
+      "Physical and Connections are narrower to make room; on smaller windows Owners moves to its own line underneath.",
+      "Rankings and the syndicate are no longer on the Overview; they're on Training & plans.",
+      "Training & plans is laid out in four sections with a menu at the top to jump between them: Training (daily routine, effect on training, shoes), Season & race plan, Campaigns & qualifying, and Rankings & syndicate."
+    ]
+  },
+  {
     "version": "16.7.15",
     "date": "2026-11-28",
     "title": "Auctions, share offerings and lifestyle assets",

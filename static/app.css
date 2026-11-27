@@ -1483,8 +1483,21 @@ html.dark .delta.good { color: #53c556; } html.dark .delta.bad { color: #ff7b72;
 .stat-note { color: var(--muted); font-size: var(--fs-xs); }
 
 /* 16.7.10: the horse page's Connections, Pedigree and Physical boxes: smaller, and on one line */
-.hp-trio { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; align-items: stretch; margin-bottom: 16px; }
+.hp-trio { display: grid; grid-template-columns: minmax(0, .7fr) minmax(0, 1fr) minmax(0, .8fr) minmax(0, 1.6fr); gap: 12px; align-items: stretch; margin-bottom: 16px; }
+@media (max-width: 1250px) { .hp-trio { grid-template-columns: minmax(0, .8fr) minmax(0, 1fr) minmax(0, .9fr); } .hp-trio > .owners { grid-column: 1 / -1; } }
 @media (max-width: 760px) { .hp-trio { grid-template-columns: 1fr; } }
+.panel.compact.owners table.data { font-size: var(--fs-xs, 12px); }
+.panel.compact.owners table.data td, .panel.compact.owners table.data th { padding: 4px 6px; }
+.panel.compact.owners .tbl-wrap, .panel.compact.owners .table-wrap { max-height: 260px; overflow: auto; }
+/* 16.7.16: Training & plans in sections */
+.tp-jump { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 6px; }
+.tp-jump a, .tp-jump a:visited { padding: 5px 12px; border-radius: 999px; background: #eef2f8; color: var(--blue); font-weight: 600; font-size: var(--fs-sm); text-decoration: none; }
+.tp-jump a:hover { background: #dfe7f3; }
+.panel-head.tp-sect { margin-top: 22px; padding-top: 14px; border-top: 1px solid var(--line, #e4e8ef); display: flex; align-items: baseline; gap: 12px; }
+.panel-head.tp-sect#tp-train { border-top: 0; margin-top: 10px; padding-top: 0; }
+.tp-jump a, .tp-jump a:visited { background: #e8eef8 !important; border: 1px solid #d6e0ef; }
+.grid.tp-plan { grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); gap: 16px; }
+@media (max-width: 900px) { .grid.tp-plan { grid-template-columns: 1fr; } }
 .panel.compact { padding: 12px 14px; }
 .panel.compact .panel-head { margin-bottom: 6px; }
 .panel.compact .panel-head h2 { font-size: var(--fs-md, 15px); }

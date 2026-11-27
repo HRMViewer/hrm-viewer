@@ -2391,6 +2391,39 @@ def api_horses(con, q):
     return {"total": total, "page": page, "page_size": page_size(), "rows": data}
 
 
+def horse_owners(con, h):
+    """Every stable that has owned a horse, oldest first (16.7.16): when it got the horse, what it paid, and whether it was
+    at auction (the game logs every change of hands in "trades", auction sales included; those are matched to their sale)."""
+    hid = h["horse_horse_id"]
+    if not has_table(con, "trades"):
+        return []
+    tr = rows(con, """select t.trades_date as date, t.trades_seller_stable_id as seller_id, t.trades_buyer_stable_id as buyer_id, t.trades_cash as price,
+        bs.stable_name as buyer, ss.stable_name as seller from trades t left join stables bs on bs.stable_stable_id=t.trades_buyer_stable_id
+        left join stables ss on ss.stable_stable_id=t.trades_seller_stable_id
+        where t.trades_entity_type='horse' and t.trades_entity_id=? order by t.trades_date, t.trades_trade_id""", (hid,))
+    sales = rows(con, """select r.auction_result_date as date, r.auction_result_final_price as price, r.auction_result_shell_id as sale_id, a.auction_shell_name as sale,
+        h.auction_house_id as house_id, h.auction_house_name as house from auction_results r left join auction_shell a on a.auction_shell_id=r.auction_result_shell_id
+        left join auction_house h on h.auction_house_id=r.auction_result_auctionhouse_id
+        where r.auction_result_horse_id=? and r.auction_result_accepted in (1,'1','true')""", (hid,)) if has_table(con, "auction_results") else []
+    out = []
+    if tr:
+        first = tr[0]
+        out.append({"stable_id": first["seller_id"], "stable": first["seller"], "from": h.get("horse_birth_date"), "how": "first", "price": None})
+    else:
+        st = one(con, "select stable_name from stables where stable_stable_id=?", (h.get("horse_stable_id"),)) if h.get("horse_stable_id") is not None else None
+        return [{"stable_id": h.get("horse_stable_id"), "stable": (st or {}).get("stable_name"), "from": h.get("horse_birth_date"), "how": "first", "price": None, "now": True}]
+    for t in tr:
+        sale = next((x for x in sales if x["date"] is not None and t["date"] is not None and abs(x["date"] - t["date"]) < 4 * 86400), None)
+        out.append({"stable_id": t["buyer_id"], "stable": t["buyer"], "from": t["date"], "price": t["price"],
+                    "how": "auction" if sale else ("free" if not t["price"] else "private"), "sale_id": (sale or {}).get("sale_id"), "sale": (sale or {}).get("sale"),
+                    "house_id": (sale or {}).get("house_id"), "house": (sale or {}).get("house")})
+    for i, o in enumerate(out):
+        o["to"] = out[i + 1]["from"] if i + 1 < len(out) else None
+        o["sold_for"] = out[i + 1]["price"] if i + 1 < len(out) else None
+    out[-1]["now"] = not h.get("horse_deceased_date")
+    return out
+
+
 def api_horse(con, hid):
     h = one(con, "select * from horses where horse_horse_id=?", (hid,))
     if not h:
@@ -2473,6 +2506,7 @@ def api_horse(con, hid):
             ix("injury_illness_description", "about"), ix("injury_illness_recovery_time", "recovery_days"), ix("injury_illness_race_impact", "race_impact"),
             ix("injury_illness_chronic", "chronic"), ix("injury_illness_can_be_fatal", "fatal_chance")]), (hid,))
     out["traits"] = entity_traits(con, hid, "horse")
+    out["owners"] = horse_owners(con, h)
     out["events"] = entity_events(con, hid, "horse")
     awards = rows(con, """select award_category as category, award_year as year, award_date as date, award_rank as rank, award_value as value,
         award_description as description, award_race_id as race_id
@@ -8262,7 +8296,7 @@ class Handler(BaseHTTPRequestHandler):
 
 # --------------------------------------------------------------------------- in-app updates
 
-VERSION = "16.7.15"
+VERSION = "16.7.16"
 BACKUP_DIR = os.path.join(APP_DIR, "backups")
 UPDATE_PENDING = os.path.join(DATA_DIR, "update_pending.json")
 UPDATE_RESULT = os.path.join(DATA_DIR, "update_result.json")

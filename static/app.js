@@ -2528,23 +2528,40 @@ const HQP_TYPE = { qualifier: "Qualifier", points: "Points" };
 async function horseTrainingPage(id) {
   const [d, m] = await Promise.all([api("horse/" + id), api("horse_more/" + id)]);
   let html = horseHead(d, "training");
-  const t = m.training, sh = m.shoes;
-  html += `<div class="grid cols-2" style="margin-top:4px">`;
-  html += panel("Training", t ? `${kvList([["Programme", esc(t.type || "—")], ["Food", esc(t.food || "—")], ["Care", esc(t.care || "—")]])}
-    <table class="data eff-tbl" style="margin-top:10px"><thead><tr><th>Effect on training</th><th></th></tr></thead><tbody>
-    ${[["Speed", t.speed], ["Stamina", t.stamina], ["Strength", t.strength], ["Acceleration", t.acceleration], ["Trainer", t.trainer], ["Head trainer", t.head_trainer], ["Stablehand", t.stablehand]]
-      .map(([k, v]) => `<tr><td>${k}</td><td>${effBar(v)}</td></tr>`).join("")}</tbody></table>` : '<div class="empty">No training set up.</div>', "How this horse is trained, fed and cared for");
-  html += `<div>${panel("Shoes", sh ? kvList([["Material", esc(nice(sh.material))], ["Fitted", sh.position === "all" ? "All four" : esc(nice(sh.position))],
-      ["Quality", fNum(sh.quality)], ["Durability left", fNum(sh.durability)], ["Fitted on", fDate(sh.applied)]]) : '<div class="empty">No shoes recorded.</div>')}
-    <div style="margin-top:16px">${panel("Yearly schedule", m.schedule ? `<b>${esc(m.schedule.name)}</b><div class="small muted" style="margin-top:4px">${esc(m.schedule.about || "")}</div>
-      <div class="small" style="margin-top:6px">${fNum(m.schedule.pre)} days' preparation before a race · ${fNum(m.schedule.recovery)} days' recovery after</div>` : '<div class="empty">No yearly schedule.</div>')}</div></div></div>`;
-  const p = m.plan;
-  html += `<div style="margin-top:16px">${panel("Race plan", p ? `<div style="margin-bottom:8px"><b>${esc(p.name)}</b>${p.since ? ` <span class="muted small">since ${fDate(p.since)}</span>` : ""}</div>` + table([
+  const t = m.training, sh = m.shoes, p = m.plan, sc = m.schedule;
+  // 16.7.16: grouped into sections, with a menu at the top to jump between them
+  const SECT = [["tp-train", "Training"], ["tp-plan", "Season & race plan"], ["tp-camp", "Campaigns & qualifying"], ["tp-rank", "Rankings & syndicate"]];
+  const head = (k, title, sub) => `<div class="panel-head tp-sect" id="${k}"><h2>${title}</h2>${sub ? `<span class="muted small">${sub}</span>` : ""}</div>`;
+  html += `<div class="tp-jump">${SECT.map(([k, n]) => `<a href="javascript:void 0" data-jump="${k}">${n}</a>`).join("")}</div>`;
+
+  // Training: what it does each day, and how well that works
+  html += head("tp-train", "Training", "How this horse is trained, fed, cared for and shod");
+  html += `<div class="grid cols-3">`;
+  html += panel("Daily routine", t ? kvList([["Programme", esc(t.type || "—")], ["Food", esc(t.food || "—")], ["Care", esc(t.care || "—")]]) : '<div class="empty">No training set up.</div>');
+  html += panel("Effect on training", t ? `<table class="data eff-tbl"><tbody>
+    ${[["Speed", t.speed], ["Stamina", t.stamina], ["Strength", t.strength], ["Acceleration", t.acceleration]].map(([k, v]) => `<tr><td>${k}</td><td>${effBar(v)}</td></tr>`).join("")}
+    <tr><td colspan="2" class="muted small" style="padding-top:10px">From the staff</td></tr>
+    ${[["Trainer", t.trainer], ["Head trainer", t.head_trainer], ["Stablehand", t.stablehand]].map(([k, v]) => `<tr><td>${k}</td><td>${effBar(v)}</td></tr>`).join("")}</tbody></table>`
+    : '<div class="empty">No training set up.</div>', "1.00 is neutral");
+  html += panel("Shoes", sh ? kvList([["Material", esc(nice(sh.material))], ["Fitted", sh.position === "all" ? "All four" : esc(nice(sh.position))],
+      ["Quality", fNum(sh.quality)], ["Durability left", fNum(sh.durability)], ["Fitted on", fDate(sh.applied)]]) : '<div class="empty">No shoes recorded.</div>');
+  html += `</div>`;
+
+  // Season & race plan: the yearly rhythm, then the races it is aimed at
+  html += head("tp-plan", "Season & race plan", "The yearly rhythm and the races the game aims it at");
+  html += `<div class="grid tp-plan">`;
+  html += panel("Yearly schedule", sc ? `<b>${esc(sc.name)}</b><div class="small muted" style="margin-top:4px">${esc(sc.about || "")}</div>
+      ${tiles([["Preparation", `${fNum(sc.pre)} days`, "before a race"], ["Recovery", `${fNum(sc.recovery)} days`, "after a race"]])}` : '<div class="empty">No yearly schedule.</div>');
+  html += panel("Race plan", p ? `<div style="margin-bottom:8px"><b>${esc(p.name)}</b>${p.since ? ` <span class="muted small">since ${fDate(p.since)}</span>` : ""}</div>` + table([
       { h: "#", cls: "num", f: (r) => fNum(r.n) }, { h: "Month", f: (r) => (r.month ? new Date(2000, r.month - 1, 1).toLocaleString("en-NZ", { month: "long" }) : "—") },
       { h: "Races", f: (r) => [r.grades ? esc(r.grades) : "", r.surface ? esc(r.surface) : "", r.dmin || r.dmax ? `${r.dmin ? fDist(r.dmin) : ""}–${r.dmax ? fDist(r.dmax) : ""}` : "", r.purse ? `purse ${fMoneyShort(r.purse)}+` : "", r.countries ? esc(r.countries) : ""].filter(Boolean).join(" · ") || "Any" },
       { h: "How", f: (r) => esc(nice(r.kind)) },
-    ], p.legs || [], { empty: "No steps." }) : '<div class="empty">This horse has no race plan.</div>', "The races the game aims it at")}</div>`;
-  html += `<div class="grid cols-2" style="margin-top:16px">${panel("Campaigns suggested", table([
+    ], p.legs || [], { empty: "No steps." }) : '<div class="empty">This horse has no race plan.</div>', p && p.legs ? `${p.legs.length} step${p.legs.length === 1 ? "" : "s"}` : "");
+  html += `</div>`;
+
+  // Campaigns & qualifying
+  html += head("tp-camp", "Campaigns & qualifying", "Big-race campaigns and the places it has earned in feeder races");
+  html += `<div class="grid cols-2">${panel("Campaigns suggested", table([
       { h: "Season", cls: "num", f: (r) => esc(r.year) }, { h: "Campaign", f: (r) => esc(r.concept || "—") },
       { h: "Stage", f: (r) => esc(nice(r.stage)) }, { h: "Status", f: (r) => `<span class="badge ${r.status === "accepted" ? "good" : ""}">${esc(nice(r.status))}</span>` }, { h: "Date", cls: "num nowrap", f: (r) => fDate(r.date) },
     ], m.campaigns, { empty: "No campaign suggestions." }), "Triple Crowns and the like")}
@@ -2553,7 +2570,11 @@ async function horseTrainingPage(id) {
       { h: "Earned in", f: (r) => (r.race_id ? L.race(r.race_id, r.source) : esc(r.source || "")) }, { h: "Date", cls: "num nowrap", f: (r) => fDate(r.date) },
       { h: "", f: (r) => (r.closed ? '<span class="muted small">closed</span>' : '<span class="badge good">open</span>') },
     ], m.qualifying, { empty: "Not qualified for anything yet." }), "Places earned in races that lead to bigger ones")}</div>`;
-  html += horseRankPanels(m, d.horse);
+
+  // Rankings & syndicate (moved off the Overview in 16.7.16)
+  const rk = horseRankPanels(m, d.horse);
+  html += head("tp-rank", "Rankings & syndicate", "Where it stands against other horses, and who holds shares");
+  html += rk ? rk.replace('style="margin-top:16px"', "") : '<div class="empty">No rankings or syndicate for this horse.</div>';
   return html;
 }
 function kvList(kv) {
@@ -2902,8 +2923,19 @@ async function horsePage(id) {
     ["Stud fee", h.horse_stud_fee ? fMoney(h.horse_stud_fee) : "—"], ["Pregnant", h.horse_is_pregnant ? "Yes" : "No"],
   ]);
 
-  // three small boxes on one line (16.7.10): they stay side by side down to narrow windows
-  html += `<div class="hp-trio">${panel("Physical", physical, "", "compact")}${panel("Pedigree", pedigree, `<a href="#/horse/${h.horse_horse_id}/pedigree">Full pedigree</a>`, "compact")}${panel("Connections", connections, "", "compact")}</div>`;
+  // 16.7.16: every stable that has owned the horse, what it paid and whether that was at auction
+  const own = d.owners || [];
+  const HOW = { first: '<span class="badge">Bred</span>', auction: '<span class="badge good">Auction</span>', private: '<span class="badge">Private sale</span>', free: '<span class="badge warn">Free transfer</span>' };
+  const owners = own.length ? table([
+    { h: "Owner", f: (r) => `${r.stable_id ? L.stable(r.stable_id, r.stable) : esc(r.stable || "—")}${r.now ? ' <span class="badge good">Now</span>' : ""}` },
+    { h: "From", cls: "num nowrap", f: (r) => fDate(r.from) },
+    { h: "Paid", cls: "num nowrap", f: (r) => (r.how === "first" ? '<span class="muted">—</span>' : fMoney(r.price || 0)) },
+    { h: "How", f: (r) => HOW[r.how] + (r.sale_id ? `<div class="small">${AUCTION_LINK(r.sale_id, r.house || r.sale)}</div>` : "") },
+  ], own) : '<div class="empty">No owners recorded.</div>';
+  const nSales = own.filter((o) => o.how !== "first").length;
+
+  // four boxes on one line (16.7.10, owners added 16.7.16): Physical and Connections narrower
+  html += `<div class="hp-trio">${panel("Physical", physical, "", "compact")}${panel("Pedigree", pedigree, `<a href="#/horse/${h.horse_horse_id}/pedigree">Full pedigree</a>`, "compact")}${panel("Connections", connections, "", "compact")}${panel("Owners", owners, nSales ? `${nSales} change${nSales === 1 ? "" : "s"} of hands` : "", "compact owners")}</div>`;
   const ent = (d.entries || []).slice().sort((x, y) => (x.race_time || 0) - (y.race_time || 0));
   if (ent.length) {
     html += `<div style="margin-top:16px">${panel("Upcoming races", table([
@@ -2980,7 +3012,6 @@ async function horsePage(id) {
       `${runs.length} starts`)}</div>`;
   } else html += `<div style="margin-top:16px">${valuePanel}</div>`;
 
-  html += horseRankPanels(more || {}, h);
   html += `<div style="margin-top:16px">${allFields(h)}</div>`;
   return html;
 }
@@ -8061,3 +8092,12 @@ function offerLinuxMenu() {
     toast(r.ok ? "Added. HRM Viewer is in your applications menu." : "Couldn't add it. You can try again in Settings.");
   }], 20000);
 }
+
+// 16.7.16: section menus on long tabs (Training & plans): scroll to the section without changing the page's address
+document.addEventListener("click", (e) => {
+  const a = e.target.closest && e.target.closest("[data-jump]");
+  if (!a) return;
+  e.preventDefault();
+  const el = document.getElementById(a.dataset.jump);
+  if (el) window.scrollTo({ top: el.getBoundingClientRect().top + window.scrollY - 120, behavior: "smooth" });
+});
