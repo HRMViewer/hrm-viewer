@@ -2442,6 +2442,26 @@ def api_horse(con, hid):
                 "dam": one(con, "select horse_horse_id as id, horse_name as name from horses where horse_horse_id=?", (p["dam_id"],)),
             }
     out["grandparents"] = gp
+    # 16.7.16: three generations for the Overview's pedigree, with a few facts about the family
+    tree, frontier = {}, {"": {"sire_id": h.get("horse_breeding_parent_stallion_id"), "dam_id": h.get("horse_breeding_parent_mare_id")}}
+    for g in range(3):
+        want = {}
+        for path, x in frontier.items():
+            if x:
+                want[path + "s"], want[path + "d"] = x.get("sire_id"), x.get("dam_id")
+        info = horse_brief(con, list(want.values()))
+        frontier = {pth: info.get(i) for pth, i in want.items()}
+        tree.update(frontier)
+    sid, did = h.get("horse_breeding_parent_stallion_id"), h.get("horse_breeding_parent_mare_id")
+    cnt = lambda where, args: (one(con, "select count(*) as n from horses where " + where, args) or {}).get("n") or 0
+    seen = {}
+    for pth, x in tree.items():
+        if x:
+            seen.setdefault(x["id"], {"id": x["id"], "name": x["name"], "gens": []})["gens"].append(len(pth))
+    out["ped3"] = {"tree": tree, "repeats": [v for v in seen.values() if len(v["gens"]) > 1],
+                   "sire_foals": cnt("horse_breeding_parent_stallion_id=?", (sid,)) if realid(sid) else 0,
+                   "dam_foals": cnt("horse_breeding_parent_mare_id=?", (did,)) if realid(did) else 0,
+                   "full_sibs": cnt("horse_breeding_parent_stallion_id=? and horse_breeding_parent_mare_id=? and horse_horse_id<>?", (sid, did, hid)) if realid(sid) and realid(did) else 0}
     staff_ids = {k: h.get(k) for k in ("horse_manager_id", "horse_head_trainer_id", "horse_trainer_id", "horse_prefered_jockey_id", "horse_caretaker_id")}
     names = name_map(con, "persons", "person_person_id", "person_full_name", [v for v in staff_ids.values() if v])
     out["people"] = {k: {"id": v, "name": names.get(v)} for k, v in staff_ids.items() if v and v in names}

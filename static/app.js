@@ -2890,6 +2890,31 @@ async function horseFansPage(id) {
   html += `</div><aside class="hf-side">${horseTagsPanel(f.id)}${horseNotesPanel(f.id)}</aside></div>`;
   return html;
 }
+// 16.7.16: three generations of pedigree on a horse's Overview, with a few facts about the family beside it
+function horsePed3(d) {
+  const P = d.ped3 || {}, t = P.tree || {}, h = d.horse;
+  const rec = (x) => (x ? `${fNum(x.starts)}: ${fNum(x.wins)} win${x.wins === 1 ? "" : "s"}${x.earnings ? ` · ${fMoneyShort(x.earnings)}` : ""}${x.g1 ? ` · ${fNum(x.g1)} G1` : ""}` : "");
+  const ROLE = { s: "Sire", d: "Dam", ss: "Sire's sire", sd: "Sire's dam", ds: "Dam's sire", dd: "Dam's dam" };
+  const box = (path) => {
+    const x = t[path], g = path.length;
+    const row = path.split("").reduce((r, c, i) => r + (c === "d" ? 2 ** (3 - i - 1) : 0), 0) + 1;      // which of the 8 rows it starts on
+    return `<div class="p g${g} ${path.slice(-1) === "s" ? "m" : "f"}" style="grid-column:${g};grid-row:${row} / span ${2 ** (3 - g)}">
+      ${ROLE[path] ? `<div class="r">${ROLE[path]}</div>` : ""}${x ? L.horse(x.id, x.name) : '<span class="muted">Unknown</span>'}
+      ${x && g < 3 && x.starts ? `<div class="sub">${rec(x)}</div>` : ""}${x && g === 3 && x.g1 ? `<div class="sub">${fNum(x.g1)} G1</div>` : ""}</div>`;
+  };
+  const paths = ["s", "d", "ss", "sd", "ds", "dd", "sss", "ssd", "sds", "sdd", "dss", "dsd", "dds", "ddd"];
+  const chart = `<div class="ped3">${paths.map(box).join("")}</div>`;
+  const sire = t.s, dam = t.d, rp = P.repeats || [];
+  const facts = kv([
+    ["Sire", sire ? `${L.horse(sire.id, sire.name)}<div class="small muted">${sire.starts ? rec(sire) : "Unraced"} · ${fNum(P.sire_foals)} foal${P.sire_foals === 1 ? "" : "s"}</div>` : "—"],
+    ["Dam", dam ? `${L.horse(dam.id, dam.name)}<div class="small muted">${dam.starts ? rec(dam) : "Unraced"} · ${fNum(P.dam_foals)} foal${P.dam_foals === 1 ? "" : "s"}</div>` : "—"],
+    ["Damsire", t.ds ? L.horse(t.ds.id, t.ds.name) : "—"],
+    ["Full siblings", fNum(P.full_sibs || 0)],
+    ["Inbreeding", rp.length ? rp.map((r) => `${L.horse(r.id, r.name)} <span class="muted small">${r.gens.join("×")}</span>`).join("<br>") : '<span class="muted">None within 3 generations</span>'],
+  ]);
+  return `<div style="margin-bottom:16px">${panel("Pedigree", `<div class="ped3-wrap">${chart}<div class="ped3-facts">${facts}</div></div>`,
+    `<a href="#/horse/${h.horse_horse_id}/pedigree">Full pedigree</a>`, "compact")}</div>`;
+}
 async function horsePage(id) {
   const [d, more] = await Promise.all([api("horse/" + id), api("horse_more/" + id).catch(() => ({}))]);
   const h = d.horse;
@@ -2934,8 +2959,9 @@ async function horsePage(id) {
   ], own) : '<div class="empty">No owners recorded.</div>';
   const nSales = own.filter((o) => o.how !== "first").length;
 
-  // four boxes on one line (16.7.10, owners added 16.7.16): Physical and Connections narrower
-  html += `<div class="hp-trio">${panel("Physical", physical, "", "compact")}${panel("Pedigree", pedigree, `<a href="#/horse/${h.horse_horse_id}/pedigree">Full pedigree</a>`, "compact")}${panel("Connections", connections, "", "compact")}${panel("Owners", owners, nSales ? `${nSales} change${nSales === 1 ? "" : "s"} of hands` : "", "compact owners")}</div>`;
+  // 16.7.16: Physical and Connections share half the line, Owners the other half; the pedigree gets its own line below
+  html += `<div class="hp-trio">${panel("Physical", physical, "", "compact")}${panel("Connections", connections, "", "compact")}${panel("Owners", owners, nSales ? `${nSales} change${nSales === 1 ? "" : "s"} of hands` : "", "compact owners")}</div>`;
+  html += horsePed3(d);
   const ent = (d.entries || []).slice().sort((x, y) => (x.race_time || 0) - (y.race_time || 0));
   if (ent.length) {
     html += `<div style="margin-top:16px">${panel("Upcoming races", table([
