@@ -1,5 +1,13 @@
 [
   {
+    "version": "16.7.14",
+    "date": "2026-11-28",
+    "title": "Full-width settings on Databases and Versions & changes",
+    "changes": [
+      "Settings: the Settings boxes at the top of the Databases and Versions & changes tabs are now as wide as the other panels on the page."
+    ]
+  },
+  {
     "version": "16.7.13",
     "date": "2026-11-28",
     "title": "Currency, numbers, dates and units, matching the game",
