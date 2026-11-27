@@ -5733,6 +5733,103 @@ def api_stable_courses(con, sid):
     return out
 
 
+def course_breakdown(con, cid, gd, years):
+    """Income and expenses line by line (16.7.18), from the payment notes: each sponsor, race days and races paid for,
+    entry and trial fees, prize money by class of race. For the last 12 months and each year the game still itemises."""
+    if not has_table(con, "transactions"):
+        return {}
+    lo12 = course_window_start(gd)
+    periods = {"last12": None}
+    for e in years:
+        if e.get("itemised") and not e.get("summary") and (e.get("income") or e.get("expenses")):
+            periods[str(e["year"])] = None
+    for k in periods:
+        periods[k] = {"inc": {}, "exp": {}, "surplus": 0}
+
+    def targets(t):
+        out = []
+        if lo12 <= t <= gd:
+            out.append(periods["last12"])
+        y = str(time.gmtime(t)[0])
+        if y in periods and t <= gd:
+            out.append(periods[y])
+        return out
+
+    def line(p, side, key, amt, n=1, sub=None, **extra):
+        L = p[side].setdefault(key, {"total": 0, "n": 0, "sub": {}})
+        L["total"] += amt or 0
+        L["n"] += n
+        for k2, v in extra.items():
+            L[k2] = L.get(k2, 0) + v
+        if sub:
+            S = L["sub"].setdefault(sub, {"total": 0, "n": 0})
+            S["total"] += amt or 0
+            S["n"] += n
+
+    def num(note):
+        m = re.search(r"\((\d+) ", note or "")
+        return int(m.group(1)) if m else 0
+    for side, io in (("to", "inc"), ("from", "exp")):
+        for t, typ, note, n, total in con.execute("""select min(transaction_date), transaction_type, transaction_note, count(*), sum(transaction_amount) from transactions
+                where transaction_%s_entity_type='racecourse' and transaction_%s_entity_id=? and transaction_type not in ('Yearly Summary', 'Prize')
+                group by strftime('%%Y-%%m', transaction_date, 'unixepoch'), 2, 3""" % (side, side), (cid,)):
+            for p in targets(t):
+                if typ == "Venue Surplus":
+                    p["surplus"] += total or 0
+                elif typ == "Ticket Revenue":
+                    line(p, io, "Tickets", total, n, race_days=num(note))
+                elif typ == "Concessions & Parking":
+                    line(p, io, "Food, drink & parking", total, n, race_days=num(note))
+                elif typ == "Media Rights":
+                    line(p, io, "Media rights", total, n, races=num(note))
+                elif typ == "Betting Commission":
+                    line(p, io, "Betting commission", total, n)
+                elif typ == "Venue Sponsorship":
+                    line(p, io, "Sponsorship", total, n, sub=(note or "").split(":", 1)[-1].strip() or "Sponsor")
+                elif typ == "Venue Sponsor Event Bonus":
+                    m = re.match(r"Event bonus: (.*) \((\d+) event", note or "")
+                    line(p, io, "Sponsor event bonuses", total, n, sub=m.group(1) if m else "Sponsor", events=int(m.group(2)) if m else 0)
+                elif typ == "Venue Subsidy":
+                    line(p, io, "Subsidy", total, n)
+                elif typ == "Fee":
+                    line(p, io, "Fees", total, n, sub="Time trial fees" if "trial" in (note or "").lower() else "Race entry fees")
+                elif typ == "Operating Expenses":
+                    line(p, io, "Operating costs", total, n)
+                else:
+                    line(p, io, (COURSE_INCOME_LABEL if io == "inc" else COURSE_EXPENSE_LABEL).get(typ, typ or "Other"), total, n)
+    # prize money by class of race: the payment names the race, matched to this course's races that day
+    grade_of = {}
+    for day, name, typ in con.execute("""select cast(d.raceday_date / 86400 as int), x.races_race_name, x.races_type_of_race from races x
+            join race_days d on d.raceday_race_day_id=x.races_race_day_id where d.raceday_racecourse_id=?""", (cid,)):
+        grade_of[(day, name)] = typ
+    CLASS = {"G1": "Group 1", "G2": "Group 2", "G3": "Group 3", "listed": "Listed", "stakes": "Stakes"}
+    for t, race, n, total in con.execute("""select min(transaction_date), substr(transaction_note, instr(transaction_note, ', for result in ') + 16), count(*), sum(transaction_amount)
+            from transactions where transaction_from_entity_type='racecourse' and transaction_from_entity_id=? and transaction_type='Prize'
+            group by cast(transaction_date / 86400 as int), 2""", (cid,)):
+        day = int(t // 86400)
+        typ = grade_of.get((day, race)) or grade_of.get((day - 1, race))
+        cls = CLASS.get(typ, "Other races" if typ else "Race not found")
+        for p in targets(t):
+            line(p, "exp", "Prize money", total, n, sub=cls, races=1)
+    out = {}
+    for k, p in periods.items():
+        if k == "last12":
+            lo, hi = lo12, gd
+        else:
+            lo, hi = calendar.timegm((int(k), 1, 1, 0, 0, 0)), min(gd, calendar.timegm((int(k) + 1, 1, 1, 0, 0, 0)) - 1)
+        meetings = one(con, "select count(*) as n from race_days where raceday_racecourse_id=? and raceday_date >= ? and raceday_date <= ?", (cid, lo, hi))["n"]
+
+        def lines(d):
+            res = []
+            for key, L in sorted(d.items(), key=lambda kv: -kv[1]["total"]):
+                L = dict(L, label=key)
+                L["sub"] = [dict(v, label=n) for n, v in sorted(L["sub"].items(), key=lambda kv: -kv[1]["total"])]
+                res.append(L)
+            return res
+        out[k] = {"income": lines(p["inc"]), "expenses": lines(p["exp"]), "surplus": p["surplus"], "meetings": meetings}
+    return out
+
+
 def api_course_finances(con, cid):
     c = one(con, "select * from racecourses where racecourse_racecourse_id=?", (cid,))
     if not c:
@@ -5850,6 +5947,7 @@ def api_course_finances(con, cid):
         vms_prestige_percentile as prestige from venue_monthly_snapshots where vms_venue_type='racecourse' and vms_venue_id=? order by vms_date""", (cid,)) \
         if has_table(con, "venue_monthly_snapshots") else []
     out["sponsors"] = course_sponsors(con, cid)
+    out["breakdown"] = course_breakdown(con, cid, gd, ys)
     return out
 
 
@@ -8322,7 +8420,7 @@ class Handler(BaseHTTPRequestHandler):
 
 # --------------------------------------------------------------------------- in-app updates
 
-VERSION = "16.7.17"
+VERSION = "16.7.18"
 BACKUP_DIR = os.path.join(APP_DIR, "backups")
 UPDATE_PENDING = os.path.join(DATA_DIR, "update_pending.json")
 UPDATE_RESULT = os.path.join(DATA_DIR, "update_result.json")

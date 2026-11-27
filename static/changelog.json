@@ -1,5 +1,15 @@
 [
   {
+    "version": "16.7.18",
+    "date": "2026-11-28",
+    "title": "Racecourse income and expenses in detail",
+    "changes": [
+      "A racecourse's Finances tab has a new Income and expenses in detail panel, in place of the two short lists: every kind of income and expense with its amount, share of the total and amount per meeting, and the detail behind it: race days for tickets and food (and the take per race day), races for media rights and betting commission, each sponsor's monthly payments and event bonuses, entry and time trial fees, and prize money by class of race (Group 1, 2, 3, Listed, Stakes, other). Totals and the profit sit at the bottom, and any surplus handed over is noted.",
+      "Switch between the last 12 months and each year the game still keeps every payment for.",
+      "Operating costs are one monthly sum in the save (staff, maintenance and marketing together), so they can't be split further."
+    ]
+  },
+  {
     "version": "16.7.17",
     "date": "2026-11-28",
     "title": "Update buttons in the header",

@@ -5729,6 +5729,52 @@ async function stableCoursesPage(route) {
   return html;
 }
 
+let COURSE_BK = null;
+function courseStatement(key) {
+  const p = (COURSE_BK && COURSE_BK.b[key]) || null;
+  if (!p) return '<div class="empty">No payments recorded for this period.</div>';
+  const inc = p.income || [], exp = p.expenses || [], mt = p.meetings || 0;
+  const ti = inc.reduce((a, x) => a + x.total, 0), te = exp.reduce((a, x) => a + x.total, 0);
+  const each = (v, n, what) => (n ? `${fNum(n)} ${what}${n === 1 ? "" : "s"} · ${fMoneyShort(v / n)} each` : "");
+  const DETAIL = {
+    "Tickets": (x) => (x.race_days ? `${fNum(x.race_days)} race day${x.race_days === 1 ? "" : "s"} · ${fMoneyShort(x.total / x.race_days)} per race day` : ""),
+    "Food, drink & parking": (x) => (x.race_days ? `${fNum(x.race_days)} race day${x.race_days === 1 ? "" : "s"} · ${fMoneyShort(x.total / x.race_days)} per race day` : ""),
+    "Media rights": (x) => each(x.total, x.races, "race"),
+    "Betting commission": (x) => each(x.total, x.n, "race"),
+    "Sponsorship": (x) => `${fNum(x.sub.length)} sponsor${x.sub.length === 1 ? "" : "s"} · ${fNum(x.n)} monthly payments`,
+    "Sponsor event bonuses": (x) => `${fNum(x.events)} events`,
+    "Subsidy": () => "Paid by the game when a racecourse nobody owns runs at a loss",
+    "Fees": (x) => `${fNum(x.n)} payment${x.n === 1 ? "" : "s"}`,
+    "Operating costs": (x) => `${fNum(x.n)} monthly payment${x.n === 1 ? "" : "s"} · staff, maintenance and marketing in one sum (the game doesn't split it)`,
+    "Prize money": (x) => `${fNum(x.races)} races · ${fNum(x.n)} prizes`,
+  };
+  const color = (k, side) => (side === "inc" ? INCOME_COLOR[incomeGroup(k)] || "var(--viz-other)" : "var(--viz-2)");
+  const rowsHtml = (list, tot, side) => list.map((x) => {
+    const share = tot ? x.total / tot : 0;
+    const subs = (x.sub || []).length > 1 ? x.sub : [], shown = subs.slice(0, 8), rest = subs.slice(8);      // a single sub-line would only repeat the line
+    return `<tr class="bk-line"><td><span class="bk-dot" style="background:${color(x.label, side)}"></span><b>${esc(x.label)}</b>${DETAIL[x.label] ? `<div class="small muted">${DETAIL[x.label](x)}</div>` : ""}</td>
+      <td class="num nowrap"><b>${fMoney(x.total)}</b></td>
+      <td class="num bk-share"><span class="bk-meter"><i style="width:${Math.round(share * 100)}%;background:${color(x.label, side)}"></i></span>${Math.round(share * 100)}%</td>
+      <td class="num nowrap">${mt ? fMoneyShort(x.total / mt) : "—"}</td></tr>` +
+      shown.map((sx) => `<tr class="bk-sub"><td>${esc(sx.label)}${x.label === "Sponsor event bonuses" || x.label === "Sponsorship" ? "" : ` <span class="muted small">${fNum(sx.n)} ${x.label === "Prize money" ? "prize" : "payment"}${sx.n === 1 ? "" : "s"}</span>`}</td>
+        <td class="num nowrap">${fMoney(sx.total)}</td><td class="num muted small">${x.total ? Math.round((100 * sx.total) / x.total) : 0}% of ${esc(x.label.toLowerCase())}</td><td></td></tr>`).join("") +
+      (rest.length ? `<tr class="bk-sub"><td class="muted">${fNum(rest.length)} more</td><td class="num nowrap">${fMoney(rest.reduce((a, r) => a + r.total, 0))}</td><td></td><td></td></tr>` : "");
+  }).join("");
+  const tbl = (title, list, tot, side) => `<table class="data bk-tbl"><thead><tr><th>${title}</th><th class="num">Amount</th><th class="num">Share</th><th class="num">Per meeting</th></tr></thead>
+    <tbody>${list.length ? rowsHtml(list, tot, side) : `<tr><td colspan="4" class="muted">None in this period.</td></tr>`}</tbody>
+    <tfoot><tr><td><b>Total ${title.toLowerCase()}</b></td><td class="num nowrap"><b>${fMoney(tot)}</b></td><td></td><td class="num nowrap">${mt ? fMoneyShort(tot / mt) : "—"}</td></tr></tfoot></table>`;
+  const pr = ti - te;
+  return `<div class="grid cols-2 bk-cols"><div>${tbl("Income", inc, ti, "inc")}</div><div>${tbl("Expenses", exp, te, "exp")}
+    <div class="bk-net"><span>Profit${mt ? ` <span class="muted small">${fNum(mt)} meeting${mt === 1 ? "" : "s"}</span>` : ""}</span><b class="${pr >= 0 ? "up" : "dn"}">${fMoney(pr)}</b></div>
+    ${p.surplus ? `<div class="stat-note" style="margin-top:8px">Also paid out as surplus: ${fMoney(p.surplus)} (profit handed over by a racecourse nobody owns; not counted as an expense).</div>` : ""}</div></div>`;
+}
+document.addEventListener("click", (e) => {
+  const b = e.target.closest("[data-bk]");
+  if (!b) return;
+  b.parentElement.querySelectorAll("button").forEach((x) => x.classList.toggle("on", x === b));
+  const body = $("#bk-body");
+  if (body) body.innerHTML = courseStatement(b.dataset.bk);
+});
 async function courseFinancePage(route) {
   const id = route.parts[1];
   const [d, f] = await Promise.all([api("course/" + id), api("course_finances/" + id)]);
@@ -5751,16 +5797,12 @@ async function courseFinancePage(route) {
     ["Crowds last month", fNum(tickets), fill !== null ? `${pctTxt(fill)} of capacity per meeting` : "no meetings last month"],
   ]);
   if (!cmp && (p.income || p.expenses)) html += `<div class="stat-note" style="margin:-6px 0 12px">No comparison with the 12 months before: the game only keeps a yearly total for some of them.</div>`;
-  // where the money comes from and goes
-  const incRows = Object.entries(l.income_cats || {}).map(([k, v]) => ({ name: k, value: v, share: l.income ? v / l.income : null, color: INCOME_COLOR[incomeGroup(k)] || "var(--viz-other)",
-    note: l.meetings ? `${fMoneyShort(v / l.meetings)} per meeting` : "" }));
-  const groups = {};
-  incRows.forEach((r) => { const g = incomeGroup(r.name); groups[g] = (groups[g] || 0) + r.value; });
-  const split = splitBar(Object.keys(INCOME_COLOR).concat(["Other"]).map((n) => ({ name: n, value: groups[n] || 0, color: INCOME_COLOR[n] || "var(--viz-other)", dark: INCOME_DARK_TEXT[n] })));
-  const expRows = Object.entries(l.expense_cats || {}).map(([k, v]) => ({ name: k, value: v, share: l.expenses ? v / l.expenses : null,
-    note: l.meetings ? `${fMoneyShort(v / l.meetings)} per meeting` : "", color: "var(--viz-2)" }));
-  html += `<div class="grid cols-2">${panel("Where the money comes from", split + meterList(incRows, { empty: "No income in the last 12 months." }), "Last 12 months")}
-    ${panel("Where it goes", meterList(expRows, { empty: "No expenses in the last 12 months." }) + (l.surplus ? `<div class="stat-note" style="margin-top:10px">Also paid out as surplus: ${fMoney(l.surplus)} (not counted as an expense).</div>` : ""), "Last 12 months")}</div>`;
+  // 16.7.18: income and expenses line by line (each sponsor, prize money by class of race…), for the last 12 months or a year
+  COURSE_BK = { b: f.breakdown || {} };
+  // the last 12 months first, then the years newest first (the keys of an object holding years would sort the years first)
+  const bkKeys = Object.keys(COURSE_BK.b).sort((x, y) => (x === "last12" ? -1 : y === "last12" ? 1 : +y - +x));
+  html += panel("Income and expenses in detail", `<div class="bk-bar">${bkKeys.length > 1 ? `<div class="seg">${bkKeys.map((k, i) => `<button data-bk="${k}" class="${i ? "" : "on"}">${k === "last12" ? "Last 12 months" : k}</button>`).join("")}</div>` : ""}</div>
+    <div id="bk-body">${courseStatement("last12")}</div>`, "Every payment, grouped from the save's payment log");
   // month by month
   const ms = f.months12 || [];
   const short = ms.map((m) => `${MON[m.month - 1]} ${String(m.year).slice(2)}`), long = ms.map((m) => `${MONTHS_LONG[m.month - 1]} ${m.year}`);
