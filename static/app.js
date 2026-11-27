@@ -2783,7 +2783,6 @@ async function horsePage(id) {
     `${trs.length} course record${trs.length === 1 ? "" : "s"} set in all${srs.length ? ` · ${srs.length} sectional record${srs.length === 1 ? "" : "s"}` : ""}`)}</div>`;
 
   // charts
-  const st = d.stats || [];
   const runs = res.filter((r) => isNum(r.rank) && isNum(r.date)).slice().sort((x, y) => x.date - y.date);
   const GOLD = "#d4a017", SILVER = "#8f9aa8", BRONZE = "#b87333";
   const placeCol = (k) => (k === 1 ? GOLD : k === 2 ? SILVER : k === 3 ? BRONZE : null);
@@ -2793,11 +2792,15 @@ async function horsePage(id) {
       points: runs.map((r) => [r.date, r.rank, `${r.race_name || "Historic race"} · ${r.course || ""} · ${fDist(r.distance)}${r.runners ? ` · ${ord(r.rank)} of ${r.runners}` : ""}`, placeCol(r.rank), r.race_id ? `#/race/${r.race_id}` : null]) },
     { name: "Field size", color: "#b8c2d3", dash: true, fmt: (v) => `${v} runners`, points: runs.filter((r) => r.runners).map((r) => [r.date, r.runners]) },
   ], { invert: true, yInt: true, yMin: 1, yMax: maxField, yFmt: (v) => ord(Math.round(v)), tipFmt: (v) => ord(Math.round(v)), height: 260, width: 1400 });
-  html += `<div class="grid cols-2" style="margin-top:16px">
-    ${panel("Stats over time", lineChart(["speed", "stamina", "acceleration", "strength", "intelligence"].map((k) => ({ name: k[0].toUpperCase() + k.slice(1), points: st.map((s) => [s.date, s[k]]) })), { tipFmt: (v) => fNum(v, 1) }), "Hover for values · click a name to hide its line")}
-    ${panel("Value over time", lineChart([{ name: "Value", points: (d.valuation || []).map((v) => [v.date, v.value]) }], { yFmt: fMoneyShort, tipFmt: fMoney }), "Hover for values")}</div>`;
-  html += `<div style="margin-top:16px">${panel("Finishing positions", finChart + (runs.length ? `<div class="legend"><span><i style="background:${GOLD}"></i>Won</span><span><i style="background:${SILVER}"></i>2nd</span><span><i style="background:${BRONZE}"></i>3rd</span><span>1st is at the top · hover for the race, click a dot to open it · click a legend entry to hide a line</span></div>` : ""),
-    runs.length ? `${runs.length} starts` : "")}</div>`;
+  // the charts (16.7.11): value, season by season and prize money by season on one line, then race ratings and finishing positions
+  const fc = horseFormCharts(runs);
+  const valuePanel = panel("Value over time", lineChart([{ name: "Value", points: (d.valuation || []).map((v) => [v.date, v.value]) }], { yFmt: fMoneyShort, tipFmt: fMoney, width: 420, height: 230 }), "Hover for values");
+  if (runs.length) {
+    html += `<div class="panel-head" style="margin-top:20px"><h2>Charts</h2></div><div class="grid cols-3">${valuePanel}${fc.seasons}${fc.prize}</div>`;
+    html += `<div style="margin-top:16px">${fc.ratings}</div>`;
+    html += `<div style="margin-top:16px">${panel("Finishing positions", finChart + `<div class="legend"><span><i style="background:${GOLD}"></i>Won</span><span><i style="background:${SILVER}"></i>2nd</span><span><i style="background:${BRONZE}"></i>3rd</span><span>1st is at the top · hover for the race, click a dot to open it · click a legend entry to hide a line</span></div>`,
+      `${runs.length} starts`)}</div>`;
+  } else html += `<div style="margin-top:16px">${valuePanel}</div>`;
 
   html += `<div style="margin-top:16px">${panel("Health history", table([
       { h: "From", cls: "nowrap", f: (r) => fDate(r.start) }, { h: "To", cls: "nowrap", f: (r) => fDate(r.end) },
@@ -2828,7 +2831,6 @@ async function horsePage(id) {
   ], d.offspring, { empty: "No offspring." }), (d.offspring_total > d.offspring.length ? `Top ${d.offspring.length} of ${fNum(d.offspring_total)} by earnings` : `${fNum(d.offspring_total)} foals`) +
     (d.offspring_total ? ` · <a href="#/horse-table?${h.horse_sex === "Female" ? "dam" : "sire"}=${h.horse_horse_id}&status=all">Open in Horse table</a>` : ""), "tall")}</div>`;
   html += horseRankPanels(more || {}, h);
-  html += horseStatCharts(d, runs);
   html += `<div style="margin-top:16px">${allFields(h)}</div>`;
   return html;
 }
@@ -2984,34 +2986,30 @@ async function horseRacesPage(id) {
     `${fNum(tr.length)} timed runs · green: fastest at that distance that day · the game keeps each run's finishing time only, not splits`, "tall")}</div>`;
   return html;
 }
-// 16.7.11: charts at the foot of a horse's Overview: its seasons, prize money by season, and its race ratings
-function horseStatCharts(d, runs) {
+// 16.7.11: a horse's season-by-season, prize-money and race-rating charts (its Overview puts them with value over time)
+function horseFormCharts(runs) {
   const yOf = (t) => new Date(t * 1000).getUTCFullYear();
-  // its seasons: starts each year split by result, and prize money each year (years in between with no runs are kept, so gaps show)
-  let seasons = "", prize = "";
-  if (runs.length) {
-    const y0 = yOf(runs[0].date), y1 = yOf(runs[runs.length - 1].date), years = [];
-    for (let y = y0; y <= y1; y++) years.push(y);
-    const at = (fn) => years.map((y) => runs.filter((r) => yOf(r.date) === y && fn(r)).length);
-    seasons = colChart({ labels: years.map(String), stacked: true, total: "Starts", fmt: (v) => fNum(v), tip: (v) => fNum(v), title: "Starts each year by result", empty: "No races yet.",
-      series: [{ name: "Won", color: "var(--viz-1)", values: at((r) => r.rank === 1) }, { name: "2nd", color: "var(--viz-2)", values: at((r) => r.rank === 2) },
-        { name: "3rd", color: "var(--viz-3)", values: at((r) => r.rank === 3) }, { name: "Unplaced", color: "var(--viz-other)", values: at((r) => !(r.rank >= 1 && r.rank <= 3)) }] });
-    prize = colChart({ labels: years.map(String), title: "Prize money each year", empty: "No prize money yet.",
-      series: [{ name: "Prize money", color: "var(--viz-1)", values: years.map((y) => runs.filter((r) => yOf(r.date) === y).reduce((a, r) => a + (+r.prize || 0), 0)) }] });
-  }
+  const out = { seasons: "", prize: "", ratings: "" };
+  if (!runs.length) return out;
+  // years in between with no runs are kept, so gaps show
+  const y0 = yOf(runs[0].date), y1 = yOf(runs[runs.length - 1].date), years = [];
+  for (let y = y0; y <= y1; y++) years.push(y);
+  const at = (fn) => years.map((y) => runs.filter((r) => yOf(r.date) === y && fn(r)).length);
+  const wins = runs.filter((r) => r.rank === 1).length, total = runs.reduce((a, r) => a + (+r.prize || 0), 0);
+  out.seasons = panel("Season by season", colChart({ labels: years.map(String), stacked: true, total: "Starts", fmt: (v) => fNum(v), tip: (v) => fNum(v), title: "Starts each year by result", empty: "No races yet.", w: 420,
+    series: [{ name: "Won", color: "var(--viz-1)", values: at((r) => r.rank === 1) }, { name: "2nd", color: "var(--viz-2)", values: at((r) => r.rank === 2) },
+      { name: "3rd", color: "var(--viz-3)", values: at((r) => r.rank === 3) }, { name: "Unplaced", color: "var(--viz-other)", values: at((r) => !(r.rank >= 1 && r.rank <= 3)) }] }),
+    `${fNum(runs.length)} starts · ${fNum(wins)} wins`);
+  out.prize = panel("Prize money by season", colChart({ labels: years.map(String), title: "Prize money each year", empty: "No prize money yet.", w: 420,
+    series: [{ name: "Prize money", color: "var(--viz-1)", values: years.map((y) => runs.filter((r) => yOf(r.date) === y).reduce((a, r) => a + (+r.prize || 0), 0)) }] }),
+    `${fMoneyShort(total)} in all`);
   const rated = runs.filter((r) => isNum(r.rating) && r.rating > 0);
   const best = rated.reduce((m, r) => Math.max(m, r.rating), 0);
-  const ratings = rated.length ? lineChart([{ name: "Race rating", color: "#1d63d6", dots: true,
+  out.ratings = panel("Race ratings", rated.length ? lineChart([{ name: "Race rating", color: "#1d63d6", dots: true,
     points: rated.map((r) => [r.date, r.rating, `${r.race_name || "Historic race"} · ${r.course || ""} · ${fDist(r.distance)} · ${ord(r.rank)}${r.runners ? ` of ${r.runners}` : ""}`, r.rating === best ? "#d4a017" : null, r.race_id ? `#/race/${r.race_id}` : null]) }],
-    { tipFmt: (v) => fNum(v), yInt: true, height: 240, width: 1400 }) : '<div class="empty">No rated runs yet.</div>';
-  const wins = runs.filter((r) => r.rank === 1).length;
-  if (!runs.length) return "";     // nothing to chart until it has raced
-  return `<div class="panel-head" style="margin-top:20px"><h2>Form charts</h2></div>
-    <div class="grid cols-2">
-    ${panel("Season by season", seasons || '<div class="empty">No races yet.</div>', runs.length ? `${fNum(runs.length)} starts · ${fNum(wins)} wins` : "")}
-    ${panel("Prize money by season", prize || '<div class="empty">No races yet.</div>', `${fMoneyShort(runs.reduce((a, r) => a + (+r.prize || 0), 0))} in all`)}
-    </div><div style="margin-top:16px">${panel("Race ratings", ratings + (rated.length ? `<div class="legend"><span><i style="background:#d4a017"></i>Best: ${fNum(best)}</span><span>The game's rating for each run · click a dot to open the race</span></div>` : ""),
-      rated.length ? `${fNum(rated.length)} rated runs` : "")}</div>`;
+    { tipFmt: (v) => fNum(v), yInt: true, height: 240, width: 1400 }) + `<div class="legend"><span><i style="background:#d4a017"></i>Best: ${fNum(best)}</span><span>The game's rating for each run · click a dot to open the race</span></div>`
+    : '<div class="empty">No rated runs yet.</div>', rated.length ? `${fNum(rated.length)} rated runs` : "");
+  return out;
 }
 
 // ------------------------------------------------------------------ runner lines + form panels (race and meeting pages)
@@ -5240,7 +5238,7 @@ function vzCol(x, w, yBase, yEnd, round = true) {
 function colChart(o) {
   const labels = o.labels || [], series = (o.series || []).filter((s) => s.values.some((v) => isNum(v) && v)), fmt = o.fmt || fMoneyShort, tip = o.tip || fMoney;
   if (!labels.length || !series.length) return `<div class="empty">${o.empty || "No money recorded in this period."}</div>`;
-  const W = o.wide ? 1240 : 600, H = o.height || 230, padL = 60, padR = 6, padT = 12, padB = 26, plotW = W - padL - padR, plotH = H - padT - padB;
+  const W = o.w || (o.wide ? 1240 : 600), H = o.height || 230, padL = 60, padR = 6, padT = 12, padB = 26, plotW = W - padL - padR, plotH = H - padT - padB;
   let lo = 0, hi = 0;
   labels.forEach((_, i) => {
     if (o.stacked) {

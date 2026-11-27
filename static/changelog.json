@@ -2,12 +2,13 @@
   {
     "version": "16.7.12",
     "date": "2026-11-28",
-    "title": "Settings spread over the tabs they belong to",
+    "title": "Settings spread over the tabs they belong to, and a tidier horse Overview",
     "changes": [
       "Settings: Your save file (following the game as you play) and Stored data are now at the top of the Databases tab, and the HRM Viewer app settings (new versions, installing an update, the desktop app and the Quick Guide) are at the top of Versions & changes. Each sits in a block headed Settings, so it's clear what's a setting and what's the list below.",
       "Settings → General keeps Your stable, Look, Pages & tables and Racing season, with Reset settings in its own section at the end.",
       "“Also thin other horses' charts” is no longer shown in Settings. It still works if it was switched on, and shows only then, so it can be switched off.",
-      "The ● Auto button at the top now opens the Databases tab."
+      "The ● Auto button at the top now opens the Databases tab.",
+      "Horse page: the Stats over time chart is gone, and the charts are together further up the Overview: Value over time, Season by season and Prize money by season on one line, then Race ratings and Finishing positions each across the page."
     ]
   },
   {
