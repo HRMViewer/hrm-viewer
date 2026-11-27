@@ -1474,3 +1474,14 @@ html.dark .delta.good { color: #53c556; } html.dark .delta.bad { color: #ff7b72;
 .split-bar div { border-radius: 4px; display: flex; align-items: center; padding: 0 7px; color: #fff; font-size: var(--fs-xs); font-weight: 600; overflow: hidden; white-space: nowrap; min-width: 0; }
 .split-bar div.dk { color: #0b0b0b; }
 .stat-note { color: var(--muted); font-size: var(--fs-xs); }
+
+/* 16.7.10: the horse page's Connections, Pedigree and Physical boxes: smaller, and on one line */
+.hp-trio { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; align-items: start; margin-bottom: 16px; }
+@media (max-width: 760px) { .hp-trio { grid-template-columns: 1fr; } }
+.panel.compact { padding: 12px 14px; }
+.panel.compact .panel-head { margin-bottom: 6px; }
+.panel.compact .panel-head h2 { font-size: var(--fs-md, 15px); }
+.panel.compact .kv { gap: 2px 10px; font-size: var(--fs-sm); }
+.panel.compact .ped { gap: 4px 8px; font-size: var(--fs-sm); }
+.panel.compact .ped .p { padding: 3px 8px; }
+.hp-trio > .panel { margin: 0; }
