@@ -703,7 +703,7 @@ function hashFor(parts, q = {}) {
 function go(parts, q) { location.hash = hashFor(parts, q); }
 
 const PAGES = {
-  "": homePage, horses: horsesPage, notes: notesPage, tags: Object.assign(() => tagsPage(), { after: () => tagsPage.after() }), horse: (r) => (r.parts[2] === "awards" ? entityAwardsPage("horse", r) : r.parts[2] === "fans" ? horseFansPage(r.parts[1]) : r.parts[2] === "training" ? horseTrainingPage(r.parts[1]) : horsePage(r.parts[1])), races: racesPage, race: Object.assign((r) => racePage(r.parts[1]), { after: () => {
+  "": homePage, horses: horsesPage, notes: notesPage, tags: Object.assign(() => tagsPage(), { after: () => tagsPage.after() }), horse: (r) => (r.parts[2] === "awards" ? entityAwardsPage("horse", r) : r.parts[2] === "fans" ? horseFansPage(r.parts[1]) : r.parts[2] === "training" ? horseTrainingPage(r.parts[1]) : r.parts[2] === "races" ? horseRacesPage(r.parts[1]) : horsePage(r.parts[1])), races: racesPage, race: Object.assign((r) => racePage(r.parts[1]), { after: () => {
     $$("[data-openall]", APP).forEach((b) => b.addEventListener("click", () => {
       const open = b.textContent.startsWith("Open");
       $$(".rtoggle", APP).forEach((t) => { if (t.classList.contains("open") !== open) t.click(); });
@@ -2311,7 +2311,7 @@ function horseHead(d, on) {
     · Foaled ${fDate(h.horse_birth_date)}${dead ? ` · Died ${fDate(h.horse_deceased_date)} ${esc(h.horse_death_cause || "")}` : ""}
     ${d.stable ? ` · ${L.stable(d.stable.id, d.stable.name)}` : ""}</div>${(d.traits || []).length ? `<div class="hp-traits">${chips(d.traits)}</div>` : ""}${removedNote(d)}</div></div>
     <div style="display:flex;gap:8px"><button class="btn" data-gallery="${h.horse_horse_id}" data-gname="${esc(h.horse_name)}">${ICON_PHOTO}${pic ? "Gallery" : "Add photos"}</button></div></div>
-    <div class="subtabs"><a href="#/horse/${id}" class="${on === "overview" ? "on" : ""}">Overview</a><a href="#/horse/${id}/awards" class="${on === "awards" ? "on" : ""}">Awards${(d.awards || []).length ? ` <span class="tab-n">${fNum(d.awards.length)}</span>` : ""}</a><a href="#/horse/${id}/fans" class="${on === "fans" ? "on" : ""}">Fans, sponsors &amp; notes</a><a href="#/horse/${id}/training" class="${on === "training" ? "on" : ""}">Training &amp; plans</a><a href="#/compare?kind=horse&a=${id}" class="st-cmp">Compare…</a></div>`;
+    <div class="subtabs"><a href="#/horse/${id}" class="${on === "overview" ? "on" : ""}">Overview</a><a href="#/horse/${id}/races" class="${on === "races" ? "on" : ""}">Races &amp; trials${(d.results || []).length ? ` <span class="tab-n">${fNum(d.results.length)}</span>` : ""}</a><a href="#/horse/${id}/awards" class="${on === "awards" ? "on" : ""}">Awards${(d.awards || []).length ? ` <span class="tab-n">${fNum(d.awards.length)}</span>` : ""}</a><a href="#/horse/${id}/fans" class="${on === "fans" ? "on" : ""}">Fans, sponsors &amp; notes</a><a href="#/horse/${id}/training" class="${on === "training" ? "on" : ""}">Training &amp; plans</a><a href="#/compare?kind=horse&a=${id}" class="st-cmp">Compare…</a></div>`;
 }
 // ------------------------------------------------------------------ 16.5: training, shoes, plans, rankings and syndicates on a horse
 const nice = (s) => String(s || "").replace(/_/g, " ").replace(/^./, (x) => x.toUpperCase());
@@ -2747,21 +2747,9 @@ async function horsePage(id) {
   } catch (err) { fg = panel("Form guide", `<div class="err-box">${esc(err.message)}</div>`); }
   if (fg) html += `<div style="margin-top:16px">${fg}</div>`;
 
-  html += `<div style="margin-top:16px">${panel("Race record", table([
-    { h: "Date", cls: "nowrap", f: (r) => fDate(r.date) },
-    { h: "Race", f: (r) => `${L.race(r.race_id, r.race_name, '<span class="muted">Historic race</span>')} ${grade(r.race_type)}` },
-    { h: "Course", f: (r) => L.course(r.course_id, r.course) },
-    { h: "Distance", cls: "num", f: (r) => fDist(r.distance) },
-    { h: "Pos", f: (r) => pos(r.rank, r.runners) },
-    { h: "Jockey", f: (r) => L.person(r.jockey_id, r.jockey) },
-    { h: "Trainer", f: (r) => L.person(r.trainer_id, r.trainer) },
-    { h: "Stable", f: (r) => L.stable(r.stable_id, r.stable) },
-    { h: "Gear", f: (r) => gearAbbr(r.gear) },
-    { h: "Time", cls: "num", f: (r) => fTime(r.time) },
-    { h: "Odds", cls: "num", f: (r) => (isNum(r.odds) ? fNum(r.odds, 1) : "—") },
-    { h: "Rating", cls: "num", f: (r) => fNum(r.rating) },
-    { h: "Prize", cls: "num", f: (r) => fMoney(r.prize) },
-  ], res, { rowClass: (r) => (r.rank === 1 ? "win" : ""), empty: "No races yet." }), `${res.length} starts`, "tall")}</div>`;
+  // the last five starts; every start, and the horse's trials, are on the Races & trials tab (16.7.11)
+  html += `<div style="margin-top:16px">${panel("Last 5 starts", table(raceRecordCols(), res.slice(0, 5), { rowClass: (r) => (r.rank === 1 ? "win" : ""), empty: "No races yet." }),
+    res.length ? `<a href="#/horse/${h.horse_horse_id}/races">All ${fNum(res.length)} starts &amp; trials</a>` : `<a href="#/horse/${h.horse_horse_id}/races">Trials</a>`)}</div>`;
 
   // track records set by this horse: still standing, and broken since
   const trs = d.track_records || [], held = trs.filter((r) => r.current), former = trs.filter((r) => !r.current);
@@ -2842,6 +2830,96 @@ async function horsePage(id) {
   html += horseRankPanels(more || {}, h);
   html += horseStatCharts(d, runs);
   html += `<div style="margin-top:16px">${allFields(h)}</div>`;
+  return html;
+}
+// a horse's race record: the columns used by Last 5 starts (Overview) and the Races & trials tab
+const raceRecordCols = () => [
+  { h: "Date", cls: "nowrap", f: (r) => fDate(r.date) },
+  { h: "Race", f: (r) => `${L.race(r.race_id, r.race_name, '<span class="muted">Historic race</span>')} ${grade(r.race_type)}` },
+  { h: "Course", f: (r) => L.course(r.course_id, r.course) },
+  { h: "Distance", cls: "num", f: (r) => fDist(r.distance) },
+  { h: "Pos", f: (r) => pos(r.rank, r.runners) },
+  { h: "Jockey", f: (r) => L.person(r.jockey_id, r.jockey) },
+  { h: "Trainer", f: (r) => L.person(r.trainer_id, r.trainer) },
+  { h: "Stable", f: (r) => L.stable(r.stable_id, r.stable) },
+  { h: "Gear", f: (r) => gearAbbr(r.gear) },
+  { h: "Time", cls: "num", f: (r) => fTime(r.time) },
+  { h: "Odds", cls: "num", f: (r) => (isNum(r.odds) ? fNum(r.odds, 1) : "—") },
+  { h: "Rating", cls: "num", f: (r) => fNum(r.rating) },
+  { h: "Prize", cls: "num", f: (r) => fMoney(r.prize) },
+];
+// ------------------------------------------------------------------ 16.7.11: a horse's Races & trials tab
+// every start, then its timing trials: each session (a day at a course), and its times at every distance side by side
+async function horseRacesPage(id) {
+  const [d, t] = await Promise.all([api("horse/" + id), api("horse_trials/" + id).catch(() => ({ trials: [] }))]);
+  const h = d.horse, res = d.results || [], tr = t.trials || [];
+  const wins = res.filter((r) => r.rank === 1).length, seconds = res.filter((r) => r.rank === 2).length, thirds = res.filter((r) => r.rank === 3).length;
+  // trial sessions: one per day and course, newest first
+  const sessMap = new Map();
+  tr.forEach((x) => {
+    const k = `${x.date}|${x.course_id}`;
+    if (!sessMap.has(k)) sessMap.set(k, { key: k, date: x.date, course_id: x.course_id, course: x.course, track: x.track, surface: x.surface, runs: [] });
+    sessMap.get(k).runs.push(x);
+  });
+  const sess = [...sessMap.values()].sort((a, b) => b.date - a.date);
+  sess.forEach((s) => {
+    const js = [...new Map(s.runs.filter((x) => x.jockey_id).map((x) => [x.jockey_id, x])).values()];
+    s.jockeys = js.map((x) => L.person(x.jockey_id, x.jockey)).join(", ") || "—";
+    s.field = Math.max(0, ...s.runs.map((x) => x.field || 0));
+    const placed = s.runs.filter((x) => isNum(x.place));
+    s.bestPlace = placed.length ? Math.min(...placed.map((x) => x.place)) : null;
+    s.avgPlace = placed.length ? placed.reduce((a, x) => a + x.place, 0) / placed.length : null;
+    s.fastest = placed.filter((x) => x.place === 1).length;
+    s.condition = s.runs.find((x) => isNum(x.condition))?.condition;
+    s.speed = s.runs.find((x) => isNum(x.speed_revealed))?.speed_revealed;
+    s.stamina = s.runs.find((x) => isNum(x.stamina_revealed))?.stamina_revealed;
+    s.harness = s.runs.some((x) => x.harness);
+  });
+  const anyRevealed = sess.some((s) => isNum(s.speed) || isNum(s.stamina)), anyHarness = sess.some((s) => s.harness);
+  let html = horseHead(d, "races");
+  html += tiles([
+    ["Starts", fNum(res.length), res.length ? `${fNum(wins)}-${fNum(seconds)}-${fNum(thirds)} · strike rate ${pct(wins, res.length)}` : "No races yet"],
+    ["Prize money", fMoneyShort(res.reduce((a, r) => a + (+r.prize || 0), 0)), "From its race record"],
+    ["Last start", res.length ? fDate(res[0].date) : "—", res.length ? `${isNum(res[0].rank) ? ord(res[0].rank) : "—"}${res[0].runners ? ` of ${res[0].runners}` : ""} · ${esc(res[0].race_name || "Historic race")}` : ""],
+    ["Trial sessions", fNum(sess.length), sess.length ? `${fNum(tr.length)} timed runs` : "None recorded"],
+    ["Last trial", sess.length ? fDate(sess[0].date) : "—", sess.length ? esc(sess[0].course || "") : ""],
+    ["Fastest in a trial", fNum(tr.filter((x) => x.place === 1).length), tr.length ? "Distances where it beat everyone timed with it" : ""],
+  ]);
+  html += `<div style="margin-top:16px">${panel("Race record", table(raceRecordCols(), res, { rowClass: (r) => (r.rank === 1 ? "win" : ""), empty: "No races yet." }), `${fNum(res.length)} starts`, "tall")}</div>`;
+  if (!sess.length) {
+    html += `<div style="margin-top:16px">${panel("Trials", `<div class="empty">No timing trials recorded for this horse.</div>`, "")}</div>`;
+    return html;
+  }
+  // the sessions
+  html += `<div style="margin-top:16px">${panel("Trial sessions", table([
+    { h: "Date", cls: "nowrap", f: (s) => fDate(s.date) },
+    { h: "Racecourse", f: (s) => `${L.course(s.course_id, s.course)} <span class="muted small">${esc(s.track || "")}${s.surface ? " · " + esc(s.surface) : ""}</span>` },
+    { h: "Jockey", f: (s) => s.jockeys },
+    { h: "Condition", cls: "num", f: (s) => (isNum(s.condition) ? fNum(s.condition, 0) + "%" : "—") },
+    { h: "Distances", cls: "num", f: (s) => `${fNum(s.runs.length)} <span class="muted small">${fDist(Math.min(...s.runs.map((x) => x.distance)))}–${fDist(Math.max(...s.runs.map((x) => x.distance)))}</span>` },
+    { h: "Horses timed", cls: "num", f: (s) => fNum(s.field) },
+    { h: "Best place", cls: "num", f: (s) => (isNum(s.bestPlace) ? ord(s.bestPlace) : "—") },
+    { h: "Average place", cls: "num", f: (s) => (isNum(s.avgPlace) ? fNum(s.avgPlace, 1) : "—") },
+    { h: "Fastest at", cls: "num", f: (s) => (s.fastest ? `${fNum(s.fastest)} distance${s.fastest === 1 ? "" : "s"}` : "—") },
+  ].concat(anyRevealed ? [{ h: "Speed shown", cls: "num", f: (s) => (isNum(s.speed) ? fNum(s.speed, 1) : "—") }, { h: "Stamina shown", cls: "num", f: (s) => (isNum(s.stamina) ? fNum(s.stamina, 1) : "—") }] : [])
+    .concat(anyHarness ? [{ h: "Harness", f: (s) => (s.harness ? "Yes" : "No") }] : []), sess),
+    "A session is a day at one course · places are against every horse timed there that day at the same distance")}</div>`;
+  // its time at every distance, session by session (newest on the left); its best time at each distance is marked
+  const cols = sess.slice(0, 8), dists = [...new Set(tr.map((x) => x.distance))].sort((a, b) => a - b);
+  const cell = (s, dist) => s.runs.find((x) => x.distance === dist);
+  const bestAt = new Map(dists.map((dist) => [dist, Math.min(...tr.filter((x) => x.distance === dist && x.time > 0).map((x) => x.time))]));
+  const head = `<tr><th class="num">Distance</th>${cols.map((s) => `<th class="num">${fDate(s.date)}<div class="muted small tr-sub">${esc(s.course || "")}</div></th>`).join("")}<th class="num">Best</th></tr>`;
+  const body = dists.map((dist) => `<tr><td class="num"><b>${fDist(dist)}</b></td>${cols.map((s) => {
+    const x = cell(s, dist);
+    if (!x || !(x.time > 0)) return `<td class="num muted">—</td>`;
+    const gap = isNum(x.best) && x.time > x.best ? `+${(x.time - x.best).toFixed(2)}s` : "fastest";
+    const isBest = x.time === bestAt.get(dist) && sess.length > 1;
+    return `<td class="num tr-cell${x.place === 1 ? " tr-top" : ""}${isBest ? " tr-best" : ""}" data-tip="${esc(`${fDist(dist)} on ${fDate(s.date)} at ${s.course || "the course"}: ${fTime(x.time)} · ${x.place ? ord(x.place) + " of " + x.field : ""} · fastest there ${fTime(x.best)} · ${(dist / x.time * 3.6).toFixed(1)} km/h`)}">
+      ${fTime(x.time)}<div class="tr-sub">${x.place ? `${ord(x.place)}/${fNum(x.field)}` : ""} · ${gap}</div></td>`;
+  }).join("")}<td class="num"><b>${fTime(bestAt.get(dist))}</b><div class="tr-sub">${(dist / bestAt.get(dist) * 3.6).toFixed(1)} km/h</div></td></tr>`).join("");
+  html += `<div style="margin-top:16px">${panel("Trial times by distance", `<div class="wide-wrap"><table class="data wide tr-grid"><thead>${head}</thead><tbody>${body}</tbody></table></div>
+    <div class="legend"><span><i class="tr-key top"></i>Fastest horse timed at that distance that day</span>${sess.length > 1 ? `<span><i class="tr-key best"></i>Its best time at that distance</span>` : ""}<span>Under each time: its place among the horses timed with it, and how far behind the fastest</span></div>`,
+    sess.length > cols.length ? `Latest ${cols.length} of ${sess.length} sessions` : `${fNum(sess.length)} session${sess.length === 1 ? "" : "s"}`)}</div>`;
   return html;
 }
 // 16.7.11: charts at the foot of a horse's Overview: its seasons, prize money by season, and its race ratings

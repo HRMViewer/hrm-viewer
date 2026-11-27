@@ -100,6 +100,8 @@ INDEXES = [
     ("children", "child_person_id"),
     ("children", "child_parent_1_id"),
     ("children", "child_parent_2_id"),
+    ("timing_trials", "tt_horse_id"),       # a horse's trials (16.7.11)
+    ("timing_trials", "tt_date"),           # everyone else in the same trial session
 ]
 
 PAGE_SIZE = 50
@@ -2585,6 +2587,37 @@ def api_stables(con, q):
 # ------------------------------------------------------------------ 16.5: training, shoes, plans, rankings, syndicates, facilities, sponsors, languages
 def _t(con, t):
     return has_table(con, t)
+
+
+def api_horse_trials(con, hid):
+    """A horse's timing trials (16.7.11): each run with its course, track, distance, time, jockey and condition, and how it
+    went against the other horses timed at the same course, distance and day ("place" of "field", the fastest time)."""
+    if not has_table(con, "timing_trials"):
+        return {"trials": []}
+    tc = set(columns(con, "timing_trials"))
+    col = lambda c, a: ("t.%s as %s" % (c, a)) if c in tc else "null as %s" % a
+    courses = has_table(con, "racecourses")
+    trials = rows(con, """select %s from timing_trials t%s%s where t.tt_horse_id=? order by t.tt_date desc, t.tt_distance""" % (
+        ", ".join([col("tt_id", "id"), col("tt_date", "date"), col("tt_distance", "distance"), col("tt_time_result", "time"),
+                   col("tt_track", "track"), col("tt_surface", "surface"), col("tt_racecourse_id", "course_id"),
+                   col("tt_person_jockey_id", "jockey_id"), col("tt_condition_at_trial", "condition"), col("tt_condition_used", "cond_used"),
+                   col("tt_speed_revealed", "speed_revealed"), col("tt_stamina_revealed", "stamina_revealed"), col("tt_harness", "harness")] +
+                  (["c.racecourse_name as course"] if courses else ["null as course"]) + ["p.person_full_name as jockey"]),
+        " left join racecourses c on c.racecourse_racecourse_id=t.tt_racecourse_id" if courses else "",
+        " left join persons p on p.person_person_id=t.tt_person_jockey_id"), (hid,))
+    # the rest of each session: everyone timed at the same course and distance on the same day
+    dates = sorted({t["date"] for t in trials if t["date"] is not None})
+    field = {}
+    if dates:
+        for d, c, dist, tm in con.execute("select tt_date, tt_racecourse_id, tt_distance, tt_time_result from timing_trials where tt_date in (%s) and tt_time_result > 0"
+                                          % ",".join("?" * len(dates)), dates):
+            field.setdefault((d, c, dist), []).append(tm)
+    for t in trials:
+        times = sorted(field.get((t["date"], t["course_id"], t["distance"]), []))
+        t["field"] = len(times)
+        t["best"] = times[0] if times else None
+        t["place"] = (sum(1 for x in times if x < t["time"]) + 1) if times and t["time"] else None
+    return {"trials": trials}
 
 
 def api_horse_more(con, hid):
@@ -6504,6 +6537,7 @@ ROUTES = [
     (re.compile(r"^/api/dynasty/(-?\d+)$"), lambda con, m, q: api_dynasty(con, int(m.group(1)))),
     (re.compile(r"^/api/lifespans/(-?\d+)$"), lambda con, m, q: api_lifespans(con, int(m.group(1)))),
     (re.compile(r"^/api/horse_more/(-?\d+)$"), lambda con, m, q: api_horse_more(con, int(m.group(1)))),
+    (re.compile(r"^/api/horse_trials/(-?\d+)$"), lambda con, m, q: api_horse_trials(con, int(m.group(1)))),
     (re.compile(r"^/api/stable_more/(-?\d+)$"), lambda con, m, q: api_stable_more(con, int(m.group(1)))),
     (re.compile(r"^/api/jockey_season/(-?\d+)$"), lambda con, m, q: api_jockey_season(con, int(m.group(1)), q)),
     (re.compile(r"^/api/alerts$"), lambda con, m, q: api_alerts(con)),

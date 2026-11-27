@@ -2,7 +2,7 @@
   {
     "version": "16.7.11",
     "date": "2026-11-28",
-    "title": "Faster stable Rankings, Stable table ranks, tidier Settings, and new horse charts",
+    "title": "Faster stable Rankings, Stable table ranks, tidier Settings, and a new Races & trials tab for horses",
     "changes": [
       "Stable Rankings opens much faster after starting the viewer or loading a save: its year list no longer waits for the full scan of every race result that People overview does, and the Cash earnings table works out its own figures (the same numbers) instead of waiting for that scan.",
       "The Stables pages are now ready sooner after start-up: the viewer prepares them before People overview, which takes the longest.",
@@ -12,7 +12,8 @@
       "“change in Settings” links (Jockey season, Concepts) and the ● Auto button at the top now open Settings at the right section.",
       "Horse page: a horse's traits now sit under its age, colour and breed at the top of every tab, instead of in a box further down.",
       "Horse page: the Abilities, Mind & health, Distance preference and Running style charts are gone, and the Physical box no longer lists weather preference, longevity, maturity rate or breeding ability.",
-      "Horse page: new Form charts at the foot of the Overview: Season by season shows its starts each year split into wins, 2nds, 3rds and unplaced; Prize money by season; and Race ratings shows the game's rating for each run (its best marked; click a dot to open the race). They appear once a horse has raced."
+      "Horse page: new Form charts at the foot of the Overview: Season by season shows its starts each year split into wins, 2nds, 3rds and unplaced; Prize money by season; and Race ratings shows the game's rating for each run (its best marked; click a dot to open the race). They appear once a horse has raced.",
+      "Horse page: a new Races & trials tab. It has the horse's full race record (moved from the Overview, which now shows its last 5 starts) and its timing trials: each trial session (date, course, track and surface, jockey, condition, distances, horses timed, best and average place) and its times at every distance side by side, session by session, with its place against the horses timed with it and the gap to the fastest."
     ]
   },
   {
