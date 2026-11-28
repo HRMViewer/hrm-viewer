@@ -3902,7 +3902,7 @@ function stableHead(d, on) {
       return mg.length ? ` · Manager ${mg.map((x) => `${L.person(x.id, x.name)}${x.id === (STATUS.meta || {}).player_id ? ' <span class="badge good">You</span>' : ""}`).join(", ")}` : "";
     })()}${d.city ? ` · ${esc(d.city.city)}, ${esc(d.city.country)}` : ""} · Founded ${fDate(s.stable_founded_date)}</div>${removedNote(d)}</div>
     <div style="display:flex;gap:8px"><a class="btn primary" href="#/stable/${id}/races">Every race</a><a class="btn" href="#/horses?stable=${id}&status=all">All horses ever</a></div></div>
-    <div class="subtabs"><a href="#/stable/${id}" class="${on === "overview" ? "on" : ""}">Overview</a><a href="#/stable/${id}/financials" class="${on === "financials" ? "on" : ""}">Financials</a><a href="#/stable/${id}/horse-money" class="${on === "horse-money" ? "on" : ""}">Horse finances</a><a href="#/stable/${id}/awards" class="${on === "awards" ? "on" : ""}">Awards</a>${(d.racecourses_owned || []).length || on === "racecourses" ? `<a href="#/stable/${id}/racecourses" class="${on === "racecourses" ? "on" : ""}">Racecourses <span class="tab-n">${fNum((d.racecourses_owned || []).length)}</span></a>` : ""}${d.auction_n || on === "auctions" ? `<a href="#/stable/${id}/auctions" class="${on === "auctions" ? "on" : ""}">Auctions</a>` : ""}${d.shares_n || on === "shares" ? `<a href="#/stable/${id}/shares" class="${on === "shares" ? "on" : ""}">Share offerings</a>` : ""}</div>`;
+    <div class="subtabs"><a href="#/stable/${id}" class="${on === "overview" ? "on" : ""}">Overview</a><a href="#/stable/${id}/financials" class="${on === "financials" ? "on" : ""}">Financials</a><a href="#/stable/${id}/horse-money" class="${on === "horse-money" ? "on" : ""}">Horse finances</a><a href="#/stable/${id}/awards" class="${on === "awards" ? "on" : ""}">Awards</a>${(d.racecourses_owned || []).length || on === "racecourses" ? `<a href="#/stable/${id}/racecourses" class="${on === "racecourses" ? "on" : ""}">Racecourses <span class="tab-n">${fNum((d.racecourses_owned || []).length)}</span></a>` : ""}${d.auction_n || on === "auctions" ? `<a href="#/stable/${id}/auctions" class="${on === "auctions" ? "on" : ""}">Auctions</a>` : ""}<a href="#/stable/${id}/shares" class="${on === "shares" ? "on" : ""}">Ownership &amp; shares</a></div>`;
 }
 // the stable's money charts (moved here from the Overview tab in 10.2): same data, now on a log scale
 const STABLE_LOG = { scale: "auto", logC: 1000, yFmt: fMoneyShort, tipFmt: fMoney };
@@ -3931,23 +3931,6 @@ async function stablePage(id) {
     { h: "Condition", cls: "num", f: (r) => fNum(r.condition) + "%" }, { h: "Value", cls: "num", f: (r) => fMoneyShort(r.value) },
     { h: "Earnings", cls: "num", f: (r) => fMoney(r.earnings) },
   ], d.horses, { empty: "No horses." }))}</div>`;
-  // 16.8.2: who owns the stable beside everything it owns (other stables' shares, racecourses, auction houses), each with its share
-  const KIND = { stable: "Stable", course: "Racecourse", house: "Auction house" };
-  const hold = d.holdings || [];
-  const holdLink = (r) => (r.kind === "stable" ? L.stable(r.id, r.name) : r.kind === "course" ? L.course(r.id, r.name) : `<a href="#/auction-house/${r.id}">${esc(r.name)}</a>`);
-  const kinds = [...new Set(hold.map((r) => r.kind))];
-  html += `<div class="grid cols-2" style="margin-top:16px">${panel("Owners", table([
-      { h: "Shareholder", f: (r) => (r.kind === "stable" ? `${L.stable(r.id, r.name)} <span class="badge">Stable</span>` : L.person(r.id, r.name)) }, { h: "Shares", cls: "num", f: (r) => fNum(r.shares) },
-      { h: "Stake", cls: "num", f: (r) => (s.stable_total_shares ? ((100 * r.shares) / s.stable_total_shares).toFixed(1) + "%" : "—") },
-    ], d.investors, { empty: "No shareholders.", noOwn: true }), "Its top shareholders")}
-    ${panel("What it owns", hold.length ? table([
-      { h: "Type", f: (r) => `<span class="badge">${KIND[r.kind]}</span>` },
-      { h: "Name", f: (r) => `${holdLink(r)}${r.closed ? ` <span class="badge dead">${r.kind === "stable" ? "Closed" : "Demolished"}</span>` : ""}` },
-      { h: "Owned", cls: "num", f: (r) => (isNum(r.pct) ? `${fNum(r.pct, r.pct >= 99.95 || r.pct < 0.005 ? 0 : r.pct < 10 ? 2 : 1)}%` : "—") },
-      { h: "Shares", cls: "num", f: (r) => (r.kind === "stable" ? fNum(r.shares) : '<span class="muted">—</span>') },
-      { h: "Since", cls: "nowrap", f: (r) => (r.since ? fDate(r.since) : '<span class="muted">—</span>') },
-    ], hold, { noOwn: true }) : '<div class="empty">It doesn\'t own any stables, racecourses or auction houses.</div>',
-      hold.length ? `<span title="Racecourses and auction houses are owned whole; stables by the shares held">${kinds.map((k) => `${fNum(hold.filter((r) => r.kind === k).length)} ${KIND[k].toLowerCase()}${hold.filter((r) => r.kind === k).length === 1 ? "" : "s"}`).join(" · ")}</span>` : "")}</div>`;
   html += `<div style="margin-top:16px">
     ${panel("Recent results", table([
       { h: "Date", cls: "nowrap", f: (r) => fDate(r.date) }, { h: "Horse", f: (r) => L.horse(r.horse_id, r.horse) },
@@ -4026,7 +4009,7 @@ function finYearTable(years, cats, key, totalKey, costUp = false) {
     <td class="fc-trend">${finSpark(totals, color)}</td><td class="num">${pv ? finPill(last[totalKey], pv[totalKey], costUp, pv.label) || "" : ""}</td><td class="fc-share"><span class="sval">100%</span></td></tr>`;
   return `<div class="fc-tools"><div class="seg fc-mode"><button class="on" data-fcmode="amt">Amounts</button><button data-fcmode="pct" data-tip="Each category as a share of that year's total">% of year</button></div>
     <span class="muted small">Darker = a bigger year for that category · click a heading to sort · hover for exact amounts</span></div>
-    <div class="tbl-wrap"><table class="data fc-table"><thead>${head}</thead><tbody>${body}</tbody><tfoot>${foot}</tfoot></table></div>`;
+    <div class="tbl-wrap fin-scroll fc-scroll"><table class="data fc-table"><thead>${head}</thead><tbody>${body}</tbody><tfoot>${foot}</tfoot></table></div>`;
 }
 document.addEventListener("click", (e) => {
   const b = e.target.closest("[data-fcmode]");
@@ -4086,6 +4069,41 @@ document.addEventListener("click", (e) => {
 
 // an ownership group (stables a person owns outright, and the stables those, or a parent stable, hold a majority of):
 // the switch between one stable and the whole group on Financials and Horse finances
+// 16.8.2: how many years a stable's Financials starts on: the charts' setting in Settings (months count as the last year)
+function finYearsDefault() {
+  const r = chartDefaultRange();
+  if (r === "all") return "all";
+  const m = /^(\d+)([ym])$/.exec(r);
+  return m ? (m[2] === "y" ? m[1] : "1") : "all";
+}
+// 16.8.2: the top of a stable's Financials: whose figures these are (this stable, or the group: the stables in it, held by more than
+// half, and the ones it holds less of, which aren't added in), beside its farm sponsors
+function finTopRow(d, q, more) {
+  const g = d.group, on = !!g && q.group === "1", me = d.stable.stable_stable_id, ex = d.group_excluded || [];
+  const pctTxt = (x) => (isNum(x) ? `${fNum(x, x >= 99.95 || x >= 10 ? (x % 1 && x < 99.95 ? 1 : 0) : 2)}%` : "—");
+  const who = (s) => (s.holder_kind ? ` <span class="muted small">${pctTxt(s.pct)} ${s.holder_kind === "person" ? "owned by" : "held by"} ${esc(s.holder)}${s.closed ? " · closed" : ""}</span>` : "");
+  let body;
+  if (!g) {
+    body = `<div class="fo-me"><b>${esc(d.stable.stable_name)}</b> <span class="muted small">· not part of a group: these are its own figures</span></div>`;
+  } else if (!on) {
+    body = `<div class="fo-me"><b>${esc(d.stable.stable_name)}</b> <span class="muted small">· this stable's own figures</span></div>
+      <div class="small muted">It's in a group of ${fNum(g.stables.length)} stables: <b>Whole group</b> adds them together.</div>`;
+  } else {
+    const about = g.person ? `Everything ${L.person(g.person.id, g.person.name)} owns outright, and the stables those hold more than half of` : "A parent stable and the stables it holds more than half of";
+    body = `<div class="small"><b>Included</b> <span class="muted">· ${about}</span></div>
+      <ul class="grp-list small fo-list">${g.stables.map((s) => `<li class="${s.parent_id ? "sub" : ""}">${s.id === me ? `<b>${esc(s.name)}</b>` : L.stable(s.id, s.name)}${who(s)}</li>`).join("")}</ul>`;
+  }
+  if (ex.length) body += `<div class="small" style="margin-top:8px"><b>Not included</b> <span class="muted">· held, but less than half: ${on ? "the group's" : "its"} share of their money isn't added in</span></div>
+    <ul class="grp-list small fo-list">${ex.map((s) => `<li>${L.stable(s.id, s.name)} <span class="muted small">${pctTxt(s.pct)} held by ${esc(s.holder || "")}${s.closed ? " · closed" : ""}</span></li>`).join("")}</ul>`;
+  const own = `<section class="panel fo-box"><div class="panel-head"><h2>${on ? "Whole group" : "This stable"}</h2>${g ? `<span class="note">${seg("group", q, [["", "This stable"], ["1", `Whole group · ${g.stables.length} stables`]], "")}</span>` : ""}</div>${body}</section>`;
+  const fsp = (more && more.sponsors) || [];
+  const fspNow = fsp.filter((x) => x.current), fspPaid = fsp.reduce((a, x) => a + (x.paid || 0), 0);
+  const sponsors = `<section class="panel fsp"><div class="panel-head"><h2>Farm sponsors</h2><span class="note">${fsp.length ? `${fNum(fspNow.length)} now · ${fMoneyShort(fspPaid)} paid in all` : ""}</span></div>
+    ${fsp.length ? `<ul class="cp-list fsp-list">${fsp.map((x) => `<li><div><b>${esc(x.brand)}</b>${x.current ? ' <span class="badge good">Now</span>' : ""}
+      <div class="small muted">${esc(x.industry || "")}${x.industry ? " · " : ""}${fMoney(x.monthly)} a month · ${fDate(x.start)}–${x.end ? fDate(x.end) : "now"}</div></div><div class="num small"><b>${fMoneyShort(x.paid)}</b></div></li>`).join("")}</ul>`
+      : '<div class="empty">No farm sponsors.</div>'}</section>`;
+  return `<div class="grid fo-row">${own}${sponsors}</div>`;
+}
 function groupSwitch(d, q, what) {
   const g = d.group;
   if (!g) return "";
@@ -4100,16 +4118,26 @@ async function stableFinancePage(route) {
   const id = route.parts[1], q = route.q;
   const grpOn = q.group === "1";
   const [d, fin, more] = await Promise.all([api("stable/" + id), api(`stable_finance/${id}?` + new URLSearchParams({ ...(q.year ? { year: q.year } : {}), ...(q.month ? { month: q.month } : {}), ...(q.dir === "in" ? { dir: "in" } : {}), ...(grpOn ? { group: "1" } : {}) })), api("stable_more/" + id).catch(() => ({}))]);
-  let html = stableHead(d, "financials") + groupSwitch(d, q, "Financials");
+  let html = stableHead(d, "financials") + finTopRow(d, q, more);
   const G = !!(fin.group && fin.group_monthly);
-  const lf = (G ? fin.group_latest : d.latest_finance) || {}, monthly = (G ? fin.group_monthly : d.finance) || [];
+  const lf = (G ? fin.group_latest : d.latest_finance) || {};
+  let monthly = (G ? fin.group_monthly : d.finance) || [];
   if (G) {
     const moved = (fin.internal || []).filter((x) => x.total);
     html += `<div class="note-line grp-note">The monthly figures below are each stable's own, added up, so money moved between the group's stables counts as income in one and spending in another (the net is unaffected). The payment detail leaves those moves out.${moved.length ? ` Moved between them: ${moved.map((x) => `${x.year} ${fMoneyShort(x.total)} (${fNum(x.n)} payment${x.n === 1 ? "" : "s"})`).join(" · ")}.` : ""}</div>`;
   }
-  const years = (fin.years || []).map((y) => ({ ...y, net: (y.income_total || 0) - (y.expense_total || 0) }));
-  const last = years[years.length - 1], prev = years[years.length - 2];
-  if (!years.length && !monthly.length) return html + `<div class="empty">No financial records for this stable.</div>`;
+  const yearsAll = (fin.years || []).map((y) => ({ ...y, net: (y.income_total || 0) - (y.expense_total || 0) }));
+  const last = yearsAll[yearsAll.length - 1], prev = yearsAll[yearsAll.length - 2];
+  if (!yearsAll.length && !(monthly || []).length) return html + `<div class="empty">No financial records for this stable.</div>`;
+  // 16.8.2: show the last few years (starts on the charts' setting in Settings), for the charts and the yearly tables
+  const yrsQ = q.yrs || finYearsDefault(), nY = yrsQ === "all" ? 0 : +yrsQ || 0;
+  const lastY = last ? last.year : new Date().getUTCFullYear(), fromY = nY ? lastY - nY + 1 : -Infinity;
+  const years = yearsAll.filter((y) => y.year >= fromY);
+  const monthlyAll = monthly;
+  monthly = monthlyAll.filter((f) => new Date(f.date * 1000).getUTCFullYear() >= fromY);
+  const spanYears = yearsAll.length ? lastY - yearsAll[0].year + 1 : 0;
+  html += `<div class="fin-range"><span class="small muted">Show</span>${seg("yrs", { yrs: yrsQ }, [["all", "All years"]].concat([10, 5, 3, 2, 1].filter((n) => n < spanYears || String(n) === yrsQ).map((n) => [String(n), n === 1 ? "Last year" : `Last ${n} years`])), "all")}
+    <span class="small muted">for the charts and yearly tables · Month by month and the payment detail aren't affected · starts on <a href="#/settings?s=pages">your chart setting</a></span></div>`;
   if (last) html += tiles([
     [`Income ${last.year}`, fMoneyShort(last.income_total), prev ? `${finChange(last.income_total, prev.income_total)} on ${prev.year}` : ""],
     [`Expenses ${last.year}`, fMoneyShort(last.expense_total), prev ? `${finChange(last.expense_total, prev.expense_total, true)} on ${prev.year}` : ""],
@@ -4124,7 +4152,7 @@ async function stableFinancePage(route) {
       { name: "Income", color: "#1f5240", points: monthly.map((f) => [f.date, f.income]) }, { name: "Expenses", color: "#c0504d", points: monthly.map((f) => [f.date, f.expenses]) }], STABLE_LOG), lf.snapshot_date ? "Monthly · latest " + fDate(lf.snapshot_date) : "Monthly")}</div>`;
   const amt = finAmt, pill = finPill;
   const yrRows = years.slice().reverse().map((y) => {
-    const pv0 = finPrev(years, y), pv = pv0 && { income: pv0.income_total, expenses: pv0.expense_total, label: pv0.label };
+    const pv0 = finPrev(yearsAll, y), pv = pv0 && { income: pv0.income_total, expenses: pv0.expense_total, label: pv0.label };
     const margin = y.income_total ? (100 * y.net) / y.income_total : null;
     return `<tr class="${y === last ? "fy-latest" : ""}">
       <td class="fy-year">${y.year}${y.months < 12 ? ` <span class="fy-part" data-tip="Only ${y.months} of 12 months recorded so far${pv ? ` · changes compare with ${esc(pv.label)}` : ""}">${y.months} mo</span>` : ""}</td>
@@ -4132,22 +4160,15 @@ async function stableFinancePage(route) {
       <td class="num">${amt(y.expense_total)}${pv ? pill(y.expense_total, pv.expenses, true, pv.label) : ""}</td>
       <td class="num">${amt(y.net, y.net >= 0 ? "pos" : "neg")}${isNum(margin) ? `<span class="fy-margin" data-tip="Net as a share of income">${fNum(margin, 0)}% margin</span>` : ""}</td></tr>`;
   }).join("");
-  const yearTable = years.length ? `<div class="tbl-wrap"><table class="data fy"><thead><tr><th>Year</th><th class="num">Income</th><th class="num">Expenses</th><th class="num">Net</th></tr></thead>
+  const yearTable = years.length ? `<div class="tbl-wrap fin-scroll"><table class="data fy"><thead><tr><th>Year</th><th class="num">Income</th><th class="num">Expenses</th><th class="num">Net</th></tr></thead>
     <tbody>${yrRows}</tbody></table></div>` : '<div class="empty">No yearly figures.</div>';
-  // farm sponsors (moved here from the Overview in 16.8.2): a small list beside the yearly figures
-  const fsp = (more && more.sponsors) || [];
-  const fspNow = fsp.filter((x) => x.current), fspPaid = fsp.reduce((a, x) => a + (x.paid || 0), 0);
-  const sponsorsBox = `<section class="panel cp collapsed fsp" data-cp-panel="fsp"><div class="panel-head"><h2>Farm sponsors</h2><span class="note">${fsp.length ? `${fNum(fspNow.length)} now · ${fMoneyShort(fspPaid)} paid in all` : ""}</span></div>
-    ${fsp.length ? `<ul class="cp-list">${fsp.map((x, i) => `<li class="${i >= 5 ? "cp-more" : ""}"><div><b>${esc(x.brand)}</b>${x.current ? ' <span class="badge good">Now</span>' : ""}
-      <div class="small muted">${esc(x.industry || "")}${x.industry ? " · " : ""}${fMoney(x.monthly)} a month · ${fDate(x.start)}–${x.end ? fDate(x.end) : "now"}</div></div><div class="num small"><b>${fMoneyShort(x.paid)}</b></div></li>`).join("")}</ul>
-      ${fsp.length > 5 ? `<button class="cp-toggle" data-cp="fsp" aria-expanded="false">Show ${fNum(fsp.length - 5)} more ▾</button>` : ""}` : '<div class="empty">No farm sponsors.</div>'}</section>`;
-  html += `<div class="grid fin-yr-row" style="margin-top:16px">${panel("Year by year", yearTable, "▲▼ vs the year before · hover for exact amounts")}
+  html += `<div class="grid cols-2" style="margin-top:16px">${panel("Year by year", yearTable, "▲▼ vs the year before · hover for exact amounts")}
     ${years.length >= 2 ? panel("Income vs expenses by year", lineChart([
       { name: "Income", color: "#1f5240", dots: true, points: years.map((y) => [yearStart(y.year) + YEAR_S / 2, y.income_total]) },
       { name: "Expenses", color: "#c0504d", dots: true, points: years.map((y) => [yearStart(y.year) + YEAR_S / 2, y.expense_total]) },
       { name: "Net", color: "#3e6e9e", dash: true, dots: true, points: years.map((y) => [yearStart(y.year) + YEAR_S / 2, y.net]) }],
       { ...STABLE_LOG, ranges: false, years: true, height: 240, partialYears: Object.fromEntries(years.filter((y) => y.months < 12).map((y) => [y.year, y.months])) }),
-      years.some((y) => y.months < 12) ? "One dot per year · hollow dots are part years" : "One dot per year") : ""}${sponsorsBox}</div>`;
+      years.some((y) => y.months < 12) ? "One dot per year · hollow dots are part years" : "One dot per year") : ""}</div>`;
   html += `<div style="margin-top:16px">${panel("Income by category", finYearTable(years, fin.income_cats || [], "income", "income_total"))}</div>
     <div style="margin-top:16px">${panel("Expenses by category", finYearTable(years, fin.expense_cats || [], "expenses", "expense_total", true), "The game's own expense categories · the detail below breaks them down")}</div>`;
   html += `<div style="margin-top:16px">${panel("Month by month", finMonthly(fin.months || []), "Each month's income and expenses · ▸ shows the categories")}</div>`;
@@ -6889,14 +6910,37 @@ async function stableAuctionsPage(route) {
     ${panel("Bought at auction", table(histCols("seller"), a.bought, { empty: "Nothing bought at auction." }), nH(a.bought.length), "tall")}</div>`;
   return html;
 }
+// 16.8.2: who owns the stable beside everything it owns (other stables' shares, racecourses, auction houses), each with its share:
+// the top of the Ownership & shares tab
+function stableOwnershipRow(d) {
+  const s = d.stable;
+  let html = "";
+  const KIND = { stable: "Stable", course: "Racecourse", house: "Auction house" };
+  const hold = d.holdings || [];
+  const holdLink = (r) => (r.kind === "stable" ? L.stable(r.id, r.name) : r.kind === "course" ? L.course(r.id, r.name) : `<a href="#/auction-house/${r.id}">${esc(r.name)}</a>`);
+  const kinds = [...new Set(hold.map((r) => r.kind))];
+  html += `<div class="grid cols-2">${panel("Owners", table([
+      { h: "Shareholder", f: (r) => (r.kind === "stable" ? `${L.stable(r.id, r.name)} <span class="badge">Stable</span>` : L.person(r.id, r.name)) }, { h: "Shares", cls: "num", f: (r) => fNum(r.shares) },
+      { h: "Stake", cls: "num", f: (r) => (s.stable_total_shares ? ((100 * r.shares) / s.stable_total_shares).toFixed(1) + "%" : "—") },
+    ], d.investors, { empty: "No shareholders.", noOwn: true }), "Its top shareholders")}
+    ${panel("What it owns", hold.length ? table([
+      { h: "Type", f: (r) => `<span class="badge">${KIND[r.kind]}</span>` },
+      { h: "Name", f: (r) => `${holdLink(r)}${r.closed ? ` <span class="badge dead">${r.kind === "stable" ? "Closed" : "Demolished"}</span>` : ""}` },
+      { h: "Owned", cls: "num", f: (r) => (isNum(r.pct) ? `${fNum(r.pct, r.pct >= 99.95 || r.pct < 0.005 ? 0 : r.pct < 10 ? 2 : 1)}%` : "—") },
+      { h: "Shares", cls: "num", f: (r) => (r.kind === "stable" ? fNum(r.shares) : '<span class="muted">—</span>') },
+      { h: "Since", cls: "nowrap", f: (r) => (r.since ? fDate(r.since) : '<span class="muted">—</span>') },
+    ], hold, { noOwn: true }) : '<div class="empty">It doesn\'t own any stables, racecourses or auction houses.</div>',
+      hold.length ? `<span title="Racecourses and auction houses are owned whole; stables by the shares held">${kinds.map((k) => `${fNum(hold.filter((r) => r.kind === k).length)} ${KIND[k].toLowerCase()}${hold.filter((r) => r.kind === k).length === 1 ? "" : "s"}`).join(" · ")}</span>` : "")}</div>`;
+  return html;
+}
 async function stableSharesPage(route) {
   const id = route.parts[1];
   const [d, sh] = await Promise.all([api("stable/" + id), api("stable_shares/" + id)]);
   const of = sh.offerings || [], ofs = sh.offers || [];
   const raised = (o) => (o.claimed || 0) * (o.claim_price || o.price || 0) + (o.market || 0) * (o.price || 0);
   const open = of.filter((o) => o.status === "open");
-  let html = stableHead(d, "shares");
-  html += tiles([
+  let html = stableHead(d, "shares") + stableOwnershipRow(d);
+  html += `<h3 style="margin:18px 0 8px">Its shares</h3>` + tiles([
     ["Share offerings", fNum(of.length), open.length ? `${fNum(open.length)} open now` : "None open now"],
     ["Shares offered", fNum(of.reduce((a, o) => a + (o.offered || 0), 0)), "In all its offerings"],
     ["Raised", fMoneyShort(of.filter((o) => o.status !== "open").reduce((a, o) => a + raised(o), 0)), "From offerings that have closed"],

@@ -2,11 +2,13 @@
   {
     "version": "16.8.2",
     "date": "2026-11-28",
-    "title": "Stables held through a person's stables, and what a stable owns",
+    "title": "Stables held through a person's stables, a stable's ownership, and Financials by years",
     "changes": [
-      "A stable's Overview: Owners (its top shareholders) sits beside a new What it owns box, listing every stable it holds shares in, the racecourses and the auction houses it owns, each with how much of it the stable owns, its shares and since when.",
-      "Staff has moved down beside Facilities.",
-      "Farm sponsors have moved to the stable's Financials tab, as a small list beside the yearly figures (Show more for the rest).",
+      "A stable's Share offerings tab is now Ownership & shares, on every stable: Owners (its top shareholders, people or stables) at the top beside a new What it owns box (every stable it holds shares in, and the racecourses and auction houses it owns, each with how much it owns, the shares and since when), then its own share offerings and investor offers.",
+      "Overview: Staff has moved down beside Facilities; Owners and farm sponsors have moved to other tabs.",
+      "Financials: the top shows whose figures they are. This stable on its own, or with Whole group the stables included (held by more than half) and, listed separately, the stables held by less than half, which aren't added in. Farm sponsors sit beside it as a small list that scrolls.",
+      "Financials: show All years or the last 10, 5, 3, 2 or 1 years for the charts and the yearly tables (Month by month and the payment detail aren't affected). It starts on the same range as Settings → Charts open showing.",
+      "Financials: Year by year and the Income and Expenses by category tables scroll inside themselves instead of growing longer (headings, totals and category names stay in view).",
       "A person's Stables they own has a new Through their stables view: every stable that the stables they hold shares in hold shares in (and those stables' holdings in turn), with the stable holding it, its stake, shares and since when, and what that works out to for the person (their stake in the holder times the holder's stake)."
     ]
   },

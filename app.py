@@ -3980,6 +3980,18 @@ def api_stable(con, sid):
     if len(gids) > 1:
         out["group"] = {"stables": group_list(con, gids), "person": one(con, "select person_person_id as id, person_full_name as name from persons where person_person_id=?",
                                                                              (gperson,)) if gperson else None}
+    # 16.8.2: stables the group (or this stable) holds shares in without a majority: not added into the group's figures
+    out["group_excluded"] = []
+    if has_table(con, "stable_investors"):
+        mem = gids if len(gids) > 1 else [sid]
+        q = ",".join(str(int(i)) for i in mem)
+        out["group_excluded"] = [r for r in rows(con, """select i.investor_stable_id as id, s.stable_name as name, i.investor_holder_stable_id as holder_id,
+                h.stable_name as holder, sum(i.investor_shares_owned) as shares, s.stable_total_shares as total, s.stable_liquidated as closed
+                from stable_investors i join stables s on s.stable_stable_id=i.investor_stable_id left join stables h on h.stable_stable_id=i.investor_holder_stable_id
+                where i.investor_holder_stable_id in (%s) and i.investor_stable_id not in (%s) group by 1, 3 having sum(i.investor_shares_owned) > 0""" % (q, q))]
+        for r in out["group_excluded"]:
+            r["pct"] = 100.0 * r["shares"] / r["total"] if r["total"] else None
+        out["group_excluded"].sort(key=lambda r: -(r["pct"] or 0))
     out["recent_results"] = rows(con, """select r.race_result_date as date, r.race_result_rank as rank, r.race_result_cash_received as prize,
         r.race_result_horse_id as horse_id, h.horse_name as horse, r.race_result_race_id as race_id, x.races_race_name as race_name,
         x.races_type_of_race as race_type, r.race_result_person_jockey_id as jockey_id, j.person_full_name as jockey
