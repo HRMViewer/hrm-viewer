@@ -3280,29 +3280,64 @@ async function horseRacesPage(id) {
   ].concat(anyRevealed ? [{ h: "Speed shown", cls: "num", f: (s) => (isNum(s.speed) ? fNum(s.speed, 1) : "—") }, { h: "Stamina shown", cls: "num", f: (s) => (isNum(s.stamina) ? fNum(s.stamina, 1) : "—") }] : [])
     .concat(anyHarness ? [{ h: "Harness", f: (s) => (s.harness ? "Yes" : "No") }] : []), sess),
     "A session is a day at one course · places are against every horse timed there that day at the same distance")}</div>`;
-  // its time at every distance, session by session (newest on the left), then its average, slowest and best time there
-  // (over every session, not just the ones shown; its best is underlined in gold), then (16.8.4) how its best compares with
-  // every horse's trials at that distance (the game's average, best and slowest) and its best race time there
-  const cols = sess.slice(0, 8), dists = [...new Set(tr.map((x) => x.distance))].sort((a, b) => a - b);
-  const G = t.game || {}, RB = t.race || {}, gk = (dist) => String(+dist);
-  const anyRace = dists.some((dist) => RB[gk(dist)]);
-  const cell = (s, dist) => s.runs.find((x) => x.distance === dist);
-  const timesAt = new Map(dists.map((dist) => [dist, tr.filter((x) => x.distance === dist && x.time > 0).map((x) => x.time)]));
-  const kmh = (dist, t) => fSpeed((dist / t) * 3.6);
-  const sumCell = (dist, t, cls) => (isNum(t) && isFinite(t) ? `<td class="num ${cls || ""}" data-sv="${t}"><b>${fTime(t)}</b><div class="tr-sub">${kmh(dist, t)}</div></td>` : `<td class="num muted ${cls || ""}" data-sv="">—</td>`);
-  // the gap to a time: faster (minus) in green, slower in orange
+  // Trial times by distance (16.8.5: drawn by trGridHtml so the sessions shown and what it's compared with switch in place)
+  const allDists = [...new Set(tr.map((x) => x.distance))].sort((a, b) => a - b);
+  const trKey = "hrm.trDist." + h.horse_horse_id, viewKey = "hrm.trView." + h.horse_horse_id;
+  let trSaved = null, view = null;
+  try { trSaved = JSON.parse(localStorage.getItem(trKey) || "null"); view = JSON.parse(localStorage.getItem(viewKey) || "null"); } catch (e) { /* none */ }
+  const pick = view && Array.isArray(view.s) ? sess.filter((x) => view.s.includes(x.key)) : [];
+  TR_VIEW = { sess, tr, t, h, viewKey, picked: new Set((pick.length ? pick : sess.slice(0, 8)).map((x) => x.key)), scope: (view && view.scope) || "all" };
+  const dFrom = trSaved && allDists.includes(trSaved[0]) ? trSaved[0] : allDists[0], dTo = trSaved && allDists.includes(trSaved[1]) ? trSaved[1] : allDists[allDists.length - 1];
+  const dOpt = (sel) => allDists.map((x) => `<option value="${x}" ${x === sel ? "selected" : ""}>${fDist(x)}</option>`).join("");
+  const filterBar = `<div class="tr-filter" data-trkey="${trKey}">${allDists.length > 1 ? `<span class="small"><b>Distance</b></span>
+    <select data-trd="from" aria-label="From distance">${dOpt(dFrom)}</select><span class="small muted">to</span><select data-trd="to" aria-label="To distance">${dOpt(dTo)}</select>
+    <button class="btn sm" data-trd-all>All distances</button><span class="small muted tr-fn"></span>
+    <span class="small muted">· picks the rows here and in Every trial run below</span>` : ""}</div>`;
+  const sessBar = `<div class="tr-sess"><span class="small"><b>Sessions</b></span><span class="tr-chips">${sess.map((x) => `<button class="tr-chip ${TR_VIEW.picked.has(x.key) ? "on" : ""}" data-trs="${esc(x.key)}" title="${esc(`${x.course || ""} · ${x.track || ""}`)}">${fDate(x.date)} <span class="muted">${esc(x.course || "")}</span></button>`).join("")}</span>
+    ${sess.length > 1 ? `<button class="btn sm" data-trs-set="latest">Latest 8</button><button class="btn sm" data-trs-set="all">All ${fNum(sess.length)}</button>` : ""}</div>`;
+  const scopeBar = `<div class="tr-sess"><span class="small"><b>Compare with</b></span><div class="seg tr-scope">${[["track", "Same track"], ["course", "Same racecourse"], ["all", "All racecourses"]].map(([k, n]) =>
+    `<button data-trscope="${k}" class="${TR_VIEW.scope === k ? "on" : ""}">${n}</button>`).join("")}</div><span class="small muted tr-scope-n"></span></div>`;
+  html += `<div style="margin-top:16px">${panel("Trial times by distance", `${filterBar}${sessBar}${scopeBar}<div id="tr-grid">${trGridHtml()}</div>`, `${fNum(sess.length)} session${sess.length === 1 ? "" : "s"}`)}</div>`;
+  html += `<div style="margin-top:16px">${panel("Every trial run", table(trialCols({ course: true, revealed: anyRevealed }), tr, { rowClass: (x) => `trd-${String(x.distance).replace(".", "_")}` }),
+    `${fNum(tr.length)} timed runs · the game keeps each run's finishing time only, not splits`, "tall")}</div>`;
+  return html;
+}
+// 16.8.5: a horse's Trial times by distance: its time at every distance in the sessions you pick (newest on the left), its own
+// average, slowest and best over those sessions (gold underlines its best), its best race time there, and how its best compares
+// with every horse's trials at that distance: on the same track, at the same racecourse, or at every racecourse
+let TR_VIEW = null;
+function trGridHtml() {
+  const V = TR_VIEW, { h, t } = V, sel = V.sess.filter((x) => V.picked.has(x.key));
+  if (!sel.length) return '<div class="empty">Pick at least one session above.</div>';
+  const runs = sel.flatMap((x) => x.runs), dists = [...new Set(runs.map((x) => x.distance))].sort((a, b) => a - b);
+  const RB = t.race || {}, gk = (dist) => String(+dist), anyRace = dists.some((dist) => RB[gk(dist)]);
+  // what "all" means: the tracks or racecourses of the sessions picked, or everywhere
+  const places = new Set(sel.map((x) => V.scope === "track" ? `${x.course_id}|${x.track}` : `${x.course_id}`));
+  const inScope = (g) => V.scope === "all" || places.has(V.scope === "track" ? `${g.c}|${g.t}` : `${g.c}`);
+  const groups = (t.groups || []).filter(inScope);
+  const stat = (dist) => {
+    const gs = groups.filter((g) => +g.d === +dist);
+    if (!gs.length) return null;
+    const n = gs.reduce((a, g) => a + g.n, 0), best = gs.reduce((a, g) => (g.min < a.min ? g : a));
+    return { n, avg: gs.reduce((a, g) => a + g.sum, 0) / n, best: best.min, best_horse_id: best.best_horse_id, best_horse: best.best_horse,
+      slowest: Math.max(...gs.map((g) => g.max)), horses: gs.length === 1 ? gs[0].horses : V.scope === "all" && (t.game || {})[gk(dist)] ? t.game[gk(dist)].horses : null };
+  };
+  const timesAt = new Map(dists.map((dist) => [dist, runs.filter((x) => x.distance === dist && x.time > 0).map((x) => x.time)]));
+  const kmh = (dist, tm) => fSpeed((dist / tm) * 3.6);
+  const sumCell = (dist, tm, cls) => (isNum(tm) && isFinite(tm) ? `<td class="num ${cls || ""}" data-sv="${tm}"><b>${fTime(tm)}</b><div class="tr-sub">${kmh(dist, tm)}</div></td>` : `<td class="num muted ${cls || ""}" data-sv="">—</td>`);
   const vsCell = (mine, ref, what) => (isNum(mine) && isNum(ref) ? `<td class="num" data-sv="${mine - ref}"><span class="tr-vs ${mine - ref <= 0 ? "good" : "bad"}" data-tip="Its best ${fTime(mine)} against ${what} ${fTime(ref)}">${mine - ref <= 0 ? "−" : "+"}${Math.abs(mine - ref).toFixed(2)}</span></td>` : `<td class="num muted" data-sv="">—</td>`);
-  const head = `<tr><th class="num" data-cid="Distance">Distance</th>${cols.map((s, i) => `<th class="num" data-cid="Session ${i + 1}">${fDate(s.date)}<div class="muted small tr-sub">${esc(s.course || "")}</div></th>`).join("")}
-    <th class="num tr-sum" data-tip="Its own average time at this distance, over every session">Its average</th><th class="num" data-tip="Its own slowest time at this distance">Its slowest</th><th class="num" data-tip="Its own best time at this distance">Its best</th>
+  const where = V.scope === "track" ? "on the same track" : V.scope === "course" ? "at the same racecourse" : "at every racecourse";
+  const head = `<tr><th class="num" data-cid="Distance">Distance</th>${sel.map((x, i) => `<th class="num" data-cid="Session ${i + 1}">${fDate(x.date)}<div class="muted small tr-sub">${esc(x.course || "")}</div></th>`).join("")}
+    <th class="num tr-sum" data-tip="Its own average time at this distance, in the sessions picked">Its average</th><th class="num" data-tip="Its own slowest time at this distance, in the sessions picked">Its slowest</th><th class="num" data-tip="Its own best time at this distance, in the sessions picked">Its best</th>
     ${anyRace ? `<th class="num" data-tip="Its best time in a race over exactly this distance">Best in a race</th>` : ""}
-    <th class="num tr-g" data-tip="Its best against the average of every horse's trial times at this distance: minus is faster">vs all: average</th>
-    <th class="num tr-g" data-tip="Its best against the fastest trial time any horse has run at this distance: minus is faster">vs all: best</th>
-    <th class="num tr-g" data-tip="The average of every horse's trial times at this distance">All: average</th><th class="num tr-g" data-tip="The fastest trial time any horse has run at this distance">All: best</th><th class="num tr-g" data-tip="The slowest trial time any horse has run at this distance">All: slowest</th></tr>`;
+    <th class="num tr-g" data-tip="Its best against the average of every horse's trial times at this distance ${where}: minus is faster">vs all: average</th>
+    <th class="num tr-g" data-tip="Its best against the fastest trial time any horse has run at this distance ${where}: minus is faster">vs all: best</th>
+    <th class="num tr-g" data-tip="The average of every horse's trial times at this distance ${where}">All: average</th><th class="num tr-g" data-tip="The fastest trial time any horse has run at this distance ${where}">All: best</th><th class="num tr-g" data-tip="The slowest trial time any horse has run at this distance ${where}">All: slowest</th></tr>`;
   const body = dists.map((dist) => {
-    const ts = timesAt.get(dist), best = ts.length ? Math.min(...ts) : null, worst = ts.length ? Math.max(...ts) : null, avg = ts.length ? ts.reduce((a, t) => a + t, 0) / ts.length : null;
-    const g = G[gk(dist)] || {}, rb = RB[gk(dist)];
-    return `<tr data-dist="${dist}"><td class="num" data-sv="${dist}"><b>${fDist(dist)}</b></td>${cols.map((s) => {
-      const x = cell(s, dist);
+    const ts = timesAt.get(dist), best = ts.length ? Math.min(...ts) : null, worst = ts.length ? Math.max(...ts) : null, avg = ts.length ? ts.reduce((a, x) => a + x, 0) / ts.length : null;
+    const g = stat(dist) || {}, rb = RB[gk(dist)];
+    return `<tr data-dist="${dist}"><td class="num" data-sv="${dist}"><b>${fDist(dist)}</b></td>${sel.map((s) => {
+      const x = s.runs.find((r) => r.distance === dist);
       if (!x || !(x.time > 0)) return `<td class="num muted" data-sv="">—</td>`;
       const gap = isNum(x.best) && x.time > x.best ? `+${(x.time - x.best).toFixed(2)}s` : "fastest";
       const isBest = x.time === best && ts.length > 1;
@@ -3311,29 +3346,46 @@ async function horseRacesPage(id) {
     }).join("")}${sumCell(dist, avg, "tr-sum")}${sumCell(dist, ts.length > 1 ? worst : null)}${sumCell(dist, best)}
       ${anyRace ? (rb ? `<td class="num" data-sv="${rb.best}"><b>${fTime(rb.best)}</b><div class="tr-sub">${fNum(rb.n)} race${rb.n === 1 ? "" : "s"}</div></td>` : `<td class="num muted" data-sv="">—</td>`) : ""}
       ${vsCell(best, g.avg, "the average of")}${vsCell(best, g.best, "the fastest,")}
-      <td class="num tr-g" data-sv="${isNum(g.avg) ? g.avg : ""}">${isNum(g.avg) ? `${fTime(g.avg)}<div class="tr-sub">${fNum(g.n)} run${g.n === 1 ? "" : "s"} · ${fNum(g.horses)} horse${g.horses === 1 ? "" : "s"}</div>` : "—"}</td>
+      <td class="num tr-g" data-sv="${isNum(g.avg) ? g.avg : ""}">${isNum(g.avg) ? `${fTime(g.avg)}<div class="tr-sub">${fNum(g.n)} run${g.n === 1 ? "" : "s"}${isNum(g.horses) ? ` · ${fNum(g.horses)} horse${g.horses === 1 ? "" : "s"}` : ""}</div>` : "—"}</td>
       <td class="num tr-g" data-sv="${isNum(g.best) ? g.best : ""}">${isNum(g.best) ? `${fTime(g.best)}<div class="tr-sub">${g.best_horse_id ? (g.best_horse_id === h.horse_horse_id ? "this horse" : L.horse(g.best_horse_id, g.best_horse)) : ""}</div>` : "—"}</td>
       <td class="num tr-g" data-sv="${isNum(g.slowest) ? g.slowest : ""}">${isNum(g.slowest) ? fTime(g.slowest) : "—"}</td></tr>`;
   }).join("");
-  // the distance filter: one distance or a range (it applies to this table and to Every trial run, and is remembered for the horse)
-  const trKey = "hrm.trDist." + h.horse_horse_id;
-  let trSaved = null; try { trSaved = JSON.parse(localStorage.getItem(trKey) || "null"); } catch (e) { /* none */ }
-  const dFrom = trSaved && dists.includes(trSaved[0]) ? trSaved[0] : dists[0], dTo = trSaved && dists.includes(trSaved[1]) ? trSaved[1] : dists[dists.length - 1];
-  const dOpt = (sel) => dists.map((x) => `<option value="${x}" ${x === sel ? "selected" : ""}>${fDist(x)}</option>`).join("");
-  const filterBar = dists.length > 1 ? `<div class="tr-filter" data-trkey="${trKey}"><span class="small"><b>Distance</b></span>
-    <select data-trd="from" aria-label="From distance">${dOpt(dFrom)}</select><span class="small muted">to</span><select data-trd="to" aria-label="To distance">${dOpt(dTo)}</select>
-    <button class="btn sm" data-trd-all>All distances</button><span class="small muted tr-fn"></span>
-    <span class="small muted">· picks the rows here and in Every trial run below</span></div>` : "";
-  html += `<div style="margin-top:16px">${panel("Trial times by distance", `${filterBar}<div class="wide-wrap"><table class="data wide tr-grid"><thead>${head}</thead><tbody>${body}</tbody></table></div>
-    <div class="legend">${sess.length > 1 ? `<span><i class="tr-key best"></i>Its best time at that distance</span>` : ""}<span>Under each time: its place among the horses timed with it, and how far behind the fastest</span><span>Its average, slowest and best: its own times at that distance, over every session</span>
-      <span><span class="tr-vs good">−1.20</span> <span class="tr-vs bad">+0.80</span> its best against every horse's trials at that distance (seconds; minus is faster)</span><span>All: every horse's trial times at that distance, in this save</span></div>`,
-    sess.length > cols.length ? `Latest ${cols.length} of ${sess.length} sessions shown · its average, slowest and best cover all ${sess.length}` : `${fNum(sess.length)} session${sess.length === 1 ? "" : "s"}`)}</div>`;
-  html += `<div style="margin-top:16px">${panel("Every trial run", table(trialCols({ course: true, revealed: anyRevealed }), tr, { rowClass: (x) => `trd-${String(x.distance).replace(".", "_")}` }),
-    `${fNum(tr.length)} timed runs · the game keeps each run's finishing time only, not splits`, "tall")}</div>`;
-  return html;
+  const placeNames = [...new Map(sel.map((x) => [V.scope === "track" ? `${x.course_id}|${x.track}` : x.course_id, V.scope === "track" ? `${x.course || ""} ${x.track || ""}` : x.course || ""])).values()];
+  return `<div class="wide-wrap"><table class="data wide tr-grid"><thead>${head}</thead><tbody>${body}</tbody></table></div>
+    <div class="legend">${sel.length > 1 ? `<span><i class="tr-key best"></i>Its best time at that distance</span>` : ""}<span>Under each time: its place among the horses timed with it, and how far behind the fastest</span><span>Its average, slowest and best: its own times in the sessions picked</span>
+      <span><span class="tr-vs good">−1.20</span> <span class="tr-vs bad">+0.80</span> its best against every horse's trials at that distance (seconds; minus is faster)</span>
+      <span>All: every horse's trial times at that distance ${V.scope === "all" ? "at every racecourse in this save" : esc(`at ${placeNames.join(", ")}`)}</span></div>`;
 }
+function trRedraw() {
+  const box = document.getElementById("tr-grid");
+  if (!box || !TR_VIEW) return;
+  // the old table's search, CSV and Reset columns buttons go with it (the new table gets its own)
+  const pnl = box.closest(".panel");
+  if (pnl) pnl.querySelectorAll(":scope > .panel-head .tbl-tools, :scope > .panel-head .btn-csv, :scope > .panel-head .cl-reset, .csv-bar").forEach((x) => x.remove());
+  box.innerHTML = trGridHtml();
+  try { localStorage.setItem(TR_VIEW.viewKey, JSON.stringify({ s: [...TR_VIEW.picked], scope: TR_VIEW.scope })); } catch (e) { /* this visit only */ }
+  const bar = document.querySelector(".tr-filter");
+  if (bar && bar.querySelector("[data-trd]")) trFilterApply(bar);
+}
+document.addEventListener("click", (e) => {
+  const c = e.target.closest && e.target.closest("[data-trs], [data-trs-set], [data-trscope]");
+  if (!c || !TR_VIEW) return;
+  if (c.dataset.trscope) {
+    TR_VIEW.scope = c.dataset.trscope;
+    c.parentElement.querySelectorAll("button").forEach((b) => b.classList.toggle("on", b === c));
+  } else if (c.dataset.trsSet) {
+    TR_VIEW.picked = new Set((c.dataset.trsSet === "all" ? TR_VIEW.sess : TR_VIEW.sess.slice(0, 8)).map((x) => x.key));
+    document.querySelectorAll("[data-trs]").forEach((b) => b.classList.toggle("on", TR_VIEW.picked.has(b.dataset.trs)));
+  } else {
+    const k = c.dataset.trs;
+    if (TR_VIEW.picked.has(k)) TR_VIEW.picked.delete(k); else TR_VIEW.picked.add(k);
+    c.classList.toggle("on", TR_VIEW.picked.has(k));
+  }
+  trRedraw();
+});
 // 16.8.4: the trial distance filter (one distance, or from–to)
 function trFilterApply(bar) {
+  if (!bar || !bar.querySelector("[data-trd=from]")) return;
   const f = +bar.querySelector("[data-trd=from]").value, tt = +bar.querySelector("[data-trd=to]").value, lo = Math.min(f, tt), hi = Math.max(f, tt);
   let shown = 0, all = 0;
   document.querySelectorAll("table.tr-grid tbody tr[data-dist]").forEach((tr) => { const d = +tr.dataset.dist, ok = d >= lo && d <= hi; tr.hidden = !ok; all++; if (ok) shown++; });

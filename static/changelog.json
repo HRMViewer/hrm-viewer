@@ -1,5 +1,15 @@
 [
   {
+    "version": "16.8.5",
+    "date": "2026-11-28",
+    "title": "Trial times: pick the sessions, and what they're compared with",
+    "changes": [
+      "Trial times by distance: Sessions lists every trial session; click one to show or hide its column (Latest 8 and All put them back). Its average, slowest and best are worked out from the sessions picked, and only distances run in those sessions are listed.",
+      "Compare with: Same track, Same racecourse or All racecourses decides which trials the All: average, best and slowest (and the vs all columns) are worked out from: every horse's trials at that distance on the tracks or at the racecourses of the sessions picked, or everywhere.",
+      "Both are remembered for each horse, with the distance filter, and switch straight away without reloading the page."
+    ]
+  },
+  {
     "version": "16.8.4",
     "date": "2026-11-28",
     "title": "Trial times: a distance filter, and how they compare with every horse",

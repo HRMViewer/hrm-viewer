@@ -1700,3 +1700,11 @@ table.data.cl-fixed td, table.data.cl-fixed th { overflow: hidden; text-overflow
 html.dark .tr-vs.good { background: rgba(46,190,120,.22); color: #7ee2b0; }
 html.dark .tr-vs.bad { background: rgba(245,140,60,.22); color: #f7b27a; }
 table.tr-grid td.tr-g, table.tr-grid th.tr-g { background: rgba(62,110,158,.05); }
+
+/* 16.8.5: pick a horse's trial sessions, and what its times are compared with */
+.tr-sess { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 0 0 10px; }
+.tr-chips { display: flex; gap: 6px; flex-wrap: wrap; max-height: 74px; overflow: auto; }
+.tr-chip { font: inherit; font-size: var(--fs-sm); padding: 3px 10px; border: 1px solid var(--line); border-radius: 999px; background: var(--panel); color: inherit; cursor: pointer; }
+.tr-chip.on { background: var(--blue); border-color: var(--blue); color: #fff; }
+.tr-chip.on .muted { color: rgba(255,255,255,.8); }
+.tr-sess .seg { margin: 0; }
