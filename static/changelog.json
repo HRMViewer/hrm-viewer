@@ -1,5 +1,16 @@
 [
   {
+    "version": "16.8.0",
+    "date": "2026-11-28",
+    "title": "Move and resize columns, Custom tables, Settings in a new order",
+    "changes": [
+      "Every table: drag a column heading left or right to move the column (a blue line shows where it will go), and drag the right edge of a heading to make the column wider or narrower; double-click the edge for its natural width.",
+      "Each table remembers its column order, widths and the sort you last picked, so a horse's trials can always open from the first trial to the most recent. The same table on every horse, race or racecourse shares one layout. Reset columns, by the table's CSV button, puts a table back; Settings → General → Pages & tables → Reset all tables puts every table back.",
+      "Settings tabs are now in this order: General, Database, Versions & changes, Tags, Shortcuts, All tables, Custom tables.",
+      "New Custom tables tab: build your own tables. Pick what each row is (horses, race results, races, stables, people, trials, auction sales or payments), the columns and their order, filters (such as Grade is G1, a date on or after a day, or a stable that is one of yours) and the sort, with a live preview. Saved tables are listed on the tab and open with paging, sorting by heading, movable columns and CSV. A few ready-made ideas to start from, such as your horses' trials from first to last."
+    ]
+  },
+  {
     "version": "16.7.18",
     "date": "2026-11-28",
     "title": "Racecourse income and expenses in detail",

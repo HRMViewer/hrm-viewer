@@ -1623,3 +1623,47 @@ html.hdr-light .topbar .btn.hdr-btn.has-new { color: #fff; }
 .bk-net { display: flex; justify-content: space-between; align-items: baseline; margin-top: 14px; padding: 10px 12px; border-radius: 8px; background: #f4f6fa; font-weight: 600; }
 .bk-net b { font-size: var(--fs-lg); }
 @media (max-width: 1100px) { .bk-cols { grid-template-columns: 1fr; } }
+
+/* 16.8: move and resize table columns */
+table.data > thead th { position: relative; }
+table.data .cl-rs { position: absolute; top: 0; right: 0; width: 8px; height: 100%; cursor: col-resize; z-index: 3; touch-action: none; }
+table.data .cl-rs::after { content: ""; position: absolute; right: 3px; top: 22%; bottom: 22%; width: 1px; background: transparent; }
+table.data > thead th:hover .cl-rs::after { background: #c3ccd9; }
+table.data .cl-rs:hover::after, body.cl-sizing .cl-rs:hover::after { background: var(--blue); width: 2px; }
+table.data.cl-move > thead th[data-cid] { touch-action: pan-y; }
+body.cl-moving, body.cl-moving * { cursor: grabbing !important; user-select: none !important; }
+body.cl-sizing, body.cl-sizing * { cursor: col-resize !important; user-select: none !important; }
+table.data > thead th.cl-dragging { opacity: .4; }
+.cl-mark { position: fixed; width: 3px; background: var(--blue); z-index: 200; pointer-events: none; border-radius: 2px; box-shadow: 0 0 0 2px rgba(31,94,220,.15); }
+.cl-ghost { position: fixed; z-index: 201; pointer-events: none; background: var(--header); color: #fff; padding: 4px 10px; border-radius: 6px; font-size: var(--fs-sm); font-weight: 600; box-shadow: 0 4px 14px rgba(0,0,0,.22); white-space: nowrap; }
+table.data.cl-fixed { table-layout: fixed; }
+table.data.cl-fixed td, table.data.cl-fixed th { overflow: hidden; text-overflow: ellipsis; }
+.btn.cl-reset { margin-right: 6px; }
+.csv-bar .btn.cl-reset:last-child { margin-right: 0; }
+
+/* 16.8: Settings → Custom tables */
+.ct-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; }
+.ct-card { display: flex; flex-direction: column; gap: 3px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); color: inherit; text-decoration: none; }
+.ct-card:hover { border-color: var(--blue); box-shadow: 0 2px 8px rgba(10,26,59,.07); }
+.ct-card b { color: var(--blue); }
+.ct-card.ghost { background: #f7f9fc; border-style: dashed; }
+.ct-builder { display: grid; grid-template-columns: 360px minmax(0, 1fr); gap: 16px; align-items: start; }
+@media (max-width: 1000px) { .ct-builder { grid-template-columns: 1fr; } }
+.ct-side { position: sticky; top: 112px; max-height: calc(100vh - 124px); overflow: auto; }
+.ct-form { display: flex; flex-direction: column; gap: 14px; }
+.ct-l { display: flex; flex-direction: column; gap: 6px; font-weight: 600; font-size: var(--fs-sm); }
+.ct-l .small { font-weight: 400; }
+.ct-l input[type=text], .ct-l select, .ct-f input, .ct-f select, .ct-row select { font: inherit; font-weight: 400; padding: 6px 8px; border: 1px solid var(--line); border-radius: 7px; background: #fff; min-width: 0; }
+.ct-cols { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; counter-reset: ctc; }
+.ct-cols li { display: flex; align-items: center; justify-content: space-between; gap: 6px; padding: 4px 6px 4px 10px; border: 1px solid var(--line); border-radius: 7px; background: #fafbfd; font-weight: 400; }
+.ct-cols li::before { counter-increment: ctc; content: counter(ctc); color: var(--muted); font-size: var(--fs-xs); width: 16px; }
+.ct-cols li > span:first-of-type { flex: 1; }
+.ct-acts { display: flex; gap: 3px; }
+.ct-acts .btn.sm { padding: 1px 7px; min-width: 0; }
+.ct-filters { display: flex; flex-direction: column; gap: 6px; }
+.ct-f { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) minmax(0, 1fr) auto; gap: 4px; align-items: center; font-weight: 400; }
+.ct-row { display: flex; gap: 6px; font-weight: 400; }
+.ct-row select { flex: 1; }
+.ct-btns { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.ct-btns .grow { flex: 1; }
+#ct-prev.dim { opacity: .55; transition: opacity .15s; }

@@ -6027,6 +6027,439 @@ def api_table(con, name, q):
     return {"name": name, "columns": cols, "rows": out_rows, "total": total, "page": page, "page_size": size}
 
 
+# --------------------------------------------------------------------------- Custom tables (16.8)
+# Tables you build yourself in Settings → Custom tables: pick what each row is (a horse, a race run, a sale…), the columns,
+# filters and the sort. The definitions are kept in config.json; only the fields listed here can be asked for, and every
+# value you type goes in as a parameter.
+CT_Y = "cast((%s - {base}) / 31556952 as int)"
+# (key, label, expression, kind, group[, id expression for links])
+CT_SOURCES = {
+    "horses": {
+        "label": "Horses", "about": "One row per horse.",
+        "base": "horses h",
+        "joins": [
+            ("hs", "left join hrmv_horse_stats hs on hs.horse_id=h.horse_horse_id"),
+            ("st", "left join stables st on st.stable_stable_id=h.horse_stable_id and h.horse_stable_id>0"),
+            ("si", "left join horses si on si.horse_horse_id=h.horse_breeding_parent_stallion_id"),
+            ("da", "left join horses da on da.horse_horse_id=h.horse_breeding_parent_mare_id"),
+            ("tr", "left join persons tr on tr.person_person_id=h.horse_trainer_id"),
+            ("jk", "left join persons jk on jk.person_person_id=h.horse_prefered_jockey_id"),
+        ],
+        "fields": [
+            ("name", "Horse", "h.horse_name", "horse", "Horse", "h.horse_horse_id"),
+            ("age", "Age", "cast(({gd} - h.horse_birth_date) / 31556952 as int)", "int", "Horse"),
+            ("sex", "Sex", "case when h.horse_castrated in (1,'1','true') then 'Gelding' else h.horse_sex end", "text", "Horse"),
+            ("born", "Foaled", "h.horse_birth_date", "date", "Horse"),
+            ("died", "Died", "h.horse_deceased_date", "date", "Horse"),
+            ("alive", "Alive", "(h.horse_deceased_date is null)", "bool", "Horse"),
+            ("breed", "Breed", "h.horse_breed", "text", "Horse"),
+            ("colour", "Colour", "h.horse_color", "text", "Horse"),
+            ("height", "Height", "h.horse_height", "height", "Horse"),
+            ("weight", "Weight", "h.horse_weight", "weight", "Horse"),
+            ("stable", "Stable", "st.stable_name", "stable", "Connections", "st.stable_stable_id"),
+            ("trainer", "Trainer", "tr.person_full_name", "person", "Connections", "tr.person_person_id"),
+            ("jockey", "Preferred jockey", "jk.person_full_name", "person", "Connections", "jk.person_person_id"),
+            ("sire", "Sire", "si.horse_name", "horse", "Pedigree", "si.horse_horse_id"),
+            ("dam", "Dam", "da.horse_name", "horse", "Pedigree", "da.horse_horse_id"),
+            ("starts", "Starts", "coalesce(hs.starts, 0)", "int", "Racing record"),
+            ("wins", "Wins", "coalesce(hs.wins, 0)", "int", "Racing record"),
+            ("seconds", "Seconds", "coalesce(hs.seconds, 0)", "int", "Racing record"),
+            ("thirds", "Thirds", "coalesce(hs.thirds, 0)", "int", "Racing record"),
+            ("winpct", "Win %", "(case when hs.starts > 0 then 1.0 * hs.wins / hs.starts end)", "pct", "Racing record"),
+            ("prize", "Prize money", "coalesce(hs.prize, 0)", "money", "Racing record"),
+            ("g1", "G1 wins", "coalesce(hs.g1, 0)", "int", "Racing record"),
+            ("g2", "G2 wins", "coalesce(hs.g2, 0)", "int", "Racing record"),
+            ("g3", "G3 wins", "coalesce(hs.g3, 0)", "int", "Racing record"),
+            ("listed", "Listed wins", "coalesce(hs.listed, 0)", "int", "Racing record"),
+            ("stakes", "Stakes wins", "coalesce(hs.stakes_wins, 0)", "int", "Racing record"),
+            ("best", "Best race rating", "hs.best_rating", "num", "Racing record"),
+            ("first_run", "First start", "hs.first_run", "date", "Racing record"),
+            ("last_run", "Last start", "hs.last_run", "date", "Racing record"),
+            ("rating", "Rating", "h.horse_international_rating", "num", "Ability"),
+            ("peak_rating", "Peak rating", "h.horse_peak_rating", "num", "Ability"),
+            ("ability", "Ability index", "h.horse_ability_index", "num", "Ability"),
+            ("max_ability", "Potential ability", "h.horse_max_ability_index", "num", "Ability"),
+            ("speed", "Speed", "h.horse_speed", "num", "Ability"),
+            ("max_speed", "Speed potential", "h.horse_max_speed", "num", "Ability"),
+            ("stamina", "Stamina", "h.horse_stamina", "num", "Ability"),
+            ("max_stamina", "Stamina potential", "h.horse_max_stamina", "num", "Ability"),
+            ("acceleration", "Acceleration", "h.horse_acceleration", "num", "Ability"),
+            ("max_acceleration", "Acceleration potential", "h.horse_max_acceleration", "num", "Ability"),
+            ("strength", "Strength", "h.horse_strength", "num", "Ability"),
+            ("max_strength", "Strength potential", "h.horse_max_strength", "num", "Ability"),
+            ("distance_pref", "Distance preference", "h.horse_distance_preference", "text", "Ability"),
+            ("form", "Form", "h.horse_form", "text", "Ability"),
+            ("temperament", "Temperament", "h.horse_temperament", "num", "Mind & health"),
+            ("intelligence", "Intelligence", "h.horse_intelligence", "num", "Mind & health"),
+            ("sociability", "Sociability", "h.horse_sociability", "num", "Mind & health"),
+            ("experience", "Experience", "h.horse_experience", "num", "Mind & health"),
+            ("condition", "Condition", "h.horse_condition", "num", "Mind & health"),
+            ("health_risk", "Health risk", "h.horse_health_risk", "num", "Mind & health"),
+            ("value", "Value", "h.horse_value_calculated", "money", "Money"),
+            ("earnings", "Career earnings (game)", "h.horse_career_earnings", "money", "Money"),
+            ("fame", "Fame", "h.horse_fame_calculated", "num", "Money"),
+            ("stud_fee", "Stud fee", "h.horse_stud_fee", "money", "Money"),
+            ("for_sale", "For sale", "(h.horse_for_sale_date is not null)", "bool", "Money"),
+            ("at_stud", "At stud", "(h.horse_stud_date is not null)", "bool", "Breeding"),
+            ("in_foal", "In foal", "(h.horse_is_pregnant in (1,'1','true'))", "bool", "Breeding"),
+            ("foals", "Foals", "(select count(*) from horses o where o.horse_breeding_parent_stallion_id=h.horse_horse_id or o.horse_breeding_parent_mare_id=h.horse_horse_id)", "int", "Breeding"),
+        ],
+        "default": ["name", "age", "sex", "stable", "starts", "wins", "prize", "g1", "rating"],
+        "sort": ["prize", "desc"],
+    },
+    "results": {
+        "label": "Race results", "about": "One row per runner in a race: every start by every horse.",
+        "base": "race_results r",
+        "joins": [
+            ("x", "left join races x on x.races_race_id=r.race_result_race_id"),
+            ("d", "left join race_days d on d.raceday_race_day_id=x.races_race_day_id"),
+            ("c", "left join racecourses c on c.racecourse_racecourse_id=r.race_result_racecourse_id"),
+            ("h", "left join horses h on h.horse_horse_id=r.race_result_horse_id"),
+            ("j", "left join persons j on j.person_person_id=r.race_result_person_jockey_id"),
+            ("t", "left join persons t on t.person_person_id=r.race_result_trainer_id"),
+            ("s", "left join stables s on s.stable_stable_id=r.race_result_stable_id and r.race_result_stable_id>0"),
+        ],
+        "fields": [
+            ("date", "Date", "r.race_result_date", "date", "Race"),
+            ("race", "Race", "x.races_race_name", "race", "Race", "r.race_result_race_id"),
+            ("course", "Racecourse", "c.racecourse_name", "course", "Race", "c.racecourse_racecourse_id"),
+            ("country", "Country", "c.racecourse_location_country", "text", "Race"),
+            ("grade", "Grade", "x.races_type_of_race", "grade", "Race"),
+            ("distance", "Distance", "x.races_distance", "dist", "Race"),
+            ("track", "Track", "x.races_track", "text", "Race"),
+            ("purse", "Purse", "x.races_prize_money_total", "money", "Race"),
+            ("weather", "Weather", "d.raceday_weather_condition", "text", "Race"),
+            ("horse", "Horse", "h.horse_name", "horse", "Runner", "r.race_result_horse_id"),
+            ("pos", "Position", "r.race_result_rank", "int", "Runner"),
+            ("won", "Won", "(r.race_result_rank = 1)", "bool", "Runner"),
+            ("time", "Time", "r.race_result_time", "racetime", "Runner"),
+            ("odds", "Odds", "r.race_result_win_odds", "odds", "Runner"),
+            ("barrier", "Barrier", "r.race_result_starting_position", "int", "Runner"),
+            ("style", "Running style", "r.race_result_running_style", "text", "Runner"),
+            ("gear", "Gear", "r.race_result_gear", "text", "Runner"),
+            ("rating", "Race rating", "r.race_result_rating", "num", "Runner"),
+            ("rating_before", "Rating before", "r.race_result_rating_before", "num", "Runner"),
+            ("prize", "Prize won", "r.race_result_cash_received", "money", "Runner"),
+            ("jockey", "Jockey", "j.person_full_name", "person", "Connections", "r.race_result_person_jockey_id"),
+            ("trainer", "Trainer", "t.person_full_name", "person", "Connections", "r.race_result_trainer_id"),
+            ("stable", "Stable", "s.stable_name", "stable", "Connections", "s.stable_stable_id"),
+        ],
+        "default": ["date", "race", "course", "grade", "distance", "horse", "pos", "jockey", "time", "prize"],
+        "sort": ["date", "desc"],
+    },
+    "races": {
+        "label": "Races", "about": "One row per race.",
+        "base": "races x",
+        "joins": [
+            ("d", "left join race_days d on d.raceday_race_day_id=x.races_race_day_id"),
+            ("c", "left join racecourses c on c.racecourse_racecourse_id=d.raceday_racecourse_id"),
+        ],
+        "fields": [
+            ("date", "Date", "d.raceday_date", "date", "Race"),
+            ("race", "Race", "x.races_race_name", "race", "Race", "x.races_race_id"),
+            ("course", "Racecourse", "c.racecourse_name", "course", "Race", "c.racecourse_racecourse_id"),
+            ("country", "Country", "c.racecourse_location_country", "text", "Race"),
+            ("grade", "Grade", "x.races_type_of_race", "grade", "Race"),
+            ("distance", "Distance", "x.races_distance", "dist", "Race"),
+            ("track", "Track", "x.races_track", "text", "Race"),
+            ("ages", "Ages", "(cast(x.races_min_horse_age as int) || '–' || cast(x.races_max_horse_age as int))", "text", "Race"),
+            ("weather", "Weather", "d.raceday_weather_condition", "text", "Race"),
+            ("purse", "Purse", "x.races_prize_money_total", "money", "Money"),
+            ("first_prize", "First prize", "x.races_prize_money_1", "money", "Money"),
+            ("entry_fee", "Entry fee", "x.races_entrance_fee", "money", "Money"),
+            ("record", "Record time", "x.races_record_time", "racetime", "Race"),
+            ("runners", "Runners", "(select count(*) from race_results rr where rr.race_result_race_id=x.races_race_id)", "int", "Result"),
+            ("winner", "Winner", "(select wh.horse_name from race_results w join horses wh on wh.horse_horse_id=w.race_result_horse_id where w.race_result_race_id=x.races_race_id and w.race_result_rank=1 limit 1)", "horse", "Result",
+             "(select w.race_result_horse_id from race_results w where w.race_result_race_id=x.races_race_id and w.race_result_rank=1 limit 1)"),
+            ("win_time", "Winning time", "(select w.race_result_time from race_results w where w.race_result_race_id=x.races_race_id and w.race_result_rank=1 limit 1)", "racetime", "Result"),
+            ("cancelled", "Cancelled", "(x.races_cancelled in (1,'1','true'))", "bool", "Race"),
+        ],
+        "default": ["date", "race", "course", "grade", "distance", "purse", "runners", "winner"],
+        "sort": ["date", "desc"],
+    },
+    "stables": {
+        "label": "Stables", "about": "One row per stable.",
+        "base": "stables s",
+        "joins": [
+            ("t", "left join hrmv_stable_stats t on t.stable_id=s.stable_stable_id"),
+            ("p", "left join persons p on p.person_person_id=s.stable_owner_id"),
+        ],
+        "fields": [
+            ("name", "Stable", "s.stable_name", "stable", "Stable", "s.stable_stable_id"),
+            ("owner", "Owner", "p.person_full_name", "person", "Stable", "p.person_person_id"),
+            ("country", "Country", "s.stable_location_country", "text", "Stable"),
+            ("founded", "Founded", "s.stable_founded_date", "date", "Stable"),
+            ("level", "Level", "s.stable_level", "int", "Stable"),
+            ("prestige", "Prestige", "s.stable_prestige", "num", "Stable"),
+            ("active", "Active", "(s.stable_liquidated is null)", "bool", "Stable"),
+            ("horses", "Horses", "t.horses", "int", "Horses"),
+            ("avg_rating", "Average rating", "t.avg_rating", "num", "Horses"),
+            ("top_rating", "Top rating", "t.top_rating", "num", "Horses"),
+            ("horses_value", "Horses' value", "t.horses_value", "money", "Horses"),
+            ("starts", "Starts", "t.starts", "int", "Racing record"),
+            ("wins", "Wins", "t.wins", "int", "Racing record"),
+            ("places", "Places", "t.places", "int", "Racing record"),
+            ("winpct", "Win %", "(case when t.starts > 0 then 1.0 * t.wins / t.starts end)", "pct", "Racing record"),
+            ("prize", "Prize money", "t.prize", "money", "Racing record"),
+            ("g1", "G1 wins", "t.g1", "int", "Racing record"),
+            ("group_wins", "Group wins", "t.group_wins", "int", "Racing record"),
+            ("last_run", "Last start", "t.last_run", "date", "Racing record"),
+            ("cash", "Cash", "t.cash", "money", "Money"),
+            ("net_worth", "Net worth", "t.net_worth", "money", "Money"),
+            ("share_price", "Share price", "t.share_price", "money", "Money"),
+            ("staff", "Staff", "t.staff", "int", "Money"),
+            ("courses", "Racecourses", "t.courses", "int", "Money"),
+        ],
+        "default": ["name", "owner", "country", "horses", "starts", "wins", "prize", "g1", "net_worth"],
+        "sort": ["prize", "desc"],
+    },
+    "people": {
+        "label": "People", "about": "One row per person: jockeys, trainers, managers and the rest.",
+        "base": "persons p",
+        "joins": [
+            ("sf", "left join staff sf on sf.staff_entity_id=(select max(z.staff_entity_id) from staff z where z.staff_person_id=p.person_person_id and z.staff_end_date is null)"),
+            ("ss", "left join stables ss on ss.stable_stable_id=sf.staff_stable_id and sf.staff_stable_id>0"),
+        ],
+        "fields": [
+            ("name", "Name", "p.person_full_name", "person", "Person", "p.person_person_id"),
+            ("age", "Age", "cast(({gd} - p.person_birth_date) / 31556952 as int)", "int", "Person"),
+            ("sex", "Sex", "p.person_sex", "text", "Person"),
+            ("alive", "Alive", "(p.person_deceased_date is null)", "bool", "Person"),
+            ("role", "Job", "sf.staff_current_role", "text", "Job"),
+            ("employer", "Works for", "ss.stable_name", "stable", "Job", "ss.stable_stable_id"),
+            ("salary", "Salary (yearly)", "sf.staff_salary_yearly", "money", "Job"),
+            ("since", "Started", "sf.staff_start_date", "date", "Job"),
+            ("j_starts", "Rides", "p.person_jockey_starts", "int", "As a jockey"),
+            ("j_wins", "Wins (jockey)", "p.person_jockey_wins", "int", "As a jockey"),
+            ("j_pct", "Win % (jockey)", "(case when p.person_jockey_starts > 0 then 1.0 * p.person_jockey_wins / p.person_jockey_starts end)", "pct", "As a jockey"),
+            ("j_money", "Winnings (jockey)", "p.person_jockey_winnings", "money", "As a jockey"),
+            ("j_rank", "Jockey ranking", "p.person_jockey_ranking", "int", "As a jockey"),
+            ("j_skill", "Jockey skill", "p.person_jockey_skill", "num", "As a jockey"),
+            ("t_starts", "Runners trained", "p.person_trainer_starts", "int", "As a trainer"),
+            ("t_wins", "Wins (trainer)", "p.person_trainer_wins", "int", "As a trainer"),
+            ("t_pct", "Win % (trainer)", "(case when p.person_trainer_starts > 0 then 1.0 * p.person_trainer_wins / p.person_trainer_starts end)", "pct", "As a trainer"),
+            ("t_money", "Winnings (trainer)", "p.person_trainer_winnings", "money", "As a trainer"),
+            ("t_skill", "Trainer skill", "p.person_trainer_skill", "num", "As a trainer"),
+            ("ht_wins", "Wins (head trainer)", "p.person_head_trainer_wins", "int", "As a head trainer"),
+            ("ht_skill", "Head trainer skill", "p.person_head_trainer_skill", "num", "As a head trainer"),
+            ("reputation", "Reputation", "p.person_reputation", "num", "Standing"),
+            ("fame", "Fame", "p.person_fame_calculated", "num", "Standing"),
+            ("value", "Value", "p.person_value_calculated", "money", "Standing"),
+        ],
+        "default": ["name", "age", "role", "employer", "j_starts", "j_wins", "j_pct", "j_money"],
+        "sort": ["j_wins", "desc"],
+    },
+    "trials": {
+        "label": "Trials", "about": "One row per timed trial run.",
+        "base": "timing_trials tt",
+        "joins": [
+            ("h", "left join horses h on h.horse_horse_id=tt.tt_horse_id"),
+            ("c", "left join racecourses c on c.racecourse_racecourse_id=tt.tt_racecourse_id"),
+            ("j", "left join persons j on j.person_person_id=tt.tt_person_jockey_id"),
+            ("st", "left join stables st on st.stable_stable_id=h.horse_stable_id and h.horse_stable_id>0"),
+        ],
+        "fields": [
+            ("date", "Date", "tt.tt_date", "date", "Trial"),
+            ("horse", "Horse", "h.horse_name", "horse", "Trial", "tt.tt_horse_id"),
+            ("stable", "Stable (now)", "st.stable_name", "stable", "Trial", "st.stable_stable_id"),
+            ("course", "Racecourse", "c.racecourse_name", "course", "Trial", "c.racecourse_racecourse_id"),
+            ("track", "Track", "tt.tt_track", "text", "Trial"),
+            ("surface", "Surface", "tt.tt_surface", "text", "Trial"),
+            ("distance", "Distance", "tt.tt_distance", "dist", "Trial"),
+            ("time", "Time", "tt.tt_time_result", "racetime", "Trial"),
+            ("speed", "Average speed", "(case when tt.tt_time_result > 0 then tt.tt_distance / tt.tt_time_result end)", "speed", "Trial"),
+            ("condition", "Condition", "tt.tt_condition_at_trial", "pct100", "Trial"),
+            ("jockey", "Jockey", "j.person_full_name", "person", "Trial", "j.person_person_id"),
+        ],
+        "default": ["date", "horse", "course", "track", "distance", "time", "speed", "jockey"],
+        "sort": ["date", "asc"],
+    },
+    "sales": {
+        "label": "Auction sales", "about": "One row per horse offered at auction.",
+        "base": "auction_results a",
+        "joins": [
+            ("h", "left join horses h on h.horse_horse_id=a.auction_result_horse_id"),
+            ("sh", "left join auction_shell sh on sh.auction_shell_id=a.auction_result_shell_id"),
+            ("ah", "left join auction_house ah on ah.auction_house_id=a.auction_result_auctionhouse_id"),
+            ("fs", "left join stables fs on fs.stable_stable_id=a.auction_result_from_stable_id and a.auction_result_from_stable_id>0"),
+            ("ts", "left join stables ts on ts.stable_stable_id=a.auction_result_to_stable_id and a.auction_result_to_stable_id>0"),
+        ],
+        "fields": [
+            ("date", "Date", "a.auction_result_date", "date", "Sale"),
+            ("horse", "Horse", "h.horse_name", "horse", "Sale", "a.auction_result_horse_id"),
+            ("age", "Age at sale", "cast((a.auction_result_date - h.horse_birth_date) / 31556952 as int)", "int", "Sale"),
+            ("sale", "Sale", "sh.auction_shell_name", "auction", "Sale", "a.auction_result_shell_id"),
+            ("house", "Auction house", "ah.auction_house_name", "house", "Sale", "a.auction_result_auctionhouse_id"),
+            ("price", "Price", "a.auction_result_final_price", "money", "Money"),
+            ("sold", "Sold", "(a.auction_result_accepted in (1,'1','true'))", "bool", "Money"),
+            ("cut", "House's cut", "a.auction_result_cut_to_auctionhouse", "money", "Money"),
+            ("seller", "Seller", "fs.stable_name", "stable", "Stables", "fs.stable_stable_id"),
+            ("buyer", "Buyer", "ts.stable_name", "stable", "Stables", "ts.stable_stable_id"),
+        ],
+        "default": ["date", "horse", "age", "sale", "house", "price", "sold", "seller", "buyer"],
+        "sort": ["price", "desc"],
+    },
+    "payments": {
+        "label": "Payments", "about": "One row per payment in the game's money log.",
+        "base": "transactions m",
+        "joins": [
+            ("fs", "left join stables fs on m.transaction_from_entity_type='stable' and fs.stable_stable_id=m.transaction_from_entity_id"),
+            ("fp", "left join persons fp on m.transaction_from_entity_type='person' and fp.person_person_id=m.transaction_from_entity_id"),
+            ("fc", "left join racecourses fc on m.transaction_from_entity_type='racecourse' and fc.racecourse_racecourse_id=m.transaction_from_entity_id"),
+            ("ts", "left join stables ts on m.transaction_to_entity_type='stable' and ts.stable_stable_id=m.transaction_to_entity_id"),
+            ("tp", "left join persons tp on m.transaction_to_entity_type='person' and tp.person_person_id=m.transaction_to_entity_id"),
+            ("tc", "left join racecourses tc on m.transaction_to_entity_type='racecourse' and tc.racecourse_racecourse_id=m.transaction_to_entity_id"),
+        ],
+        "fields": [
+            ("date", "Date", "m.transaction_date", "date", "Payment"),
+            ("type", "Type", "m.transaction_type", "text", "Payment"),
+            ("amount", "Amount", "m.transaction_amount", "money", "Payment"),
+            ("note", "Note", "m.transaction_note", "text", "Payment"),
+            ("category", "Category", "m.transaction_category", "text", "Payment"),
+            ("from", "From", "coalesce(fs.stable_name, fp.person_full_name, fc.racecourse_name, m.transaction_from_entity_type)", "text", "Who"),
+            ("from_kind", "From (kind)", "m.transaction_from_entity_type", "text", "Who"),
+            ("to", "To", "coalesce(ts.stable_name, tp.person_full_name, tc.racecourse_name, m.transaction_to_entity_type)", "text", "Who"),
+            ("to_kind", "To (kind)", "m.transaction_to_entity_type", "text", "Who"),
+            ("from_stable", "From stable", "fs.stable_name", "stable", "Who", "fs.stable_stable_id"),
+            ("to_stable", "To stable", "ts.stable_name", "stable", "Who", "ts.stable_stable_id"),
+        ],
+        "default": ["date", "type", "from", "to", "amount", "note"],
+        "sort": ["date", "desc"],
+    },
+}
+CT_OPS = {"eq": "=", "ne": "<>", "gt": ">", "lt": "<", "ge": ">=", "le": "<="}
+
+
+def ct_catalogue():
+    """What the Custom tables builder can offer: each kind of row, its fields grouped, and the starting columns."""
+    out = []
+    for k, s in CT_SOURCES.items():
+        out.append({"key": k, "label": s["label"], "about": s["about"], "default": s["default"], "sort": s["sort"],
+                    "fields": [{"key": f[0], "label": f[1], "kind": f[3], "group": f[4]} for f in s["fields"]]})
+    return out
+
+
+def ct_load():
+    return [t for t in (read_json(CONFIG_FILE, {}).get("custom_tables") or []) if isinstance(t, dict)]
+
+
+def ct_save(tables):
+    clean = []
+    for t in tables if isinstance(tables, list) else []:
+        if not isinstance(t, dict) or t.get("source") not in CT_SOURCES:
+            continue
+        keys = {f[0] for f in CT_SOURCES[t["source"]]["fields"]}
+        clean.append({
+            "id": re.sub(r"[^a-z0-9]", "", str(t.get("id") or ""))[:16] or ("t%x" % int(time.time() * 1000)),
+            "name": str(t.get("name") or "My table")[:80], "about": str(t.get("about") or "")[:300], "source": t["source"],
+            "cols": [c for c in (t.get("cols") or []) if c in keys][:40],
+            "filters": [{"f": f.get("f"), "op": str(f.get("op") or ""), "v": f.get("v")} for f in (t.get("filters") or [])
+                        if isinstance(f, dict) and f.get("f") in keys][:20],
+            "sort": [s for s in (t.get("sort") or [])][:2] if isinstance(t.get("sort"), list) else None,
+            "size": to_int(t.get("size"), 100),
+        })
+    cfg = read_json(CONFIG_FILE, {})
+    cfg["custom_tables"] = clean
+    write_json(CONFIG_FILE, cfg)
+    return clean
+
+
+def ct_run(con, d, q):
+    """Run a custom table: d is its definition (source, cols, filters, sort); q has page and size."""
+    src = CT_SOURCES.get((d or {}).get("source"))
+    if not src:
+        return {"error": "Pick what each row should be."}
+    gd = float(META.get("game_date") or time.time())
+    F = {f[0]: f for f in src["fields"]}
+    fx = lambda f: f[2].replace("{gd}", repr(gd))
+    cols = [c for c in (d.get("cols") or []) if c in F] or list(src["default"])
+    where, params = [], []
+    for flt in d.get("filters") or []:
+        f = F.get((flt or {}).get("f"))
+        if not f:
+            continue
+        op, v, e, kind = flt.get("op"), flt.get("v"), fx(f), f[3]
+        if op == "empty":
+            where.append("(%s is null or %s = '')" % (e, e)); continue
+        if op == "notempty":
+            where.append("(%s is not null and %s <> '')" % (e, e)); continue
+        if kind == "bool":
+            where.append("coalesce(%s, 0) = %d" % (e, 1 if op != "no" else 0)); continue
+        if op == "yours":       # one of your stables: the ids come from the viewer
+            ids = [to_int(x) for x in str(v or "").split(",") if to_int(x) is not None]
+            if len(f) > 5 and ids:
+                where.append("%s in (%s)" % (f[5], ",".join(str(i) for i in ids)))
+            elif len(f) > 5:
+                where.append("0")
+            continue
+        if v is None or v == "":
+            continue
+        if op in ("has", "nothas"):
+            where.append("%s(coalesce(%s, '') like ?)" % ("not " if op == "nothas" else "", e)); params.append("%" + str(v) + "%"); continue
+        if op in ("is", "isnot"):
+            where.append("%s(lower(coalesce(%s, '')) = lower(?))" % ("not " if op == "isnot" else "", e)); params.append(str(v)); continue
+        if op == "on":      # a date: that whole day
+            try:
+                day = float(v)
+            except (TypeError, ValueError):
+                continue
+            where.append("(%s >= ? and %s < ?)" % (e, e)); params += [day, day + 86400]; continue
+        if op in CT_OPS:
+            try:
+                val = float(v)
+            except (TypeError, ValueError):
+                val = str(v)
+            where.append("%s %s ?" % (e, CT_OPS[op])); params.append(val)
+    srt = d.get("sort") if isinstance(d.get("sort"), list) and d.get("sort") else src["sort"]
+    sf = F.get(srt[0]) or F[src["sort"][0]]
+    sdir = "asc" if (srt[1] if len(srt) > 1 else "desc") == "asc" else "desc"
+    order = " order by (%s is null), %s %s" % (fx(sf), fx(sf), sdir)
+    w = (" where " + " and ".join(where)) if where else ""
+    alias = src["base"].split()[-1]
+
+    def joins_for(text):
+        # the joins the text needs, and the joins those need
+        need, txt, changed = [], text, True
+        while changed:
+            changed = False
+            for a, j in src["joins"]:
+                if a not in need and re.search(r"\b%s\." % re.escape(a), txt):
+                    need.append(a); txt += " " + j; changed = True
+        return " ".join(j for a, j in src["joins"] if a in need)
+    size = min(MAX_PAGE_ROWS, max(10, to_int(q.get("size"), to_int(d.get("size"), 100) or 100)))
+    page = max(1, to_int(q.get("page"), 1))
+    inner_joins = joins_for(w + order)
+    total = count_rows(con, "select count(*) from %s %s%s" % (src["base"], joins_for(w), w), params)
+    rids = [r[0] for r in con.execute("select %s.rowid from %s %s%s%s limit %d offset %d" % (alias, src["base"], inner_joins, w, order, size, (page - 1) * size), params)]
+    sel = []
+    for i, c in enumerate(cols):
+        f = F[c]
+        sel.append("%s as c%d" % (fx(f), i))
+        if len(f) > 5:
+            sel.append("%s as c%d_id" % (fx(f) if f[5] == f[2] else f[5].replace("{gd}", repr(gd)), i))
+    out_rows = []
+    if rids:
+        sel_sql = ", ".join(sel)
+        got = {}
+        for r in con.execute("select %s.rowid as _rid, %s from %s %s where %s.rowid in (%s)" % (
+                alias, sel_sql, src["base"], joins_for(sel_sql), alias, ",".join(str(int(x)) for x in rids))):
+            got[r[0]] = r
+        for rid in rids:
+            r = got.get(rid)
+            if r is None:
+                continue
+            vals, k = [], 1
+            for i, c in enumerate(cols):
+                v = r[k]; k += 1
+                if len(F[c]) > 5:
+                    vals.append([v, r[k]]); k += 1
+                else:
+                    vals.append(v)
+            out_rows.append(vals)
+    return {"cols": [{"key": c, "label": F[c][1], "kind": F[c][3]} for c in cols], "rows": out_rows, "total": total,
+            "page": page, "page_size": size, "sort": [sf[0], sdir]}
+
+
 # --------------------------------------------------------------------------- derived stats (v2)
 
 DERIVED_VERSION = 6
@@ -7310,6 +7743,7 @@ ROUTES = [
     (re.compile(r"^/api/course_finances/(-?\d+)$"), lambda con, m, q: api_course_finances(con, int(m.group(1)))),
     (re.compile(r"^/api/stable_courses/(-?\d+)$"), lambda con, m, q: api_stable_courses(con, int(m.group(1)))),
     (re.compile(r"^/api/tables$"), lambda con, m, q: api_tables(con, q)),
+    (re.compile(r"^/api/custom_table$"), lambda con, m, q: ct_run(con, json.loads(q.get("def") or "{}"), q)),
     (re.compile(r"^/api/horse_table$"), lambda con, m, q: api_horse_table(con, q)),
     (re.compile(r"^/api/stable_table$"), lambda con, m, q: api_stable_table(con, q)),
     (re.compile(r"^/api/stable_rankings$"), lambda con, m, q: api_stable_rankings(con, q)),
@@ -7866,6 +8300,8 @@ class Handler(BaseHTTPRequestHandler):
                         con.close()
             except Exception as e:
                 return self.send_json({"found": False, "error": str(e), "loc": {}, "currencies": []})
+        if path == "/api/custom_tables":      # Settings → Custom tables (16.8)
+            return self.send_json({"tables": ct_load(), "sources": ct_catalogue()})
         if path == "/api/github":
             return self.send_json(github_check(force=q.get("force") == "1"))
         if path == "/api/github/releases":
@@ -8196,6 +8632,15 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json({"error": "That isn't an HRM Viewer notes backup."}, 400)
             out, code = notes_import(data if isinstance(data, dict) else {}) if isinstance(data, dict) else ({"error": "That isn't an HRM Viewer notes backup."}, 400)
             return self.send_json(out, code)
+        if path == "/api/custom_tables":
+            length = to_int(self.headers.get("Content-Length"), 0)
+            if length > 1024 * 1024:
+                return self.send_json({"error": "That's too much."}, 413)
+            try:
+                data = json.loads(self.rfile.read(length) or b"{}") if length else {}
+            except ValueError:
+                data = {}
+            return self.send_json({"tables": ct_save((data or {}).get("tables"))})
         if path in ("/api/notes/item", "/api/notes/tags"):
             length = to_int(self.headers.get("Content-Length"), 0)
             if length > 512 * 1024:
@@ -8428,7 +8873,7 @@ class Handler(BaseHTTPRequestHandler):
 
 # --------------------------------------------------------------------------- in-app updates
 
-VERSION = "16.7.18"
+VERSION = "16.8.0"
 BACKUP_DIR = os.path.join(APP_DIR, "backups")
 UPDATE_PENDING = os.path.join(DATA_DIR, "update_pending.json")
 UPDATE_RESULT = os.path.join(DATA_DIR, "update_result.json")

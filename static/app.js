@@ -299,7 +299,7 @@ const SECTIONS = [
   { k: "auctions", label: "Auctions", ic: "gavel", href: "#/auctions", routes: ["auctions", "auction", "auction-houses", "auction-house"] },
   { k: "people", label: "People", ic: "user", href: "#/people-overview", routes: ["people-overview", "people", "person", "jockeys", "assets"] },
   { k: "awards", label: "Awards", ic: "trophy", href: "#/awards", routes: ["awards"] },
-  { k: "settings", label: "Settings", ic: "cog", href: "#/settings", routes: ["settings", "databases", "tables", "versions", "shortcuts", "tags"], right: true },
+  { k: "settings", label: "Settings", ic: "cog", href: "#/settings", routes: ["settings", "databases", "tables", "versions", "shortcuts", "tags", "custom-tables"], right: true },
 ];
 const SIDE = {
   home: null,   // filled in below: every other area's pages
@@ -317,7 +317,7 @@ const SIDE = {
   awards: [["Awards", [["#/awards", "trophy", "Awards by year"], ["#/awards?view=winners", "star", "Most awards"], ["#/awards?group=hof", "star", "Hall of Fame"]]],
     ["By award", [["#/awards?group=year", "trophy", "Horse of the Year"], ["#/awards?group=age", "horse", "Age divisions"], ["#/awards?group=distance", "flag", "Distance champions"],
       ["#/awards?group=breeding", "tree", "Breeding"], ["#/awards?group=people", "user", "People"], ["#/awards?group=stables", "barn", "Stables"], ["#/awards?group=special", "star", "Special awards"]]]],
-  settings: [["Settings", [["#/settings", "cog", "General"], ["#/databases", "db", "Databases"], ["#/tables", "table", "All tables"], ["#/shortcuts", "key", "Shortcuts"], ["#/tags", "tag", "Tags"], ["#/versions", "info", "Versions & changes"]]]],
+  settings: [["Settings", [["#/settings", "cog", "General"], ["#/databases", "db", "Database"], ["#/versions", "info", "Versions & changes"], ["#/tags", "tag", "Tags"], ["#/shortcuts", "key", "Shortcuts"], ["#/tables", "table", "All tables"], ["#/custom-tables", "grid", "Custom tables"]]]],
 };
 // on Home the side menu lists every area, each under its own heading
 SIDE.home = [["Home", [["#/", "home", "Overview"]]]].concat(
@@ -537,7 +537,7 @@ function favIcon(h) {
   if (side) return side[1];
   return ({ "": "home", horse: "horse", horses: "horse", "horse-table": "horse", person: "user", people: "user", jockeys: "trophy", "people-overview": "user", stable: "barn", stables: "barn",
     "stable-table": "grid", "stable-rankings": "trophy", race: "flag", races: "flag", meeting: "list", meetings: "list", course: "pin", courses: "pin", pedigree: "tree", pedigrees: "tree",
-    awards: "trophy", notes: "tag", tags: "tag", settings: "cog", databases: "db", tables: "table", versions: "info", shortcuts: "key",
+    awards: "trophy", notes: "tag", tags: "tag", settings: "cog", databases: "db", tables: "table", "custom-tables": "grid", versions: "info", shortcuts: "key",
     auctions: "gavel", auction: "gavel", "auction-houses": "barn", "auction-house": "barn", assets: "gem" })[k] || "star";
 }
 function pageTitle() {
@@ -887,6 +887,7 @@ const PAGES = {
   stables: stablesPage, stable: (r) => (r.parts[2] === "races" ? stableRacesPage(r) : r.parts[2] === "auctions" ? stableAuctionsPage(r) : r.parts[2] === "shares" ? stableSharesPage(r) : r.parts[2] === "financials" ? stableFinancePage(r) : r.parts[2] === "horse-money" ? stableHorseMoneyPage(r) : r.parts[2] === "awards" ? stableAwardsPage(r) : r.parts[2] === "racecourses" ? stableCoursesPage(r) : stablePage(r.parts[1])), people: peoplePage, "people-overview": peopleOverviewPage, jockeys: careersPage, person: Object.assign((r) => (r.parts[2] === "awards" ? entityAwardsPage("person", r) : r.parts[2] === "family" ? personFamilyPage(r) : r.parts[2] === "tree" ? personTreePage(r)
     : r.parts[2] === "dynasty" ? personDynastyPage(r) : r.parts[2] === "lifespans" ? personLifespansPage(r) : r.parts[2] === "season" ? jockeySeasonPage(r) : personPage(r.parts[1])),
     { after: (r) => (r.parts[2] === "tree" ? tcInit() : r.parts[2] === "dynasty" ? dtInit() : null) }),
+  "custom-tables": Object.assign((r) => customTablesPage(r), { after: (r) => customTablesPage.after(r) }),
   courses: coursesPage, course: Object.assign((r) => courseTabPage(r), { after: (r) => r.parts[2] === "records" && coursePage.after && coursePage.after(r) }), tables: tablesPage,
   compare: Object.assign((r) => comparePage(r), { after: (r) => comparePage.after(r) }),
   concepts: conceptsPage, concept: conceptPage, qualifying: qualifyingPage,
@@ -1878,10 +1879,16 @@ function sortKey(txt) {
 }
 document.addEventListener("click", (e) => {
   const th = e.target.closest("table.data > thead th");
-  if (!th || th.hasAttribute("data-sort") || e.target.closest("a, button, input, select")) return;
+  if (!th || th.hasAttribute("data-sort") || e.target.closest("a, button, input, select, .cl-rs")) return;
   const table = th.closest("table");
   // group headings (spanning several columns) don't sort: only the column headings below them do
   if (table.classList.contains("nosort") || !th.textContent.trim() || th.colSpan > 1 || th.parentNode.classList.contains("grp-row")) return;
+  const dir = clientSort(th);
+  clRemember(table, { s: th.dataset.cid ? { id: th.dataset.cid, dir } : undefined });      // 16.8: the table opens sorted this way next time
+});
+// sort a table's rows by one column in the browser; dir "asc"/"desc", or leave it out to flip (numbers start biggest first)
+function clientSort(th, force) {
+  const table = th.closest("table");
   const col = [...th.parentNode.children].indexOf(th), tbody = table.tBodies[0];
   if (!tbody) return;
   // keep fold-out rows (form panels, record history) with the row above them
@@ -1891,11 +1898,11 @@ document.addEventListener("click", (e) => {
     if (groups.length && (tr.cells.length === 1 && first && first.colSpan > 1)) groups[groups.length - 1].push(tr);
     else groups.push([tr]);
   }
-  const cellKey = (td) => (!td ? sortKey("") : td.dataset.sv !== undefined ? (td.dataset.sv === "" ? { k: null } : { k: +td.dataset.sv, num: true }) : sortKey(td.innerText));
+  const cellKey = (td) => (!td ? sortKey("") : td.dataset.sv !== undefined ? (td.dataset.sv === "" ? { k: null } : { k: +td.dataset.sv, num: true }) : sortKey(td.innerText || td.textContent));      // textContent: a table not on screen yet
   const keyed = groups.map((g, i) => ({ g, i, key: cellKey(g[0].cells[col]) }));
   const nonEmpty = keyed.filter((x) => x.key.k !== null), numeric = nonEmpty.length && nonEmpty.filter((x) => x.key.num).length >= nonEmpty.length * 0.6;
   const prev = th.dataset.cdir;
-  const dir = prev ? (prev === "asc" ? "desc" : "asc") : numeric ? "desc" : "asc";
+  const dir = force || (prev ? (prev === "asc" ? "desc" : "asc") : numeric ? "desc" : "asc");
   [...th.parentNode.children].forEach((x) => { delete x.dataset.cdir; const a = x.querySelector(".sarr"); if (a) a.remove(); });
   [...th.parentNode.children].forEach((x) => x.removeAttribute("aria-sort"));
   th.dataset.cdir = dir;
@@ -1918,7 +1925,8 @@ document.addEventListener("click", (e) => {
   if (moreRuns.length && table.closest(".rpanel") && table.closest(".rpanel").querySelector("[data-morerun]")) {
     [...tbody.rows].forEach((r, i) => { r.classList.toggle("more-run", i >= 6); r.hidden = i >= 6; });
   }
-});
+  return dir;
+}
 
 // a table or list that shows the latest few and expands to show the rest
 function expandable(inner, total, shown) {
@@ -5117,8 +5125,8 @@ async function stableHorseMoneyPage(route) {
       <td><button class="fin-tg" data-hm="${i}" title="Show this horse's money in detail">▸</button> ${L.horse(h.id, h.name)}${G && h.with ? `<div class="muted small hm-with">${h.with.map((w) => esc(w.name)).join(" · ")}</div>` : ""}</td>
       <td>${status(h)}</td><td class="nowrap small" data-sv="${h.from || ""}">${span(h)}</td>
       <td class="num">${fNum(h.starts)}</td><td class="num">${fNum(h.wins)}</td>
-      <td class="num" data-sv="${h.income}" data-csv="${h.income}">${h.income ? finAmt(h.income) : '<span class="muted">—</span>'}</td>
-      <td class="num" data-sv="${h.expenses}" data-csv="${h.expenses}">${h.expenses ? finAmt(h.expenses) : '<span class="muted">—</span>'}</td>
+      <td class="num" data-hmc="inc" data-sv="${h.income}" data-csv="${h.income}">${h.income ? finAmt(h.income) : '<span class="muted">—</span>'}</td>
+      <td class="num" data-hmc="exp" data-sv="${h.expenses}" data-csv="${h.expenses}">${h.expenses ? finAmt(h.expenses) : '<span class="muted">—</span>'}</td>
       <td class="num" data-sv="${h.net}" data-csv="${h.net}">${finAmt(h.net, h.net >= 0 ? "pos" : "neg")}</td>
       <td class="num" data-sv="${roi === null ? "" : roi}" data-csv="${roi === null ? "" : fNum(roi, 0) + "%"}">${roi === null ? '<span class="muted">—</span>' : `<span class="${roi >= 0 ? "up" : "down"}">${roi >= 0 ? "+" : ""}${fNum(roi, 0)}%</span>`}</td></tr>
       <tr class="hm-more" data-hm-row="${i}" hidden><td colspan="9"><div class="hm-detail">
@@ -5151,7 +5159,7 @@ function hmApply(panel) {
     tr.hidden = !ok;
     const more = tr.nextElementSibling;
     if (!ok && more) { more.hidden = true; const b = tr.querySelector(".fin-tg"); if (b) b.textContent = "▸"; }
-    if (ok) { n++; inc += +tr.cells[5].dataset.sv || 0; exp += +tr.cells[6].dataset.sv || 0; }
+    if (ok) { n++; inc += +(tr.querySelector("td[data-hmc=inc]") || {}).dataset?.sv || 0; exp += +(tr.querySelector("td[data-hmc=exp]") || {}).dataset?.sv || 0; }
   });
   panel.querySelector(".fd-none").hidden = n > 0;
   panel.querySelector(".hm-t-inc").innerHTML = finAmt(inc);
@@ -6972,7 +6980,7 @@ function openLoad(resume) {
       <h3>Load into</h3>
       <div class="load-into"><label><input type="radio" name="load-into" value="cur" checked> This database: <b>${esc((STATUS && STATUS.db && STATUS.db.name) || "current")}</b></label>
         <label><input type="radio" name="load-into" value="new"> A new database named <input type="text" id="load-newname" placeholder="e.g. Second career" style="width:220px"></label></div>
-      <p class="help">Use a new database for a different save, so each save keeps its own history. You can switch between them on the <a href="#/databases" onclick="document.getElementById('load-ov').remove()">Databases</a> page.</p>
+      <p class="help">Use a new database for a different save, so each save keeps its own history. You can switch between them on the <a href="#/databases" onclick="document.getElementById('load-ov').remove()">Database</a> page.</p>
       <h3>From its location on this computer (recommended)</h3>
       <div class="row"><input type="text" id="load-path" value="${esc(last || "")}" placeholder="${pathHint("database.db")}"><button class="btn primary" id="load-path-btn">Load</button></div>
       <p class="help">Paste the full path to <code>database.db</code>, or to the folder it's in. It's remembered, so next time you can just press Load. To get the path in File Explorer, hold Shift, right-click the file and choose “Copy as path”.</p>
@@ -7307,6 +7315,7 @@ function addCsvButtons(root) {
     if (paged && pageExport) continue;
     const btn = document.createElement("button");
     btn.className = "btn btn-csv sm"; btn.type = "button";
+    btn._tbl = tbl;
     btn.innerHTML = ICON_DL + "CSV";
     btn.dataset.tip = paged ? "Download the rows on this page as a spreadsheet (CSV) file" : "Download this table as a spreadsheet (CSV) file";
     btn.onclick = () => {
@@ -7364,7 +7373,254 @@ function markSortable(root) {
 document.addEventListener("keydown", (e) => {
   if ((e.key === "Enter" || e.key === " ") && e.target.matches && e.target.matches("table.data > thead th[tabindex]")) { e.preventDefault(); e.target.click(); }
 });
-new MutationObserver(() => { addCsvButtons(APP); markSortable(APP); }).observe(APP, { childList: true, subtree: true });
+new MutationObserver(() => { addCsvButtons(APP); markSortable(APP); clEnhance(APP); clCatchUp(APP); }).observe(APP, { childList: true, subtree: true });
+
+// ------------------------------------------------------------------ 16.8: move and resize the columns of any table
+// Drag a column heading sideways to move the column; drag the edge of a heading to make it wider or narrower (double-click
+// the edge for its natural width). Each table remembers its own layout, and the sort you last picked, in this browser:
+// the same table on every horse, race or racecourse shares one layout. "Reset columns" by the table puts it back.
+const CL_STORE = "hrm.colLayouts";
+function clAll() { try { return JSON.parse(localStorage.getItem(CL_STORE) || "{}") || {}; } catch (e) { return {}; } }
+function clWrite(all) { try { localStorage.setItem(CL_STORE, JSON.stringify(all)); } catch (e) { /* this visit only */ } }
+function clHeadRow(tbl) { return tbl.tHead && tbl.tHead.rows.length ? tbl.tHead.rows[tbl.tHead.rows.length - 1] : null; }
+function clLabel(th) {
+  const c = th.cloneNode(true);
+  c.querySelectorAll(".sarr, .cl-rs").forEach((x) => x.remove());
+  return c.textContent.replace(/[▲▼]/g, "").replace(/\s+/g, " ").trim();
+}
+function clGet(tbl) { return (tbl.dataset.clk && clAll()[tbl.dataset.clk]) || {}; }
+function clRemember(tbl, patch) {
+  if (!tbl.dataset.clk) return;
+  const all = clAll(), cur = Object.assign({}, all[tbl.dataset.clk] || {});
+  for (const [k, v] of Object.entries(patch)) { if (v === undefined || (typeof v === "object" && v && !Array.isArray(v) && !Object.keys(v).length)) delete cur[k]; else cur[k] = v; }
+  if (Object.keys(cur).length) all[tbl.dataset.clk] = Object.assign(cur, { t: Date.now() }); else delete all[tbl.dataset.clk];
+  // keep the most recent 400 layouts
+  const keys = Object.keys(all);
+  if (keys.length > 400) keys.sort((a, b) => (all[a].t || 0) - (all[b].t || 0)).slice(0, keys.length - 400).forEach((k) => delete all[k]);
+  clWrite(all);
+  clResetShow(tbl);
+}
+// can the columns be moved? Not when headings span several columns or cells span several rows
+function clMovable(tbl, n) {
+  for (const sec of [tbl.tHead, ...tbl.tBodies, tbl.tFoot]) {
+    if (!sec) continue;
+    for (const tr of sec.rows) {
+      if (sec === tbl.tHead && tr !== clHeadRow(tbl)) return false;
+      const fold = sec !== tbl.tHead && tr.cells.length === 1 && tr.cells[0].colSpan > 1;
+      if (fold) continue;
+      if (tr.cells.length !== n) return false;
+      for (const c of tr.cells) if (c.colSpan > 1 || c.rowSpan > 1) return false;
+    }
+  }
+  return true;
+}
+function clOrderRows(tbl, ids) {
+  const row = clHeadRow(tbl), cur = [...row.cells].map((th) => th.dataset.cid);
+  const perm = ids.map((id) => cur.indexOf(id));
+  if (perm.some((i) => i < 0) || perm.every((i, k) => i === k)) return;
+  for (const sec of [tbl.tHead, ...tbl.tBodies, tbl.tFoot]) {
+    if (!sec) continue;
+    for (const tr of sec.rows) {
+      if (tr.cells.length !== cur.length) continue;
+      const cells = [...tr.cells];
+      perm.forEach((i) => tr.appendChild(cells[i]));
+      tr._clOk = true;
+    }
+  }
+  tbl.classList.toggle("cl-moved", ids.some((id, i) => id !== tbl._clOrig[i]));
+}
+// rows a page adds to a table later ("show more", a filter redrawing the rows) come in the usual column order: put them in yours
+function clCatchUp(root) {
+  for (const tbl of root.querySelectorAll("table.data.cl-moved")) {
+    const row = clHeadRow(tbl), cur = [...row.cells].map((th) => th.dataset.cid), perm = cur.map((id) => tbl._clOrig.indexOf(id));
+    for (const sec of [...tbl.tBodies, tbl.tFoot]) {
+      if (!sec) continue;
+      for (const tr of sec.rows) {
+        if (tr._clOk || tr.cells.length !== cur.length) continue;
+        const cells = [...tr.cells];
+        perm.forEach((i) => tr.appendChild(cells[i]));
+        tr._clOk = true;
+      }
+    }
+  }
+}
+function clUnfreeze(tbl) {
+  const cg = tbl.querySelector(":scope > colgroup.cl-cg");
+  if (cg) cg.remove();
+  tbl.classList.remove("cl-fixed"); tbl.style.width = ""; tbl.style.minWidth = "";
+}
+// fix every column at its current (or saved) width so one can be dragged without the others jumping
+function clFreeze(tbl, widths) {
+  const row = clHeadRow(tbl);
+  const ws = [...row.cells].map((th) => Math.max(36, Math.round((widths && widths[th.dataset.cid]) || th.getBoundingClientRect().width)));
+  if (!ws.some((w) => w > 36)) return false;      // hidden: nothing to measure
+  clUnfreeze(tbl);
+  const cg = document.createElement("colgroup");
+  cg.className = "cl-cg";
+  ws.forEach((w) => { const c = document.createElement("col"); c.style.width = w + "px"; cg.appendChild(c); });
+  tbl.insertBefore(cg, tbl.firstChild);
+  tbl.classList.add("cl-fixed");
+  tbl.style.minWidth = "0"; tbl.style.width = ws.reduce((a, b) => a + b, 0) + "px";
+  return true;
+}
+function clApply(tbl) {
+  const L = clGet(tbl), row = clHeadRow(tbl);
+  clUnfreeze(tbl);
+  const ids = [...row.cells].map((th) => th.dataset.cid);
+  if (L.o && tbl.dataset.clMove) {
+    const want = L.o.filter((id) => ids.includes(id));
+    ids.forEach((id, i) => { if (!want.includes(id)) want.splice(Math.min(i, want.length), 0, id); });      // columns new since it was saved
+    clOrderRows(tbl, want);
+  }
+  if (L.w && Object.keys(L.w).some((id) => ids.includes(id))) {
+    if (!tbl.getBoundingClientRect().width) { CL_RO.observe(tbl); return; }      // not on screen yet (a closed tab): when it shows
+    // natural widths first, then the ones you set
+    const nat = {};
+    [...row.cells].forEach((th) => { nat[th.dataset.cid] = th.getBoundingClientRect().width; });
+    clFreeze(tbl, Object.assign(nat, L.w));
+  }
+}
+const CL_RO = new ResizeObserver((list) => {
+  for (const en of list) {
+    if (!en.contentRect.width) continue;
+    CL_RO.unobserve(en.target);
+    if (!en.target.classList.contains("cl-fixed")) clApply(en.target);
+  }
+});
+function clEnhance(root) {
+  for (const tbl of root.querySelectorAll("table.data:not([data-cl])")) {
+    tbl.dataset.cl = "1";
+    const row = clHeadRow(tbl);
+    if (!row || row.cells.length < 2 || tbl.parentElement.closest("table") || tbl.classList.contains("nocl")) continue;
+    if (tbl.querySelector(":scope > colgroup:not(.cl-cg)")) continue;      // tables that set their own column widths
+    const seen = {};
+    const ids = [...row.cells].map((th, i) => {
+      let id = clLabel(th) || "#" + i;
+      if (seen[id]) id += "~" + ++seen[id]; else seen[id] = 1;
+      th.dataset.cid = id;
+      return id;
+    });
+    tbl.dataset.clk = (location.hash.split("?")[0] || "#/").replace(/\/-?\d+(?=\/|$)/g, "/:id") + "|" + ids.join("|");
+    tbl._clOrig = ids.slice();
+    if (clMovable(tbl, ids.length)) { tbl.dataset.clMove = "1"; tbl.classList.add("cl-move"); }
+    for (const th of row.cells) {
+      if (th.querySelector(":scope > .cl-rs")) continue;
+      const h = document.createElement("span");
+      h.className = "cl-rs"; h.title = "Drag to resize · double-click for its natural width";
+      th.appendChild(h);
+    }
+    const L = clGet(tbl);
+    if (L.o || L.w) clApply(tbl);
+    // the sort you last picked (only where the page doesn't sort on the server)
+    if (L.s && !row.querySelector("[data-sort]")) {
+      const th = [...row.cells].find((x) => x.dataset.cid === L.s.id);
+      if (th) clientSort(th, L.s.dir);
+    }
+    clResetShow(tbl);
+  }
+}
+// "Reset columns" beside the table's CSV button, while its layout has been changed
+function clResetShow(tbl) {
+  let b = tbl._clReset;
+  const L = clGet(tbl), on = !!(L.o || L.w || L.s);
+  if (!b && on) {
+    b = document.createElement("button");
+    b.type = "button"; b.className = "btn sm cl-reset";
+    b.textContent = "Reset columns";
+    b.dataset.tip = "Put this table's columns back in their usual order, width and sort";
+    b.onclick = () => { const all = clAll(); delete all[tbl.dataset.clk]; clWrite(all); render(); };
+    tbl._clReset = b;
+    const csv = [...document.querySelectorAll(".btn-csv")].find((x) => x._tbl === tbl);
+    const wrap = tbl.closest(".tbl-wrap, .wide-wrap, .grid-scroll") || tbl;
+    if (csv) csv.parentNode.insertBefore(b, csv);
+    else { const bar = document.createElement("div"); bar.className = "csv-bar"; bar.appendChild(b); wrap.parentNode.insertBefore(bar, wrap); }
+  }
+  if (b) b.hidden = !on;
+}
+// dragging: a heading's edge resizes; the heading itself moves the column
+let CL_DRAG = null, CL_EAT_CLICK = false;
+document.addEventListener("pointerdown", (e) => {
+  if (e.button !== 0) return;
+  const rs = e.target.closest && e.target.closest("table.data .cl-rs");
+  const th = e.target.closest && e.target.closest("table.data > thead th[data-cid]");
+  if (!th) return;
+  const tbl = th.closest("table");
+  if (rs) {
+    e.preventDefault(); e.stopPropagation();
+    if (!tbl.classList.contains("cl-fixed") && !clFreeze(tbl)) return;
+    const i = [...th.parentNode.cells].indexOf(th), col = tbl.querySelector(":scope > colgroup.cl-cg").children[i];
+    CL_DRAG = { kind: "size", tbl, th, col, x: e.clientX, w: parseFloat(col.style.width), tw: parseFloat(tbl.style.width) };
+    document.body.classList.add("cl-sizing");
+    return;
+  }
+  if (!tbl.dataset.clMove || e.target.closest("a, button, input, select, label")) return;
+  CL_DRAG = { kind: "move-wait", tbl, th, x: e.clientX, y: e.clientY };
+}, true);
+document.addEventListener("pointermove", (e) => {
+  const d = CL_DRAG;
+  if (!d) return;
+  if (d.kind === "size") {
+    const w = Math.max(36, Math.round(d.w + e.clientX - d.x));
+    d.col.style.width = w + "px"; d.tbl.style.width = d.tw + (w - d.w) + "px"; d.nw = w;
+    return;
+  }
+  if (d.kind === "move-wait") {
+    if (Math.abs(e.clientX - d.x) < 8 || Math.abs(e.clientX - d.x) < Math.abs(e.clientY - d.y)) return;
+    d.kind = "move";
+    try { window.getSelection().removeAllRanges(); } catch (er) { /* none */ }
+    d.th.classList.add("cl-dragging");
+    document.body.classList.add("cl-moving");
+    d.mark = document.createElement("div"); d.mark.className = "cl-mark"; document.body.appendChild(d.mark);
+    d.ghost = document.createElement("div"); d.ghost.className = "cl-ghost"; d.ghost.textContent = clLabel(d.th) || "Column"; document.body.appendChild(d.ghost);
+  }
+  if (d.kind === "move") {
+    const cells = [...d.th.parentNode.cells];
+    let at = cells.length;
+    for (let i = 0; i < cells.length; i++) { const r = cells[i].getBoundingClientRect(); if (e.clientX < r.left + r.width / 2) { at = i; break; } }
+    d.at = at;
+    const ref = cells[Math.min(at, cells.length - 1)].getBoundingClientRect(), tr = d.tbl.getBoundingClientRect();
+    const x = at < cells.length ? ref.left : ref.right;
+    Object.assign(d.mark.style, { left: x - 1 + "px", top: Math.max(0, tr.top) + "px", height: Math.min(window.innerHeight, tr.bottom) - Math.max(0, tr.top) + "px" });
+    Object.assign(d.ghost.style, { left: e.clientX + 12 + "px", top: e.clientY + 8 + "px" });
+    // scroll a wide table sideways near its edges
+    const wrap = d.tbl.closest(".wide-wrap, .tbl-wrap, .grid-scroll");
+    if (wrap) { const wr = wrap.getBoundingClientRect(); if (e.clientX > wr.right - 40) wrap.scrollLeft += 18; else if (e.clientX < wr.left + 40) wrap.scrollLeft -= 18; }
+  }
+});
+document.addEventListener("pointerup", () => {
+  const d = CL_DRAG;
+  CL_DRAG = null;
+  if (!d) return;
+  document.body.classList.remove("cl-sizing", "cl-moving");
+  if (d.kind === "size") {
+    CL_EAT_CLICK = true; setTimeout(() => (CL_EAT_CLICK = false), 0);
+    if (d.nw) { const w = Object.assign({}, clGet(d.tbl).w || {}); w[d.th.dataset.cid] = d.nw; clRemember(d.tbl, { w }); }
+    return;
+  }
+  if (d.kind !== "move") return;
+  d.th.classList.remove("cl-dragging"); d.mark.remove(); d.ghost.remove();
+  CL_EAT_CLICK = true; setTimeout(() => (CL_EAT_CLICK = false), 0);
+  const row = d.th.parentNode, ids = [...row.cells].map((x) => x.dataset.cid), from = ids.indexOf(d.th.dataset.cid);
+  let to = d.at === undefined ? from : d.at;
+  if (to > from) to--;
+  if (to === from) return;
+  ids.splice(to, 0, ids.splice(from, 1)[0]);
+  const frozen = d.tbl.classList.contains("cl-fixed");
+  const widths = {}; if (frozen) [...row.cells].forEach((th, i) => { widths[th.dataset.cid] = parseFloat(d.tbl.querySelector(":scope > colgroup.cl-cg").children[i].style.width); });
+  clUnfreeze(d.tbl);
+  clOrderRows(d.tbl, ids);
+  if (frozen) clFreeze(d.tbl, widths);
+  clRemember(d.tbl, { o: ids });
+});
+document.addEventListener("click", (e) => { if (CL_EAT_CLICK && e.target.closest("thead")) { e.stopPropagation(); e.preventDefault(); } }, true);
+document.addEventListener("dblclick", (e) => {
+  const rs = e.target.closest && e.target.closest("table.data .cl-rs");
+  if (!rs) return;
+  const th = rs.closest("th"), tbl = th.closest("table"), w = Object.assign({}, clGet(tbl).w || {});
+  delete w[th.dataset.cid];
+  clRemember(tbl, { w });
+  clApply(tbl);
+});
 // quick filter: hide rows that don't contain the text (a row's fold-out goes with it); Esc clears
 function filterTable(inp) {
   const tbl = inp._tbl, q = inp.value.trim().toLowerCase();
@@ -7662,8 +7918,10 @@ async function drawFontDropdowns() {
 
 // ------------------------------------------------------------------ settings
 function settingsTabs(on) {
-  return `<div class="subtabs"><a href="#/settings" class="${on === "settings" ? "on" : ""}">General</a><a href="#/databases" class="${on === "databases" ? "on" : ""}">Databases</a>
-    <a href="#/tables" class="${on === "tables" ? "on" : ""}">All tables</a><a href="#/shortcuts" class="${on === "shortcuts" ? "on" : ""}">Shortcuts</a><a href="#/tags" class="${on === "tags" ? "on" : ""}">Tags</a><a href="#/versions" class="${on === "versions" ? "on" : ""}">Versions &amp; changes</a></div>`;
+  // the order asked for in 16.8: General, Database, Versions & changes, Tags, Shortcuts, All tables, Custom tables
+  const T = [["settings", "#/settings", "General"], ["databases", "#/databases", "Database"], ["versions", "#/versions", "Versions &amp; changes"], ["tags", "#/tags", "Tags"],
+    ["shortcuts", "#/shortcuts", "Shortcuts"], ["tables", "#/tables", "All tables"], ["custom", "#/custom-tables", "Custom tables"]];
+  return `<div class="subtabs">${T.map(([k, h, n]) => `<a href="${h}" class="${on === k ? "on" : ""}">${n}</a>`).join("")}</div>`;
 }
 // Settings → General, laid out again in 16.7.11: one column of sections with a menu beside it to jump between them,
 // short descriptions (the longer explanations are behind "More about this"), and each section says where it's kept
@@ -7679,7 +7937,7 @@ function numbersSection() {
   const sample = `${fMoney(1234567)} · ${fMoneyShort(1234567)} · odds ${fOdds(2.5)} · ${fDateTime(1539441000)} · ${fDist(1400)} · ${fHeight(163)} · ${fWeight(480)} · ${fTemp(18)} · ${fMargin(0.3, 1400, 82)} behind · ${fDays(45)}`;
   const followRow = setRow("Follow the game's settings", GAMEFMT && GAMEFMT.found
     ? `Uses the currency, number, date and unit settings from the game's <code>settings.json</code>, so the viewer shows things the way the game does. It picks up changes the next time a save loads.`
-    : `The game's <code>settings.json</code> wasn't found. The viewer looks for it a level or two above the Saves folder of the save it follows (set under Settings → Databases), and in the game's usual data folder.`,
+    : `The game's <code>settings.json</code> wasn't found. The viewer looks for it a level or two above the Saves folder of the save it follows (set under Settings → Database), and in the game's usual data folder.`,
     `<label class="switch"><input type="checkbox" id="set-fmt-follow" ${mine.follow ? "checked" : ""}><span></span></label>`,
     GAMEFMT && GAMEFMT.found ? `Reading <code>${esc(GAMEFMT.path)}</code>.` : "");
   return setSection("numbers", "Numbers, dates & units", "Currency, numbers, odds, dates, times and units, the same choices as the game's own settings.", "browser", [
@@ -7813,6 +8071,8 @@ function settingsPage() {
       `<select id="set-side"><option value="full">Full</option><option value="mini">Icons only</option><option value="hidden">Hidden</option></select>`),
     row("Rows per page", "How many rows long tables show at once. You can also change it under any table.",
       `<select id="set-rows"><option value="">Standard (50, or 100 for All tables)</option>${PAGE_SIZES.map((n) => `<option value="${n}" ${prefPageSize() === n ? "selected" : ""}>${fNum(n)}</option>`).join("")}</select>`),
+    row("Table columns", "Drag a column heading sideways to move it, or the edge of a heading to resize it. Each table remembers its layout and the sort you last picked.",
+      `<span class="muted small" id="set-cl-n">${(() => { const n = Object.keys(clAll()).length; return n ? `${fNum(n)} table${n === 1 ? "" : "s"} laid out your way` : "All tables as standard"; })()}</span> <button class="btn sm" id="set-cl-reset" ${Object.keys(clAll()).length ? "" : "disabled"}>Reset all tables</button>`),
     row("Charts open showing", "The time range charts start on. Each chart still has its own range buttons.",
       `<select id="set-range"><option value="all" ${cr === "all" ? "selected" : ""}>All of the history</option>
         <optgroup label="Years">${RANGES.filter((r) => r[0].endsWith("y")).map((r) => `<option value="${r[0]}" ${r[0] === cr ? "selected" : ""}>Last ${r[1]}</option>`).join("")}</optgroup>
@@ -7829,9 +8089,9 @@ function settingsPage() {
   ].join("")));
   secs.push(setSection("reset", "Reset", "Put the settings on this page back to how they started.", "browser",
     row("Reset settings", "Puts your main stable, look, pages &amp; tables and racing season settings back to how they started.", `<button class="btn" id="set-reset">Reset settings</button>`,
-      "Your data, favourites and shortcuts aren't touched, and nor are the save file, stored data and app settings (on the Databases and Versions &amp; changes tabs).")));
+      "Your data, favourites and shortcuts aren't touched, and nor are the save file, stored data and app settings (on the Database and Versions &amp; changes tabs).")));
   return settingsTabs("settings") + `<div class="page-head"><div><h1>Settings</h1><div class="sub">Changes are saved as soon as you make them. Save file and stored data settings are on the
-    <a href="#/databases">Databases</a> tab; app updates are on <a href="#/versions">Versions &amp; changes</a>.</div></div></div>
+    <a href="#/databases">Database</a> tab; app updates are on <a href="#/versions">Versions &amp; changes</a>.</div></div></div>
     <div class="set-layout">${nav}<div class="set-main">${secs.join("")}</div></div>`;
 }
 // ------------------------------------------------------------------ Settings → Stored data: compacting (16.7)
@@ -7958,6 +8218,7 @@ settingsPage.after = (route) => {
   $("#set-season-d").onchange = saveSeason;
   $("#set-season-series").onchange = (e) => save("hrm.seasonSeries", e.target.checked ? "1" : "0");
   $("#set-side").value = sideMenuMode();
+  $("#set-cl-reset").onclick = () => { clWrite({}); $("#set-cl-n").textContent = "All tables as standard"; $("#set-cl-reset").disabled = true; toast("✓ Every table's columns are back to standard."); };
   $("#set-rows").onchange = (e) => { if (e.target.value) save("hrm.pageSize", e.target.value); else { try { localStorage.removeItem("hrm.pageSize"); } catch (er) { /* none */ } } };
   $("#set-side").onchange = (e) => setSideMenu(e.target.value);
   const st = $("#set-stable");
@@ -7974,7 +8235,7 @@ async function databasesPage() {
   const d = await (await fetch("/api/dbs")).json();
   const leg = d.list.find((x) => x.legacy);
   const mb = (b) => (b ? (b >= 1 << 30 ? (b / (1 << 30)).toFixed(2) + " GB" : Math.round(b / (1 << 20)) + " MB") : "—");
-  let html = settingsTabs("databases") + `<div class="page-head"><div><h1>Databases</h1><div class="sub">Keep several saves side by side and switch between them. Each one is stored and updated separately.</div></div>
+  let html = settingsTabs("databases") + `<div class="page-head"><div><h1>Database</h1><div class="sub">Keep several saves side by side and switch between them. Each one is stored and updated separately.</div></div>
     <button class="btn primary" onclick="openLoad()">Load a database</button></div>`;
   html += settingsBlock("Save file & stored data", "How the open database follows the game, and how its stored copy is kept. Your databases are listed below.", saveFileSettings());
   if (leg) {
@@ -8203,7 +8464,7 @@ async function updData() {
   } catch (e) { done(); return toast("The viewer couldn't be reached."); }
   if (a.state === "nofile" || !a.path || !a.exists) {
     done();
-    return toast("The viewer doesn't know where this save's <b>database.db</b> is. Load it once from the game's folder, or set the file under Databases.", ["Load new database", () => openLoad()], 9000);
+    return toast("The viewer doesn't know where this save's <b>database.db</b> is. Load it once from the game's folder, or set the file under Settings → Database.", ["Load new database", () => openLoad()], 9000);
   }
   if (a.state === "current" && !a.running) { done(); return toast(`✓ Already up to date: the save hasn't changed since it was loaded (game date <b>${fDate(a.game_date)}</b>).`); }
   if (a.state === "skipped") { done(); autoPoll(true); return toast(esc(a.message || "The save wasn't loaded.")); }
@@ -8218,7 +8479,7 @@ async function updData() {
     if (!a.running && a.state !== "updating") break;
   }
   done();
-  if (a.state === "error") return toast(esc(a.message || "The update failed."), ["Databases", () => (location.hash = "#/databases")], 9000);
+  if (a.state === "error") return toast(esc(a.message || "The update failed."), ["Database", () => (location.hash = "#/databases")], 9000);
   AUTO_LAST = a;      // so the automatic watcher doesn't show its own "updated" bar as well
   await refreshStatus(); CARD_CACHE.clear(); TABLES_CACHE = null;
   render();
@@ -8239,3 +8500,228 @@ document.addEventListener("click", (e) => {
   else if (e.target.closest("#upd-app")) { e.preventDefault(); updApp(); }
 });
 updButtons();
+
+// ------------------------------------------------------------------ 16.8: Settings → Custom tables
+// Build your own tables: pick what each row is (a horse, a race run, a sale…), the columns, filters and sort, and save it.
+// Saved tables are kept with the viewer's settings (config.json), so they work with every database.
+let CT = null;      // { tables, sources }
+async function ctLoad(force) {
+  if (!CT || force) CT = await (await fetch("/api/custom_tables")).json();
+  return CT;
+}
+async function ctStore(tables) {
+  const r = await fetch("/api/custom_tables", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ tables }) });
+  const j = await r.json();
+  if (!r.ok) throw new Error(j.error || "Couldn't save.");
+  CT.tables = j.tables;
+  return j.tables;
+}
+const ctSrc = (k) => (CT && CT.sources.find((s) => s.key === k)) || null;
+const ctField = (src, k) => (src && src.fields.find((f) => f.key === k)) || null;
+const CT_NUMERIC = ["int", "num", "money", "pct", "pct100", "dist", "racetime", "odds", "speed", "height", "weight"];
+const CT_LINKED = { horse: "horse", stable: "stable", person: "person", course: "course", race: "race" };
+function ctCell(kind, v) {
+  if (Array.isArray(v)) {
+    const [name, id] = v;
+    if (name == null || name === "") return '<span class="muted">—</span>';
+    if (CT_LINKED[kind] && id != null) return L[CT_LINKED[kind]](id, name);
+    if (kind === "auction" && id != null) return `<a href="#/auction/${id}">${esc(name)}</a>`;
+    if (kind === "house" && id != null) return `<a href="#/auction-house/${id}">${esc(name)}</a>`;
+    return esc(name);
+  }
+  if (v == null || v === "") return '<span class="muted">—</span>';
+  switch (kind) {
+    case "date": return fDate(v);
+    case "money": return fMoney(v);
+    case "int": return fNum(v);
+    case "num": return fNum(v, Math.abs(v) < 100 && v % 1 ? 1 : 0);
+    case "pct": return `${fNum(v * 100, 1)}%`;
+    case "pct100": return `${fNum(v, 0)}%`;
+    case "dist": return fDist(v);
+    case "racetime": return fTime(v);
+    case "odds": return fOdds(v);
+    case "speed": return fSpeed(v * 3.6);
+    case "height": return fHeight(v);
+    case "weight": return fWeight(v);
+    case "bool": return v ? "✓" : '<span class="muted">—</span>';
+    case "grade": return grade(v);
+    default: return esc(v);
+  }
+}
+// the value behind a cell, for sorting in the browser and CSV
+function ctRaw(kind, v) { return Array.isArray(v) ? v[0] : v; }
+function ctTable(res, sortable) {
+  const cols = res.cols.map((c, i) => ({
+    h: esc(c.label), cls: CT_NUMERIC.includes(c.kind) || c.kind === "date" || c.kind === "bool" ? "num" : "", sort: sortable ? c.key : undefined,
+    f: (r) => ctCell(c.kind, r.v[i]),
+  }));
+  const rows = res.rows.map((v) => {
+    const r = { v };
+    const si = res.cols.findIndex((c) => c.kind === "stable");
+    if (si >= 0 && Array.isArray(v[si])) r.stable_id = v[si][1];
+    return r;
+  });
+  return table(cols, rows, { empty: "No rows match.", sort: res.sort && res.sort[0], dir: res.sort && res.sort[1], ascCols: res.cols.filter((c) => !CT_NUMERIC.includes(c.kind) || c.kind === "racetime").map((c) => c.key), wide: res.cols.length > 8 });
+}
+function ctDefQuery(def, extra) {
+  return "custom_table?" + new URLSearchParams(Object.assign({ def: JSON.stringify(def) }, extra || {}));
+}
+// ready-made tables to start from
+const CT_STARTERS = [
+  { name: "Your horses' trials, first to last", source: "trials", cols: ["date", "horse", "course", "track", "distance", "time", "speed", "jockey"], filters: [{ f: "stable", op: "yours" }], sort: ["date", "asc"] },
+  { name: "Group 1 winners", source: "results", cols: ["date", "race", "course", "distance", "horse", "jockey", "trainer", "time", "prize"], filters: [{ f: "grade", op: "is", v: "G1" }, { f: "pos", op: "eq", v: 1 }], sort: ["date", "desc"] },
+  { name: "Top jockeys", source: "people", cols: ["name", "age", "employer", "j_starts", "j_wins", "j_pct", "j_money", "j_skill"], filters: [{ f: "j_starts", op: "ge", v: 50 }], sort: ["j_wins", "desc"] },
+  { name: "Biggest auction sales", source: "sales", cols: ["date", "horse", "age", "sale", "house", "price", "seller", "buyer"], filters: [{ f: "sold", op: "yes" }], sort: ["price", "desc"] },
+  { name: "Your racehorses", source: "horses", cols: ["name", "age", "sex", "starts", "wins", "seconds", "thirds", "prize", "rating", "last_run"], filters: [{ f: "stable", op: "yours" }, { f: "alive", op: "yes" }], sort: ["rating", "desc"] },
+];
+const ctOwnIds = () => [...ownedSet()].join(",");
+// what the server is sent: "your stables" gets the ids, and typed values become the stored units
+function ctForServer(def) {
+  const src = ctSrc(def.source);
+  return Object.assign({}, def, {
+    filters: (def.filters || []).map((x) => {
+      const f = ctField(src, x.f);
+      if (!f) return x;
+      if (x.op === "yours") return Object.assign({}, x, { v: ctOwnIds() });
+      let v = x.v;
+      if (v === "" || v == null || !["eq", "ne", "gt", "ge", "lt", "le", "on"].includes(x.op)) return x;
+      if (f.kind === "date") { const t = Date.parse(v + "T00:00:00Z"); v = isNaN(t) ? null : t / 1000 + (x.op === "le" ? 86399 : x.op === "gt" ? 86399 : 0); }
+      else if (f.kind === "money") v = +v / fxRate();
+      else if (f.kind === "pct") v = +v / 100;
+      else if (f.kind === "speed") v = +v / 3.6;
+      else v = +v;
+      return Object.assign({}, x, { v });
+    }),
+  });
+}
+async function customTablesPage(route) {
+  await ctLoad(true);
+  const id = route.parts[1], sub = route.parts[2];
+  if (id === "new" || sub === "edit") return ctBuilderPage(route);
+  if (id) return ctViewPage(route);
+  const list = CT.tables || [];
+  let html = settingsTabs("custom") + `<div class="page-head"><div><h1>Custom tables</h1><div class="sub">Build your own tables: choose what each row is, the columns, filters and sort, then save it to come back to.
+    They're kept with your settings, so they work with every database.</div></div><a class="btn primary" href="#/custom-tables/new">New table</a></div>`;
+  html += panel("Your tables", list.length ? `<div class="ct-list">${list.map((t) => {
+    const s = ctSrc(t.source);
+    return `<a class="ct-card" href="#/custom-tables/${t.id}"><b>${esc(t.name)}</b><span class="small muted">${esc(s ? s.label : t.source)} · ${fNum((t.cols || []).length)} column${(t.cols || []).length === 1 ? "" : "s"}${(t.filters || []).length ? ` · ${fNum(t.filters.length)} filter${t.filters.length === 1 ? "" : "s"}` : ""}</span>${t.about ? `<span class="small">${esc(t.about)}</span>` : ""}</a>`;
+  }).join("")}</div>` : '<div class="empty">No tables yet. Start a new one, or from one of the ideas below.</div>');
+  html += `<div style="margin-top:16px">${panel("Ideas to start from", `<div class="ct-list">${CT_STARTERS.map((t, i) => `<a class="ct-card ghost" href="#/custom-tables/new?starter=${i}"><b>${esc(t.name)}</b><span class="small muted">${esc(ctSrc(t.source).label)}</span></a>`).join("")}</div>`, "Opens the table builder with it filled in; change anything before you save")}</div>`;
+  return html;
+}
+async function ctViewPage(route) {
+  const t = (CT.tables || []).find((x) => x.id === route.parts[1]);
+  if (!t) return settingsTabs("custom") + `<div class="err-box">That table isn't saved any more. <a href="#/custom-tables">All custom tables</a></div>`;
+  const q = route.q || {};
+  const def = ctForServer(Object.assign({}, t, q.sort ? { sort: [q.sort, q.dir || "desc"] } : {}));
+  const res = await api(ctDefQuery(def, { page: q.page || 1, size: q.size || t.size || 100 }));
+  const s = ctSrc(t.source);
+  return settingsTabs("custom") + `<div class="page-head"><div><div class="crumb"><a href="#/custom-tables">Custom tables</a></div><h1>${esc(t.name)}</h1>
+    <div class="sub">${esc(t.about || (s ? s.about : ""))} ${fNum(res.total)} row${res.total === 1 ? "" : "s"}.</div></div>
+    <div style="display:flex;gap:8px"><a class="btn" href="#/custom-tables/${t.id}/edit">Edit table</a></div></div>
+    <section class="panel">${res.error ? `<div class="err-box">${esc(res.error)}</div>` : ctTable(res, true) + pager(res)}</section>`;
+}
+async function ctBuilderPage(route) {
+  const editing = route.parts[2] === "edit" ? (CT.tables || []).find((x) => x.id === route.parts[1]) : null;
+  const st = route.q && route.q.starter !== undefined ? CT_STARTERS[+route.q.starter] : null;
+  const src0 = (editing && editing.source) || (st && st.source) || "horses";
+  const s0 = ctSrc(src0);
+  CT_DRAFT = JSON.parse(JSON.stringify(editing || st || { name: "", source: src0, cols: s0.default.slice(), filters: [], sort: s0.sort.slice(), size: 100 }));
+  if (!CT_DRAFT.size) CT_DRAFT.size = 100;
+  if (!CT_DRAFT.sort) CT_DRAFT.sort = s0.sort.slice();
+  CT_DRAFT._editing = editing ? editing.id : null;
+  return settingsTabs("custom") + `<div class="page-head"><div><div class="crumb"><a href="#/custom-tables">Custom tables</a></div><h1>${editing ? "Edit table" : "New table"}</h1>
+    <div class="sub">Choose what each row is, then the columns, any filters and the order. The preview updates as you go.</div></div></div>
+    <div class="ct-builder"><div class="ct-side" id="ct-side"></div><div class="ct-main"><section class="panel"><div class="panel-head"><h2>Preview</h2><span class="note" id="ct-count"></span></div><div id="ct-prev"><div class="loading">Loading…</div></div></section></div></div>`;
+}
+customTablesPage.after = (route) => { if ($("#ct-side")) { ctSide(); ctPreview(); } };
+let CT_DRAFT = null, CT_PREV_SEQ = 0;
+function ctOps(kind) {
+  if (kind === "bool") return [["yes", "is yes"], ["no", "is no"]];
+  if (kind === "date") return [["ge", "on or after"], ["le", "on or before"], ["on", "on"], ["empty", "is empty"], ["notempty", "isn't empty"]];
+  if (CT_NUMERIC.includes(kind)) return [["ge", "at least"], ["le", "at most"], ["gt", "more than"], ["lt", "less than"], ["eq", "equals"], ["ne", "isn't"], ["empty", "is empty"], ["notempty", "isn't empty"]];
+  const o = [["has", "contains"], ["is", "is"], ["isnot", "isn't"], ["nothas", "doesn't contain"], ["empty", "is empty"], ["notempty", "isn't empty"]];
+  if (kind === "stable") o.unshift(["yours", "is one of yours"]);
+  return o;
+}
+const CT_UNIT = { money: () => curSymbol(), pct: () => "%", pct100: () => "%", dist: () => "m", racetime: () => "seconds", speed: () => "km/h", height: () => "cm", weight: () => "kg" };
+function ctFieldSelect(src, cur, exclude, attr) {
+  const groups = [];
+  src.fields.forEach((f) => { if (exclude && exclude.includes(f.key) && f.key !== cur) return; let g = groups.find((x) => x[0] === f.group); if (!g) groups.push((g = [f.group, []])); g[1].push(f); });
+  return `<select ${attr}>${cur ? "" : '<option value="">Choose…</option>'}${groups.map(([g, fs]) => `<optgroup label="${esc(g)}">${fs.map((f) => `<option value="${f.key}" ${f.key === cur ? "selected" : ""}>${esc(f.label)}</option>`).join("")}</optgroup>`).join("")}</select>`;
+}
+function ctSide() {
+  const d = CT_DRAFT, src = ctSrc(d.source);
+  const box = $("#ct-side");
+  box.innerHTML = `<section class="panel ct-form">
+    <label class="ct-l">Name<input type="text" id="ct-name" value="${esc(d.name || "")}" placeholder="My table" maxlength="80"></label>
+    <label class="ct-l">Each row is<select id="ct-src">${CT.sources.map((s) => `<option value="${s.key}" ${s.key === d.source ? "selected" : ""}>${esc(s.label)}</option>`).join("")}</select>
+      <span class="small muted">${esc(src.about)}</span></label>
+    <div class="ct-l">Columns <span class="small muted">in this order</span>
+      <ol class="ct-cols">${d.cols.map((k, i) => { const f = ctField(src, k); return f ? `<li><span>${esc(f.label)}</span><span class="ct-acts">
+        <button class="btn sm" data-ctup="${i}" ${i ? "" : "disabled"} title="Move up">↑</button><button class="btn sm" data-ctdn="${i}" ${i < d.cols.length - 1 ? "" : "disabled"} title="Move down">↓</button><button class="btn sm" data-ctrm="${i}" title="Remove">✕</button></span></li>` : ""; }).join("")}</ol>
+      ${ctFieldSelect(src, "", d.cols, 'id="ct-add"').replace("Choose…", "Add a column…")}</div>
+    <div class="ct-l">Filters <span class="small muted">rows must match all of them</span>
+      <div class="ct-filters">${(d.filters || []).map((x, i) => {
+        const f = ctField(src, x.f), ops = f ? ctOps(f.kind) : [], noVal = ["empty", "notempty", "yes", "no", "yours"].includes(x.op);
+        const unit = f && CT_UNIT[f.kind] ? CT_UNIT[f.kind]() : "";
+        return `<div class="ct-f" data-i="${i}">${ctFieldSelect(src, x.f, null, `data-ctf="${i}"`)}
+          <select data-cto="${i}">${ops.map(([k, n]) => `<option value="${k}" ${k === x.op ? "selected" : ""}>${n}</option>`).join("")}</select>
+          ${noVal ? "<span></span>" : `<input data-ctv="${i}" type="${f && f.kind === "date" ? "date" : f && CT_NUMERIC.includes(f.kind) ? "number" : "text"}" step="any" value="${esc(x.v ?? "")}" placeholder="${unit ? esc(unit) : "value"}">`}
+          <button class="btn sm" data-ctfx="${i}" title="Remove this filter">✕</button></div>`;
+      }).join("")}</div>
+      <button class="btn sm" id="ct-addf">+ Add a filter</button></div>
+    <div class="ct-l">Sort by<div class="ct-row">${ctFieldSelect(src, d.sort[0], null, 'id="ct-sort"')}<select id="ct-dir"><option value="desc" ${d.sort[1] === "desc" ? "selected" : ""}>Biggest / newest first</option><option value="asc" ${d.sort[1] === "asc" ? "selected" : ""}>Smallest / oldest first</option></select></div></div>
+    <label class="ct-l">Rows per page<select id="ct-size">${[25, 50, 100, 250, 500, 1000, 2500, 5000].map((n) => `<option ${+d.size === n ? "selected" : ""}>${n}</option>`).join("")}</select></label>
+    <label class="ct-l">Description <span class="small muted">optional</span><input type="text" id="ct-about" value="${esc(d.about || "")}" maxlength="300"></label>
+    <div class="ct-btns"><button class="btn primary" id="ct-save">${d._editing ? "Save changes" : "Save table"}</button><a class="btn" href="${d._editing ? "#/custom-tables/" + d._editing : "#/custom-tables"}">Cancel</a>
+      ${d._editing ? `<span class="grow"></span><button class="btn" id="ct-dup">Duplicate</button><button class="btn danger" id="ct-del">Delete</button>` : ""}</div></section>`;
+  const redo = (prev = true) => { ctSide(); if (prev) ctPreview(); };
+  $("#ct-name").oninput = (e) => (d.name = e.target.value);
+  $("#ct-about").oninput = (e) => (d.about = e.target.value);
+  $("#ct-src").onchange = (e) => { const s = ctSrc(e.target.value); Object.assign(d, { source: s.key, cols: s.default.slice(), filters: [], sort: s.sort.slice() }); redo(); };
+  $("#ct-add").onchange = (e) => { if (e.target.value) { d.cols.push(e.target.value); redo(); } };
+  $("#ct-sort").onchange = (e) => { d.sort[0] = e.target.value; ctPreview(); };
+  $("#ct-dir").onchange = (e) => { d.sort[1] = e.target.value; ctPreview(); };
+  $("#ct-size").onchange = (e) => { d.size = +e.target.value; ctPreview(); };
+  $("#ct-addf").onclick = () => { const f = src.fields.find((x) => !d.filters.some((y) => y.f === x.key)) || src.fields[0]; d.filters.push({ f: f.key, op: ctOps(f.kind)[0][0], v: "" }); redo(false); };
+  box.querySelectorAll("[data-ctup]").forEach((b) => (b.onclick = () => { const i = +b.dataset.ctup; [d.cols[i - 1], d.cols[i]] = [d.cols[i], d.cols[i - 1]]; redo(); }));
+  box.querySelectorAll("[data-ctdn]").forEach((b) => (b.onclick = () => { const i = +b.dataset.ctdn; [d.cols[i + 1], d.cols[i]] = [d.cols[i], d.cols[i + 1]]; redo(); }));
+  box.querySelectorAll("[data-ctrm]").forEach((b) => (b.onclick = () => { if (d.cols.length > 1) { d.cols.splice(+b.dataset.ctrm, 1); redo(); } }));
+  box.querySelectorAll("[data-ctf]").forEach((el) => (el.onchange = () => { const x = d.filters[+el.dataset.ctf], f = ctField(src, el.value); x.f = el.value; x.op = ctOps(f.kind)[0][0]; x.v = ""; redo(); }));
+  box.querySelectorAll("[data-cto]").forEach((el) => (el.onchange = () => { d.filters[+el.dataset.cto].op = el.value; redo(); }));
+  box.querySelectorAll("[data-ctv]").forEach((el) => (el.oninput = debounce(() => { d.filters[+el.dataset.ctv].v = el.value; ctPreview(); }, 400)));
+  box.querySelectorAll("[data-ctfx]").forEach((b) => (b.onclick = () => { d.filters.splice(+b.dataset.ctfx, 1); redo(); }));
+  $("#ct-save").onclick = async () => {
+    const t = { id: d._editing || "t" + Date.now().toString(36), name: (d.name || "").trim() || "My table", about: (d.about || "").trim(), source: d.source, cols: d.cols, filters: d.filters, sort: d.sort, size: d.size };
+    const list = (CT.tables || []).slice(), at = list.findIndex((x) => x.id === t.id);
+    if (at >= 0) list[at] = t; else list.push(t);
+    try { await ctStore(list); location.hash = "#/custom-tables/" + t.id; toast(`✓ Saved “${esc(t.name)}”.`); } catch (e) { toast(esc(e.message)); }
+  };
+  if (d._editing) {
+    $("#ct-dup").onclick = async () => {
+      const t = Object.assign(JSON.parse(JSON.stringify(CT.tables.find((x) => x.id === d._editing))), { id: "t" + Date.now().toString(36) });
+      t.name = t.name + " (copy)";
+      await ctStore((CT.tables || []).concat([t])); location.hash = "#/custom-tables/" + t.id + "/edit";
+    };
+    $("#ct-del").onclick = async () => {
+      const b = $("#ct-del");
+      if (!b.dataset.sure) { b.dataset.sure = "1"; b.textContent = "Click again to delete"; setTimeout(() => { if (b.isConnected) { delete b.dataset.sure; b.textContent = "Delete"; } }, 4000); return; }
+      await ctStore((CT.tables || []).filter((x) => x.id !== d._editing)); location.hash = "#/custom-tables"; toast("Table deleted.");
+    };
+  }
+}
+async function ctPreview() {
+  const seq = ++CT_PREV_SEQ, box = $("#ct-prev");
+  if (!box) return;
+  box.classList.add("dim");
+  try {
+    const res = await api(ctDefQuery(ctForServer(CT_DRAFT), { page: 1, size: Math.min(CT_DRAFT.size || 100, 100) }));
+    if (seq !== CT_PREV_SEQ || !box.isConnected) return;
+    box.innerHTML = res.error ? `<div class="err-box">${esc(res.error)}</div>` : ctTable(res, false);
+    $("#ct-count").textContent = res.error ? "" : `${fNum(res.total)} row${res.total === 1 ? "" : "s"}${res.total > res.rows.length ? ` · first ${fNum(res.rows.length)} shown` : ""}`;
+  } catch (e) {
+    if (seq === CT_PREV_SEQ && box.isConnected) box.innerHTML = `<div class="err-box">${esc(e.message)}</div>`;
+  }
+  box.classList.remove("dim");
+}
