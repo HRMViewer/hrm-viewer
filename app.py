@@ -3997,6 +3997,22 @@ def api_stable(con, sid):
             left join stables hs on hs.stable_stable_id=i.investor_holder_stable_id
             where i.investor_stable_id=? group by 1, 2 order by shares desc limit 15""", (sid,))
     out["courses"] = rows(con, "select racecourse_racecourse_id as id, racecourse_name as name from racecourses where racecourse_owner_stable_id=?", (sid,))
+    # 16.8.2: everything the stable owns, on one list: shares in other stables, and racecourses and auction houses (owned whole)
+    hold = []
+    if has_table(con, "stable_investors"):
+        hold += rows(con, """select 'stable' as kind, i.investor_stable_id as id, s.stable_name as name, sum(i.investor_shares_owned) as shares,
+            s.stable_total_shares as total, min(i.investor_purchase_date) as since, s.stable_liquidated as closed
+            from stable_investors i join stables s on s.stable_stable_id=i.investor_stable_id
+            where i.investor_holder_stable_id=? and i.investor_stable_id<>? group by i.investor_stable_id having sum(i.investor_shares_owned) > 0""", (sid, sid))
+    hold += rows(con, """select 'course' as kind, racecourse_racecourse_id as id, racecourse_name as name, null as shares, null as total,
+        null as since, racecourse_demolished_date as closed from racecourses where racecourse_owner_stable_id=?""", (sid,))
+    if has_table(con, "auction_house"):
+        hold += rows(con, """select 'house' as kind, auction_house_id as id, auction_house_name as name, null as shares, null as total,
+            auction_house_founding_date as since, auction_house_demolished_date as closed from auction_house
+            where auction_house_owner_entity='stable' and auction_house_owner_id=?""", (sid,))
+    for r in hold:
+        r["pct"] = (100.0 * r["shares"] / r["total"]) if r["kind"] == "stable" and r["total"] else (100.0 if r["kind"] != "stable" else None)
+    out["holdings"] = sorted(hold, key=lambda r: ({"stable": 0, "course": 1, "house": 2}[r["kind"]], -(r["pct"] or 0), r["name"] or ""))
     return out
 
 

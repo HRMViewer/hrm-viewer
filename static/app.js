@@ -2599,16 +2599,19 @@ function sponsorTable(list, extra) {
     { h: "Paid", cls: "num", f: (r) => fMoney(r.paid) },
   ], list, { empty: "No sponsors." });
 }
-function stableMorePanels(m) {
-  const f = m.facilities || [], sp = m.sponsors || [];
-  if (!f.length && !sp.length) return "";
+// 16.8.2: Staff beside Facilities on the Overview (farm sponsors are on the Financials tab)
+function stableMorePanels(m, d) {
+  const f = m.facilities || [];
   const daily = f.reduce((a, x) => a + (x.daily || 0) * (x.n || 0), 0);
-  return `<div class="grid cols-2" style="margin-top:16px">${panel(`Facilities <span class="muted small">${fNum(f.reduce((a, x) => a + x.n, 0))}</span>`, table([
+  const staff = panel(`Staff <span class="muted small">${fNum((d.staff || []).length)}</span>`, table([
+    { h: "Role", f: (r) => esc(r.role) }, { h: "Name", f: (r) => L.person(r.id, r.name) }, { h: "Since", cls: "nowrap", f: (r) => fDate(r.start) },
+    { h: "Salary", cls: "num", f: (r) => fMoney(r.salary) },
+  ], d.staff, { empty: "No staff." }));
+  return `<div class="grid cols-2" style="margin-top:16px">${staff}${panel(`Facilities <span class="muted small">${fNum(f.reduce((a, x) => a + x.n, 0))}</span>`, table([
       { h: "Facility", f: (r) => `<span data-tip="${esc(r.about || "")}">${esc(nice(r.type))}</span>${r.n > 1 ? ` <span class="muted small">×${fNum(r.n)}</span>` : ""}${r.working < r.n ? ' <span class="badge warn">not working</span>' : ""}` },
       { h: "Built", cls: "num nowrap", f: (r) => fDate(r.first) + (r.n > 1 && r.last !== r.first ? `<div class="muted small">latest ${fDate(r.last)}</div>` : "") },
       { h: "Cost to build", cls: "num", f: (r) => fMoneyShort(r.cost) }, { h: "A day", cls: "num", f: (r) => fMoney((r.daily || 0) * (r.n || 1)) },
-    ], f, { empty: "None built." }), f.length ? `Running costs ${fMoney(daily)} a day · point at one for what it does` : "")}
-    ${panel("Farm sponsors", sponsorTable(sp), "Sponsors of the stable itself")}</div>`;
+    ], f, { empty: "None built." }), f.length ? `Running costs ${fMoney(daily)} a day · point at one for what it does` : "")}</div>`;
 }
 
 // ------------------------------------------------------------------ 16.5: languages and syndicate shares on a person
@@ -3928,21 +3931,30 @@ async function stablePage(id) {
     { h: "Condition", cls: "num", f: (r) => fNum(r.condition) + "%" }, { h: "Value", cls: "num", f: (r) => fMoneyShort(r.value) },
     { h: "Earnings", cls: "num", f: (r) => fMoney(r.earnings) },
   ], d.horses, { empty: "No horses." }))}</div>`;
-  html += `<div class="grid cols-2" style="margin-top:16px">${panel("Staff", table([
-    { h: "Role", f: (r) => esc(r.role) }, { h: "Name", f: (r) => L.person(r.id, r.name) }, { h: "Since", cls: "nowrap", f: (r) => fDate(r.start) },
-    { h: "Salary", cls: "num", f: (r) => fMoney(r.salary) },
-  ], d.staff, { empty: "No staff." }))}
-    ${panel("Top shareholders", table([
-      { h: "Investor", f: (r) => (r.kind === "stable" ? `${L.stable(r.id, r.name)} <span class="badge">Stable</span>` : L.person(r.id, r.name)) }, { h: "Shares", cls: "num", f: (r) => fNum(r.shares) },
+  // 16.8.2: who owns the stable beside everything it owns (other stables' shares, racecourses, auction houses), each with its share
+  const KIND = { stable: "Stable", course: "Racecourse", house: "Auction house" };
+  const hold = d.holdings || [];
+  const holdLink = (r) => (r.kind === "stable" ? L.stable(r.id, r.name) : r.kind === "course" ? L.course(r.id, r.name) : `<a href="#/auction-house/${r.id}">${esc(r.name)}</a>`);
+  const kinds = [...new Set(hold.map((r) => r.kind))];
+  html += `<div class="grid cols-2" style="margin-top:16px">${panel("Owners", table([
+      { h: "Shareholder", f: (r) => (r.kind === "stable" ? `${L.stable(r.id, r.name)} <span class="badge">Stable</span>` : L.person(r.id, r.name)) }, { h: "Shares", cls: "num", f: (r) => fNum(r.shares) },
       { h: "Stake", cls: "num", f: (r) => (s.stable_total_shares ? ((100 * r.shares) / s.stable_total_shares).toFixed(1) + "%" : "—") },
-    ], d.investors, { empty: "No shareholders.", noOwn: true }))}</div>`;      // racecourses it owns: on its Racecourses tab (16.8.1)
+    ], d.investors, { empty: "No shareholders.", noOwn: true }), "Its top shareholders")}
+    ${panel("What it owns", hold.length ? table([
+      { h: "Type", f: (r) => `<span class="badge">${KIND[r.kind]}</span>` },
+      { h: "Name", f: (r) => `${holdLink(r)}${r.closed ? ` <span class="badge dead">${r.kind === "stable" ? "Closed" : "Demolished"}</span>` : ""}` },
+      { h: "Owned", cls: "num", f: (r) => (isNum(r.pct) ? `${fNum(r.pct, r.pct >= 99.95 || r.pct < 0.005 ? 0 : r.pct < 10 ? 2 : 1)}%` : "—") },
+      { h: "Shares", cls: "num", f: (r) => (r.kind === "stable" ? fNum(r.shares) : '<span class="muted">—</span>') },
+      { h: "Since", cls: "nowrap", f: (r) => (r.since ? fDate(r.since) : '<span class="muted">—</span>') },
+    ], hold, { noOwn: true }) : '<div class="empty">It doesn\'t own any stables, racecourses or auction houses.</div>',
+      hold.length ? `<span title="Racecourses and auction houses are owned whole; stables by the shares held">${kinds.map((k) => `${fNum(hold.filter((r) => r.kind === k).length)} ${KIND[k].toLowerCase()}${hold.filter((r) => r.kind === k).length === 1 ? "" : "s"}`).join(" · ")}</span>` : "")}</div>`;
   html += `<div style="margin-top:16px">
     ${panel("Recent results", table([
       { h: "Date", cls: "nowrap", f: (r) => fDate(r.date) }, { h: "Horse", f: (r) => L.horse(r.horse_id, r.horse) },
       { h: "Race", f: (r) => `${L.race(r.race_id, r.race_name, '<span class="muted">Historic</span>')} ${grade(r.race_type)}` },
       { h: "Jockey", f: (r) => L.person(r.jockey_id, r.jockey) }, { h: "Pos", f: (r) => pos(r.rank) }, { h: "Prize", cls: "num", f: (r) => fMoney(r.prize) },
     ], d.recent_results, { rowClass: (r) => (r.rank === 1 ? "win" : ""), empty: "No results." }), `Last 100 · <a href="#/stable/${s.stable_stable_id}/races">every race</a>`, "tall")}</div>`;
-  html += stableMorePanels(more || {});
+  html += stableMorePanels(more || {}, d);
   html += `<div style="margin-top:16px">${allFields(s)}</div>`;
   return html;
 }
@@ -4087,7 +4099,7 @@ function groupSwitch(d, q, what) {
 async function stableFinancePage(route) {
   const id = route.parts[1], q = route.q;
   const grpOn = q.group === "1";
-  const [d, fin] = await Promise.all([api("stable/" + id), api(`stable_finance/${id}?` + new URLSearchParams({ ...(q.year ? { year: q.year } : {}), ...(q.month ? { month: q.month } : {}), ...(q.dir === "in" ? { dir: "in" } : {}), ...(grpOn ? { group: "1" } : {}) }))]);
+  const [d, fin, more] = await Promise.all([api("stable/" + id), api(`stable_finance/${id}?` + new URLSearchParams({ ...(q.year ? { year: q.year } : {}), ...(q.month ? { month: q.month } : {}), ...(q.dir === "in" ? { dir: "in" } : {}), ...(grpOn ? { group: "1" } : {}) })), api("stable_more/" + id).catch(() => ({}))]);
   let html = stableHead(d, "financials") + groupSwitch(d, q, "Financials");
   const G = !!(fin.group && fin.group_monthly);
   const lf = (G ? fin.group_latest : d.latest_finance) || {}, monthly = (G ? fin.group_monthly : d.finance) || [];
@@ -4122,13 +4134,20 @@ async function stableFinancePage(route) {
   }).join("");
   const yearTable = years.length ? `<div class="tbl-wrap"><table class="data fy"><thead><tr><th>Year</th><th class="num">Income</th><th class="num">Expenses</th><th class="num">Net</th></tr></thead>
     <tbody>${yrRows}</tbody></table></div>` : '<div class="empty">No yearly figures.</div>';
-  html += `<div class="grid cols-2" style="margin-top:16px">${panel("Year by year", yearTable, "▲▼ vs the year before · hover for exact amounts")}
+  // farm sponsors (moved here from the Overview in 16.8.2): a small list beside the yearly figures
+  const fsp = (more && more.sponsors) || [];
+  const fspNow = fsp.filter((x) => x.current), fspPaid = fsp.reduce((a, x) => a + (x.paid || 0), 0);
+  const sponsorsBox = `<section class="panel cp collapsed fsp" data-cp-panel="fsp"><div class="panel-head"><h2>Farm sponsors</h2><span class="note">${fsp.length ? `${fNum(fspNow.length)} now · ${fMoneyShort(fspPaid)} paid in all` : ""}</span></div>
+    ${fsp.length ? `<ul class="cp-list">${fsp.map((x, i) => `<li class="${i >= 5 ? "cp-more" : ""}"><div><b>${esc(x.brand)}</b>${x.current ? ' <span class="badge good">Now</span>' : ""}
+      <div class="small muted">${esc(x.industry || "")}${x.industry ? " · " : ""}${fMoney(x.monthly)} a month · ${fDate(x.start)}–${x.end ? fDate(x.end) : "now"}</div></div><div class="num small"><b>${fMoneyShort(x.paid)}</b></div></li>`).join("")}</ul>
+      ${fsp.length > 5 ? `<button class="cp-toggle" data-cp="fsp" aria-expanded="false">Show ${fNum(fsp.length - 5)} more ▾</button>` : ""}` : '<div class="empty">No farm sponsors.</div>'}</section>`;
+  html += `<div class="grid fin-yr-row" style="margin-top:16px">${panel("Year by year", yearTable, "▲▼ vs the year before · hover for exact amounts")}
     ${years.length >= 2 ? panel("Income vs expenses by year", lineChart([
       { name: "Income", color: "#1f5240", dots: true, points: years.map((y) => [yearStart(y.year) + YEAR_S / 2, y.income_total]) },
       { name: "Expenses", color: "#c0504d", dots: true, points: years.map((y) => [yearStart(y.year) + YEAR_S / 2, y.expense_total]) },
       { name: "Net", color: "#3e6e9e", dash: true, dots: true, points: years.map((y) => [yearStart(y.year) + YEAR_S / 2, y.net]) }],
       { ...STABLE_LOG, ranges: false, years: true, height: 240, partialYears: Object.fromEntries(years.filter((y) => y.months < 12).map((y) => [y.year, y.months])) }),
-      years.some((y) => y.months < 12) ? "One dot per year · hollow dots are part years" : "One dot per year") : ""}</div>`;
+      years.some((y) => y.months < 12) ? "One dot per year · hollow dots are part years" : "One dot per year") : ""}${sponsorsBox}</div>`;
   html += `<div style="margin-top:16px">${panel("Income by category", finYearTable(years, fin.income_cats || [], "income", "income_total"))}</div>
     <div style="margin-top:16px">${panel("Expenses by category", finYearTable(years, fin.expense_cats || [], "expenses", "expense_total", true), "The game's own expense categories · the detail below breaks them down")}</div>`;
   html += `<div style="margin-top:16px">${panel("Month by month", finMonthly(fin.months || []), "Each month's income and expenses · ▸ shows the categories")}</div>`;

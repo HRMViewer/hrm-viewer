@@ -1667,3 +1667,9 @@ table.data.cl-fixed td, table.data.cl-fixed th { overflow: hidden; text-overflow
 .ct-btns { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 .ct-btns .grow { flex: 1; }
 #ct-prev.dim { opacity: .55; transition: opacity .15s; }
+
+/* 16.8.2: a stable's Financials: yearly figures, the yearly chart and a small farm sponsors list on one line */
+.grid.fin-yr-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(240px, 300px); gap: 16px; align-items: start; }
+@media (max-width: 1200px) { .grid.fin-yr-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } .grid.fin-yr-row > .fsp { grid-column: 1 / -1; } }
+@media (max-width: 760px) { .grid.fin-yr-row { grid-template-columns: 1fr; } }
+.panel.fsp .cp-list li { display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; }

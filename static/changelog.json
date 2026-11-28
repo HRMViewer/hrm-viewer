@@ -2,8 +2,11 @@
   {
     "version": "16.8.2",
     "date": "2026-11-28",
-    "title": "Stables held through a person's stables",
+    "title": "Stables held through a person's stables, and what a stable owns",
     "changes": [
+      "A stable's Overview: Owners (its top shareholders) sits beside a new What it owns box, listing every stable it holds shares in, the racecourses and the auction houses it owns, each with how much of it the stable owns, its shares and since when.",
+      "Staff has moved down beside Facilities.",
+      "Farm sponsors have moved to the stable's Financials tab, as a small list beside the yearly figures (Show more for the rest).",
       "A person's Stables they own has a new Through their stables view: every stable that the stables they hold shares in hold shares in (and those stables' holdings in turn), with the stable holding it, its stake, shares and since when, and what that works out to for the person (their stake in the holder times the holder's stake)."
     ]
   },
