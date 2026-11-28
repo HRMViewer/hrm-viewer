@@ -1,5 +1,15 @@
 [
   {
+    "version": "16.8.6",
+    "date": "2026-11-28",
+    "title": "Horse Overview: pedigree beside owners",
+    "changes": [
+      "A horse's Overview: the pedigree takes three quarters of its line, with Owners beside it; Physical and Connections share the line above.",
+      "The family facts beside the pedigree chart (sire's and dam's records, damsire, full siblings, inbreeding) are gone from the Overview; Full pedigree opens the Pedigree tab.",
+      "Owners is kept simple: owner, from, paid and how (Bred, Auction linked to the sale, Private or Free), with the current owner in bold."
+    ]
+  },
+  {
     "version": "16.8.5",
     "date": "2026-11-28",
     "title": "Trial times: pick the sessions, and what they're compared with",

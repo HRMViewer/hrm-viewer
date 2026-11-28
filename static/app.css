@@ -1708,3 +1708,11 @@ table.tr-grid td.tr-g, table.tr-grid th.tr-g { background: rgba(62,110,158,.05);
 .tr-chip.on { background: var(--blue); border-color: var(--blue); color: #fff; }
 .tr-chip.on .muted { color: rgba(255,255,255,.8); }
 .tr-sess .seg { margin: 0; }
+
+/* 16.8.6: a horse's Overview: Physical and Connections on one line; the pedigree (three quarters) beside Owners */
+.hp-trio.hp-duo { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+.hp-pedrow { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 1fr); gap: 12px; align-items: stretch; margin-bottom: 16px; }
+.hp-pedrow > .panel { margin: 0; }
+@media (max-width: 1100px) { .hp-pedrow { grid-template-columns: 1fr; } }
+.hp-pedrow .panel.owners .tbl-wrap { max-height: 360px; overflow: auto; }
+.hp-pedrow .panel.owners table.data td, .hp-pedrow .panel.owners table.data th { padding: 4px 5px; }

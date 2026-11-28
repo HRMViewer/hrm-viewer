@@ -2933,16 +2933,7 @@ function horsePed3(d) {
   };
   const paths = ["s", "d", "ss", "sd", "ds", "dd", "sss", "ssd", "sds", "sdd", "dss", "dsd", "dds", "ddd"];
   const chart = `<div class="ped3">${paths.map(box).join("")}</div>`;
-  const sire = t.s, dam = t.d, rp = P.repeats || [];
-  const facts = kv([
-    ["Sire", sire ? `${L.horse(sire.id, sire.name)}<div class="small muted">${sire.starts ? rec(sire) : "Unraced"} · ${fNum(P.sire_foals)} foal${P.sire_foals === 1 ? "" : "s"}</div>` : "—"],
-    ["Dam", dam ? `${L.horse(dam.id, dam.name)}<div class="small muted">${dam.starts ? rec(dam) : "Unraced"} · ${fNum(P.dam_foals)} foal${P.dam_foals === 1 ? "" : "s"}</div>` : "—"],
-    ["Damsire", t.ds ? L.horse(t.ds.id, t.ds.name) : "—"],
-    ["Full siblings", fNum(P.full_sibs || 0)],
-    ["Inbreeding", rp.length ? rp.map((r) => `${L.horse(r.id, r.name)} <span class="muted small">${r.gens.join("×")}</span>`).join("<br>") : '<span class="muted">None within 3 generations</span>'],
-  ]);
-  return `<div style="margin-bottom:16px">${panel("Pedigree", `<div class="ped3-wrap">${chart}<div class="ped3-facts">${facts}</div></div>`,
-    `<a href="#/horse/${h.horse_horse_id}/pedigree">Full pedigree</a>`, "compact")}</div>`;
+  return panel("Pedigree", chart, `<a href="#/horse/${h.horse_horse_id}/pedigree">Full pedigree</a>`, "compact");
 }
 async function horsePage(id) {
   const [d, more] = await Promise.all([api("horse/" + id), api("horse_more/" + id).catch(() => ({}))]);
@@ -2979,18 +2970,19 @@ async function horsePage(id) {
 
   // 16.7.16: every stable that has owned the horse, what it paid and whether that was at auction
   const own = d.owners || [];
-  const HOW = { first: '<span class="badge">Bred</span>', auction: '<span class="badge good">Auction</span>', private: '<span class="badge">Private sale</span>', free: '<span class="badge warn">Free transfer</span>' };
+  const HOW_TXT = { first: "Bred", auction: "Auction", private: "Private", free: '<span title="No money changed hands">Free</span>' };
   const owners = own.length ? table([
-    { h: "Owner", f: (r) => `${r.stable_id ? L.stable(r.stable_id, r.stable) : esc(r.stable || "—")}${r.now ? ' <span class="badge good">Now</span>' : ""}` },
+    // 16.8.6: kept simple (owner, from, paid, how); the current owner is in bold and an auction links to its sale
+    { h: "Owner", f: (r) => { const n = r.stable_id ? L.stable(r.stable_id, r.stable) : esc(r.stable || "—"); return r.now ? `<b>${n}</b>` : n; } },
     { h: "From", cls: "num nowrap", f: (r) => fDate(r.from) },
     { h: "Paid", cls: "num nowrap", f: (r) => (r.how === "first" ? '<span class="muted">—</span>' : fMoney(r.price || 0)) },
-    { h: "How", f: (r) => HOW[r.how] + (r.sale_id ? `<div class="small">${AUCTION_LINK(r.sale_id, r.house || r.sale)}</div>` : "") },
-  ], own) : '<div class="empty">No owners recorded.</div>';
+    { h: "How", cls: "nowrap", f: (r) => (r.how === "auction" && r.sale_id ? `<a href="#/auction/${r.sale_id}" title="${esc(r.sale || "")}${r.house ? " · " + esc(r.house) : ""}">Auction</a>` : HOW_TXT[r.how] || "") },
+  ], own, { noOwn: true }) : '<div class="empty">No owners recorded.</div>';
   const nSales = own.filter((o) => o.how !== "first").length;
 
-  // 16.7.16: Physical and Connections share half the line, Owners the other half; the pedigree gets its own line below
-  html += `<div class="hp-trio">${panel("Physical", physical, "", "compact")}${panel("Connections", connections, "", "compact")}${panel("Owners", owners, nSales ? `${nSales} change${nSales === 1 ? "" : "s"} of hands` : "", "compact owners")}</div>`;
-  html += horsePed3(d);
+  // 16.8.6: Physical and Connections on one line; below, the pedigree (three quarters) beside Owners
+  html += `<div class="hp-trio hp-duo">${panel("Physical", physical, "", "compact")}${panel("Connections", connections, "", "compact")}</div>`;
+  html += `<div class="hp-pedrow">${horsePed3(d)}${panel("Owners", owners, "", "compact owners")}</div>`;
   const ent = (d.entries || []).slice().sort((x, y) => (x.race_time || 0) - (y.race_time || 0));
   if (ent.length) {
     html += `<div style="margin-top:16px">${panel("Upcoming races", table([
