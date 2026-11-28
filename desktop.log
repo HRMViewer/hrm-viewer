@@ -1,0 +1,7 @@
+2026-11-28 03:17:10  putting version 16.8.6 in place (had "")
+2026-11-28 03:17:10  putting Python (x86_64) in place
+2026-11-28 03:17:11  starting: /Users/runner/Library/Application Support/HRM Viewer/python/bin/python3 app.py --no-browser --port 8765
+Database: My save
+HRM Database Viewer is running at http://127.0.0.1:8765/
+Leave this window open while you use it. Close it (or press Ctrl+C) to stop.
+2026-11-28 03:17:14  showing http://127.0.0.1:8765/
