@@ -1,0 +1,7 @@
+total 59592
+drwxr-xr-x   6 runner  staff       192 Nov 28 03:16 .
+drwxr-xr-x  13 runner  staff       416 Nov 28 03:16 ..
+drwxr-xr-x   3 runner  staff        96 Nov 28 03:16 HRM Viewer.app
+-rw-r--r--   1 runner  staff  29739724 Nov 28 03:16 HRM-Viewer-16.8.6-mac.zip
+-rw-r--r--@  1 runner  staff    144831 Nov 28 03:16 mac-screenshot.png
+-rw-r--r--   1 runner  staff         6 Nov 28 03:16 version.txt

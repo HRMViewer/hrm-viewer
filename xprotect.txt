@@ -1,0 +1,60 @@
+2026-11-28 03:15:17.675 Df launchd[1:faa] [gui/501/com.apple.XProtect.agent.scan.startup [481]:] exited due to exit(0), ran for 32702ms
+2026-11-28 03:15:17.675 Df launchd[1:faa] [gui/501/com.apple.XProtect.agent.scan.startup [481]:] service state: exited
+2026-11-28 03:15:17.675 Df launchd[1:faa] [gui/501/com.apple.XProtect.agent.scan.startup [481]:] internal event: EXITED, code = 0
+2026-11-28 03:15:17.675 Df launchd[1:faa] [gui/501/com.apple.XProtect.agent.scan.startup [481]:] service state: not running
+2026-11-28 03:15:17.675 Df launchd[1:faa] [pid/481 [XProtect]:] shutting down
+2026-11-28 03:15:17.675 Df launchd[1:faa] [pid/481 [XProtect]:] cleaning up
+2026-11-28 03:15:17.676 Df XProtect[88:2b5] [com.apple.xpc:connection] [0x148004c00] invalidated because the current process cancelled the connection by calling xpc_connection_cancel()
+2026-11-28 03:15:17.676 Df XProtect[88:2b5] [com.apple.XProtectFramework:Runner] Finished system scan, ran as 0
+2026-11-28 03:15:17.676 Df XProtectPluginService[654:1272] [com.apple.xpc:connection] [0x10319deb0] invalidated because the client process (pid 88) either cancelled the connection or exited
+2026-11-28 03:15:17.676 Df launchd[1:fa8] [system/com.apple.XProtect.daemon.scan.startup [88]:] exited due to exit(0), ran for 47650ms
+2026-11-28 03:15:17.676 Df launchd[1:fa8] [system/com.apple.XProtect.daemon.scan.startup [88]:] service state: exited
+2026-11-28 03:15:17.676 Df launchd[1:fa8] [system/com.apple.XProtect.daemon.scan.startup [88]:] internal event: EXITED, code = 0
+2026-11-28 03:15:17.676 Df launchd[1:fa8] [system/com.apple.XProtect.daemon.scan.startup [88]:] service state: not running
+2026-11-28 03:15:17.676 Df launchd[1:fa8] [pid/88 [XProtect]:] shutting down
+2026-11-28 03:15:17.676 Df launchd[1:fa8] [pid/88 [XProtect]:] cleaning up
+2026-11-28 03:16:20.672 Df syspolicyd[244:2a86] [com.apple.network:quic] quic_frame_write_CONNECTION_CLOSE [C1.1.2.1:2] [-001f491b330e43a35a552ca085ec63a407f93665] sending CONNECTION_CLOSE, code NO_ERROR, type UNKNOWN, reason <null>
+2026-11-28 03:16:20.673 Df syspolicyd[244:2a86] [com.apple.network:quic] quic_frame_write_CONNECTION_CLOSE [C1.1.2.2:2] [-00529f2e2e5edb985b6d3768552679ba1b9a3067] sending CONNECTION_CLOSE, code NO_ERROR, type UNKNOWN, reason <null>
+2026-11-28 03:16:20.824 Df syspolicyd[244:1cab] [com.apple.securityd:SecError] Error checking with notarization daemon: 3
+2026-11-28 03:16:20.921 Df syspolicyd[244:1cab] [com.apple.securityd:SecError] Error checking with notarization daemon: 3
+2026-11-28 03:16:20.949 Df syspolicyd[244:1cab] [com.apple.securityd:security_exception] MacOS error: -67018
+2026-11-28 03:16:20.990 Df launchd[1:fa9] [pid/2431/com.apple.XprotectFramework.AnalysisService:] initialized endpoint after lookup
+2026-11-28 03:16:20.992 Df launchd[1:15da] [pid/2431/com.apple.XprotectFramework.AnalysisService:] internal event: WILL_SPAWN, code = 0
+2026-11-28 03:16:20.992 Df launchd[1:15da] [pid/2431/com.apple.XprotectFramework.AnalysisService:] service state: spawn scheduled
+2026-11-28 03:16:20.992 Df launchd[1:15da] [pid/2431/com.apple.XprotectFramework.AnalysisService:] service state: spawning
+2026-11-28 03:16:20.992 Df launchd[1:15da] [pid/2431/com.apple.XprotectFramework.AnalysisService:] launching: ipc (mach)
+2026-11-28 03:16:20.992 Df launchd[1:15da] [pid/2431/com.apple.XprotectFramework.AnalysisService [2433]:] xpcproxy spawned with pid 2433
+2026-11-28 03:16:20.992 Df launchd[1:15da] [pid/2431/com.apple.XprotectFramework.AnalysisService [2433]:] internal event: SPAWNED, code = 0
+2026-11-28 03:16:20.992 Df launchd[1:15da] [pid/2431/com.apple.XprotectFramework.AnalysisService [2433]:] service state: xpcproxy
+2026-11-28 03:16:20.992 Df launchd[1:15da] [pid/2431/com.apple.XprotectFramework.AnalysisService [2433]:] internal event: SOURCE_ATTACH, code = 0
+2026-11-28 03:16:21.001 Df launchd[1:15da] [pid/2431/com.apple.XprotectFramework.AnalysisService [2433]:] service state: running
+2026-11-28 03:16:21.001 Df launchd[1:15da] [pid/2431/com.apple.XprotectFramework.AnalysisService [2433]:] internal event: INIT, code = 0
+2026-11-28 03:16:21.001 Df launchd[1:15da] [pid/2431/com.apple.XprotectFramework.AnalysisService [2433]:] Successfully spawned XprotectService[2433] because ipc (mach)
+2026-11-28 03:16:21.005 Df launchd[1:fa9] [pid/2433 [XprotectService]:] uncorking exec source upfront
+2026-11-28 03:16:21.005 Df launchd[1:fa9] [pid/2433 [XprotectService]:] created
+2026-11-28 03:16:21.007 A  XprotectService[2433:2a9e] (libsystem_info.dylib) Retrieve User by ID
+2026-11-28 03:16:21.022 Df XprotectService[2433:2a9e] [com.apple.xpc:connection] [0x100b5d9e0] activating connection: mach=false listener=true peer=false name=com.apple.XprotectFramework.AnalysisService
+2026-11-28 03:16:21.022 Df launchd[1:15da] [pid/2433 [XprotectService]:] uncorking domain
+2026-11-28 03:16:21.025 Df XprotectService[2433:2aa0] [com.apple.xpc:connection] [0x100b5e0b0] activating connection: mach=false listener=false peer=true name=com.apple.XprotectFramework.AnalysisService.peer[2431].0x100b5e0b0
+2026-11-28 03:16:21.026 Df XprotectService[2433:2aa0] [com.apple.xpc:connection] [0x100b5fd60] activating connection: mach=true listener=false peer=false name=com.apple.lsd.mapdb
+2026-11-28 03:16:21.027 Df XprotectService[2433:2aa0] [com.apple.xprotect:xprotect] Using meta-plist from: /var/protected/xprotect/XProtect.bundle/Contents/Resources/XProtect.meta.plist
+2026-11-28 03:16:21.030 Df XprotectService[2433:2aa0] [com.apple.xpc:connection] [0x9e40bc100] activating connection: mach=true listener=false peer=false name=com.apple.security.syspolicy
+2026-11-28 03:16:21.108 Df syspolicyd[244:286e] [com.apple.securityd:SecError] Error checking with notarization daemon: 3
+2026-11-28 03:16:21.197 Df syspolicyd[244:286e] [com.apple.securityd:SecError] Error checking with notarization daemon: 3
+2026-11-28 03:16:21.223 Df syspolicyd[244:286e] [com.apple.securityd:security_exception] MacOS error: -67018
+2026-11-28 03:16:21.253 Df XprotectService[2433:2aa0] [com.apple.xpc:connection] [0x9e40bc700] activating connection: mach=true listener=false peer=false name=com.apple.cfprefsd.daemon
+2026-11-28 03:16:21.253 Df XprotectService[2433:2aa1] [com.apple.xpc:connection] [0x9e40bc800] activating connection: mach=true listener=false peer=false name=com.apple.cfprefsd.agent
+2026-11-28 03:16:21.258 Df XprotectService[2433:2aa0] [com.apple.xprotect:xprotect] Using XProtect rules location: /var/protected/xprotect/XProtect.bundle/Contents/Resources/XProtect.yara
+2026-11-28 03:16:21.979 Df XprotectService[2433:2aa0] [com.apple.xpc:connection] [0x9e40bc900] activating connection: mach=true listener=false peer=false name=com.apple.analyticsd
+2026-11-28 03:16:21.980 Df XprotectService[2433:2ab5] [com.apple.xpc:connection] [0x100b5e0b0] invalidated because the client process (pid 2431) either cancelled the connection or exited
+2026-11-28 03:16:22.047 Df XprotectService[2433:2aa0] [com.apple.CoreAnalytics:client] Received configuration update from daemon (initial)
+2026-11-28 03:16:22.142 Df launchd[1:fa9] [pid/2431/com.apple.XprotectFramework.AnalysisService [2433]:] signaled service: Killed: 9
+2026-11-28 03:16:22.142 Df launchd[1:fa9] [pid/2431/com.apple.XprotectFramework.AnalysisService [2433]:] service state: SIGKILLed
+2026-11-28 03:16:22.142 Df launchd[1:fa9] [pid/2431/com.apple.XprotectFramework.AnalysisService [2433]:] scheduling cleanup in 3 sec after sending Killed: 9
+2026-11-28 03:16:22.143 Df launchd[1:1d5] [pid/2431/com.apple.XprotectFramework.AnalysisService [2433]:] exited due to SIGKILL | sent by launchd[1] during teardown of process-scoped services after host exited, ran for 1150ms
+2026-11-28 03:16:22.143 Df launchd[1:1d5] [pid/2431/com.apple.XprotectFramework.AnalysisService [2433]:] service state: exited
+2026-11-28 03:16:22.143 Df launchd[1:1d5] [pid/2431/com.apple.XprotectFramework.AnalysisService [2433]:] internal event: EXITED, code = 0
+2026-11-28 03:16:22.143 Df launchd[1:1d5] [pid/2431/com.apple.XprotectFramework.AnalysisService [2433]:] internal event: PETRIFIED, code = 0
+2026-11-28 03:16:22.143 Df launchd[1:1d5] [pid/2431/com.apple.XprotectFramework.AnalysisService [2433]:] service state: not running
+2026-11-28 03:16:22.143 Df launchd[1:1d5] [pid/2433 [XprotectService]:] shutting down
+2026-11-28 03:16:22.143 Df launchd[1:1d5] [pid/2433 [XprotectService]:] cleaning up
