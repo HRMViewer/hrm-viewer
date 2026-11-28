@@ -1,5 +1,16 @@
 [
   {
+    "version": "16.8.4",
+    "date": "2026-11-28",
+    "title": "Trial times: a distance filter, and how they compare with every horse",
+    "changes": [
+      "A horse's Trial times by distance has a Distance filter: pick one distance, or a range from one to another, to hide the rest (All distances shows everything again). It picks the rows in Every trial run too, and is remembered for each horse.",
+      "New columns compare the horse's best time at each distance with every horse's trials at that distance in the save: vs all: average and vs all: best (in seconds, green when it's faster, orange when slower), and All: average (with how many runs and horses), All: best (and which horse ran it) and All: slowest.",
+      "Its average, Its slowest and Its best are named as its own times, and Best in a race appears when it has raced over exactly a distance it has trialled at.",
+      "The session columns keep any layout you give them when a new trial session is added (they were named by date, so a new session reset the table's column layout)."
+    ]
+  },
+  {
     "version": "16.8.3",
     "date": "2026-11-28",
     "title": "Faster Financials ranges, cleaner chart axes",

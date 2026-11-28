@@ -3281,32 +3281,74 @@ async function horseRacesPage(id) {
     .concat(anyHarness ? [{ h: "Harness", f: (s) => (s.harness ? "Yes" : "No") }] : []), sess),
     "A session is a day at one course · places are against every horse timed there that day at the same distance")}</div>`;
   // its time at every distance, session by session (newest on the left), then its average, slowest and best time there
-  // (over every session, not just the ones shown); its best is underlined in gold
+  // (over every session, not just the ones shown; its best is underlined in gold), then (16.8.4) how its best compares with
+  // every horse's trials at that distance (the game's average, best and slowest) and its best race time there
   const cols = sess.slice(0, 8), dists = [...new Set(tr.map((x) => x.distance))].sort((a, b) => a - b);
+  const G = t.game || {}, RB = t.race || {}, gk = (dist) => String(+dist);
+  const anyRace = dists.some((dist) => RB[gk(dist)]);
   const cell = (s, dist) => s.runs.find((x) => x.distance === dist);
   const timesAt = new Map(dists.map((dist) => [dist, tr.filter((x) => x.distance === dist && x.time > 0).map((x) => x.time)]));
   const kmh = (dist, t) => fSpeed((dist / t) * 3.6);
-  const sumCell = (dist, t, cls) => (isNum(t) && isFinite(t) ? `<td class="num ${cls || ""}"><b>${fTime(t)}</b><div class="tr-sub">${kmh(dist, t)}</div></td>` : `<td class="num muted ${cls || ""}">—</td>`);
-  const head = `<tr><th class="num">Distance</th>${cols.map((s) => `<th class="num">${fDate(s.date)}<div class="muted small tr-sub">${esc(s.course || "")}</div></th>`).join("")}
-    <th class="num tr-sum">Average</th><th class="num">Slowest</th><th class="num">Best</th></tr>`;
+  const sumCell = (dist, t, cls) => (isNum(t) && isFinite(t) ? `<td class="num ${cls || ""}" data-sv="${t}"><b>${fTime(t)}</b><div class="tr-sub">${kmh(dist, t)}</div></td>` : `<td class="num muted ${cls || ""}" data-sv="">—</td>`);
+  // the gap to a time: faster (minus) in green, slower in orange
+  const vsCell = (mine, ref, what) => (isNum(mine) && isNum(ref) ? `<td class="num" data-sv="${mine - ref}"><span class="tr-vs ${mine - ref <= 0 ? "good" : "bad"}" data-tip="Its best ${fTime(mine)} against ${what} ${fTime(ref)}">${mine - ref <= 0 ? "−" : "+"}${Math.abs(mine - ref).toFixed(2)}</span></td>` : `<td class="num muted" data-sv="">—</td>`);
+  const head = `<tr><th class="num" data-cid="Distance">Distance</th>${cols.map((s, i) => `<th class="num" data-cid="Session ${i + 1}">${fDate(s.date)}<div class="muted small tr-sub">${esc(s.course || "")}</div></th>`).join("")}
+    <th class="num tr-sum" data-tip="Its own average time at this distance, over every session">Its average</th><th class="num" data-tip="Its own slowest time at this distance">Its slowest</th><th class="num" data-tip="Its own best time at this distance">Its best</th>
+    ${anyRace ? `<th class="num" data-tip="Its best time in a race over exactly this distance">Best in a race</th>` : ""}
+    <th class="num tr-g" data-tip="Its best against the average of every horse's trial times at this distance: minus is faster">vs all: average</th>
+    <th class="num tr-g" data-tip="Its best against the fastest trial time any horse has run at this distance: minus is faster">vs all: best</th>
+    <th class="num tr-g" data-tip="The average of every horse's trial times at this distance">All: average</th><th class="num tr-g" data-tip="The fastest trial time any horse has run at this distance">All: best</th><th class="num tr-g" data-tip="The slowest trial time any horse has run at this distance">All: slowest</th></tr>`;
   const body = dists.map((dist) => {
-    const ts = timesAt.get(dist), best = Math.min(...ts), worst = Math.max(...ts), avg = ts.length ? ts.reduce((a, t) => a + t, 0) / ts.length : null;
-    return `<tr><td class="num"><b>${fDist(dist)}</b></td>${cols.map((s) => {
+    const ts = timesAt.get(dist), best = ts.length ? Math.min(...ts) : null, worst = ts.length ? Math.max(...ts) : null, avg = ts.length ? ts.reduce((a, t) => a + t, 0) / ts.length : null;
+    const g = G[gk(dist)] || {}, rb = RB[gk(dist)];
+    return `<tr data-dist="${dist}"><td class="num" data-sv="${dist}"><b>${fDist(dist)}</b></td>${cols.map((s) => {
       const x = cell(s, dist);
-      if (!x || !(x.time > 0)) return `<td class="num muted">—</td>`;
+      if (!x || !(x.time > 0)) return `<td class="num muted" data-sv="">—</td>`;
       const gap = isNum(x.best) && x.time > x.best ? `+${(x.time - x.best).toFixed(2)}s` : "fastest";
       const isBest = x.time === best && ts.length > 1;
-      return `<td class="num tr-cell${isBest ? " tr-best" : ""}" data-tip="${esc(`${fDist(dist)} on ${fDate(s.date)} at ${s.course || "the course"}: ${fTime(x.time)} · ${x.place ? ord(x.place) + " of " + x.field : ""} · fastest there ${fTime(x.best)} · ${kmh(dist, x.time)}`)}">
+      return `<td class="num tr-cell${isBest ? " tr-best" : ""}" data-sv="${x.time}" data-tip="${esc(`${fDist(dist)} on ${fDate(s.date)} at ${s.course || "the course"}: ${fTime(x.time)} · ${x.place ? ord(x.place) + " of " + x.field : ""} · fastest there ${fTime(x.best)} · ${kmh(dist, x.time)}`)}">
         ${fTime(x.time)}<div class="tr-sub">${x.place ? `${ord(x.place)}/${fNum(x.field)}` : ""} · ${gap}</div></td>`;
-    }).join("")}${sumCell(dist, avg, "tr-sum")}${sumCell(dist, ts.length > 1 ? worst : null)}${sumCell(dist, best)}</tr>`;
+    }).join("")}${sumCell(dist, avg, "tr-sum")}${sumCell(dist, ts.length > 1 ? worst : null)}${sumCell(dist, best)}
+      ${anyRace ? (rb ? `<td class="num" data-sv="${rb.best}"><b>${fTime(rb.best)}</b><div class="tr-sub">${fNum(rb.n)} race${rb.n === 1 ? "" : "s"}</div></td>` : `<td class="num muted" data-sv="">—</td>`) : ""}
+      ${vsCell(best, g.avg, "the average of")}${vsCell(best, g.best, "the fastest,")}
+      <td class="num tr-g" data-sv="${isNum(g.avg) ? g.avg : ""}">${isNum(g.avg) ? `${fTime(g.avg)}<div class="tr-sub">${fNum(g.n)} run${g.n === 1 ? "" : "s"} · ${fNum(g.horses)} horse${g.horses === 1 ? "" : "s"}</div>` : "—"}</td>
+      <td class="num tr-g" data-sv="${isNum(g.best) ? g.best : ""}">${isNum(g.best) ? `${fTime(g.best)}<div class="tr-sub">${g.best_horse_id ? (g.best_horse_id === h.horse_horse_id ? "this horse" : L.horse(g.best_horse_id, g.best_horse)) : ""}</div>` : "—"}</td>
+      <td class="num tr-g" data-sv="${isNum(g.slowest) ? g.slowest : ""}">${isNum(g.slowest) ? fTime(g.slowest) : "—"}</td></tr>`;
   }).join("");
-  html += `<div style="margin-top:16px">${panel("Trial times by distance", `<div class="wide-wrap"><table class="data wide tr-grid"><thead>${head}</thead><tbody>${body}</tbody></table></div>
-    <div class="legend">${sess.length > 1 ? `<span><i class="tr-key best"></i>Its best time at that distance</span>` : ""}<span>Under each time: its place among the horses timed with it, and how far behind the fastest</span><span>Average, slowest and best: its own times at that distance, over every session</span></div>`,
-    sess.length > cols.length ? `Latest ${cols.length} of ${sess.length} sessions shown · average, slowest and best cover all ${sess.length}` : `${fNum(sess.length)} session${sess.length === 1 ? "" : "s"}`)}</div>`;
-  html += `<div style="margin-top:16px">${panel("Every trial run", table(trialCols({ course: true, revealed: anyRevealed }), tr),
+  // the distance filter: one distance or a range (it applies to this table and to Every trial run, and is remembered for the horse)
+  const trKey = "hrm.trDist." + h.horse_horse_id;
+  let trSaved = null; try { trSaved = JSON.parse(localStorage.getItem(trKey) || "null"); } catch (e) { /* none */ }
+  const dFrom = trSaved && dists.includes(trSaved[0]) ? trSaved[0] : dists[0], dTo = trSaved && dists.includes(trSaved[1]) ? trSaved[1] : dists[dists.length - 1];
+  const dOpt = (sel) => dists.map((x) => `<option value="${x}" ${x === sel ? "selected" : ""}>${fDist(x)}</option>`).join("");
+  const filterBar = dists.length > 1 ? `<div class="tr-filter" data-trkey="${trKey}"><span class="small"><b>Distance</b></span>
+    <select data-trd="from" aria-label="From distance">${dOpt(dFrom)}</select><span class="small muted">to</span><select data-trd="to" aria-label="To distance">${dOpt(dTo)}</select>
+    <button class="btn sm" data-trd-all>All distances</button><span class="small muted tr-fn"></span>
+    <span class="small muted">· picks the rows here and in Every trial run below</span></div>` : "";
+  html += `<div style="margin-top:16px">${panel("Trial times by distance", `${filterBar}<div class="wide-wrap"><table class="data wide tr-grid"><thead>${head}</thead><tbody>${body}</tbody></table></div>
+    <div class="legend">${sess.length > 1 ? `<span><i class="tr-key best"></i>Its best time at that distance</span>` : ""}<span>Under each time: its place among the horses timed with it, and how far behind the fastest</span><span>Its average, slowest and best: its own times at that distance, over every session</span>
+      <span><span class="tr-vs good">−1.20</span> <span class="tr-vs bad">+0.80</span> its best against every horse's trials at that distance (seconds; minus is faster)</span><span>All: every horse's trial times at that distance, in this save</span></div>`,
+    sess.length > cols.length ? `Latest ${cols.length} of ${sess.length} sessions shown · its average, slowest and best cover all ${sess.length}` : `${fNum(sess.length)} session${sess.length === 1 ? "" : "s"}`)}</div>`;
+  html += `<div style="margin-top:16px">${panel("Every trial run", table(trialCols({ course: true, revealed: anyRevealed }), tr, { rowClass: (x) => `trd-${String(x.distance).replace(".", "_")}` }),
     `${fNum(tr.length)} timed runs · the game keeps each run's finishing time only, not splits`, "tall")}</div>`;
   return html;
 }
+// 16.8.4: the trial distance filter (one distance, or from–to)
+function trFilterApply(bar) {
+  const f = +bar.querySelector("[data-trd=from]").value, tt = +bar.querySelector("[data-trd=to]").value, lo = Math.min(f, tt), hi = Math.max(f, tt);
+  let shown = 0, all = 0;
+  document.querySelectorAll("table.tr-grid tbody tr[data-dist]").forEach((tr) => { const d = +tr.dataset.dist, ok = d >= lo && d <= hi; tr.hidden = !ok; all++; if (ok) shown++; });
+  document.querySelectorAll("tr[class*='trd-']").forEach((tr) => { const m = /trd-([\d_]+)/.exec(tr.className); const d = m ? +m[1].replace("_", ".") : NaN; tr.hidden = !(d >= lo && d <= hi); });
+  const n = bar.querySelector(".tr-fn");
+  if (n) n.textContent = shown < all ? `${fNum(shown)} of ${fNum(all)} distances` : "";
+  try { if (shown < all) localStorage.setItem(bar.dataset.trkey, JSON.stringify([lo, hi])); else localStorage.removeItem(bar.dataset.trkey); } catch (e) { /* this visit only */ }
+}
+document.addEventListener("change", (e) => { const s = e.target.closest && e.target.closest("[data-trd]"); if (s) trFilterApply(s.closest(".tr-filter")); });
+document.addEventListener("click", (e) => {
+  const b = e.target.closest && e.target.closest("[data-trd-all]");
+  if (!b) return;
+  const bar = b.closest(".tr-filter"), f = bar.querySelector("[data-trd=from]"), t = bar.querySelector("[data-trd=to]");
+  f.selectedIndex = 0; t.selectedIndex = t.options.length - 1; trFilterApply(bar);
+});
 // 16.7.11: a horse's season-by-season, prize-money and race-rating charts (its Overview puts them with value over time)
 function horseFormCharts(runs) {
   const yOf = (t) => new Date(t * 1000).getUTCFullYear();
@@ -7499,7 +7541,10 @@ function markSortable(root) {
 document.addEventListener("keydown", (e) => {
   if ((e.key === "Enter" || e.key === " ") && e.target.matches && e.target.matches("table.data > thead th[tabindex]")) { e.preventDefault(); e.target.click(); }
 });
-new MutationObserver(() => { addCsvButtons(APP); markSortable(APP); clEnhance(APP); clCatchUp(APP); }).observe(APP, { childList: true, subtree: true });
+new MutationObserver(() => {
+  addCsvButtons(APP); markSortable(APP); clEnhance(APP); clCatchUp(APP);
+  APP.querySelectorAll(".tr-filter:not([data-on])").forEach((b) => { b.dataset.on = "1"; trFilterApply(b); });      // a horse's remembered trial distances
+}).observe(APP, { childList: true, subtree: true });
 
 // ------------------------------------------------------------------ 16.8: move and resize the columns of any table
 // Drag a column heading sideways to move the column; drag the edge of a heading to make it wider or narrower (double-click
@@ -7621,7 +7666,7 @@ function clEnhance(root) {
     if (tbl.querySelector(":scope > colgroup:not(.cl-cg)")) continue;      // tables that set their own column widths
     const seen = {};
     const ids = [...row.cells].map((th, i) => {
-      let id = clLabel(th) || "#" + i;
+      let id = th.dataset.cid || clLabel(th) || "#" + i;      // a page can name a column that changes its heading (a session's date)
       if (seen[id]) id += "~" + ++seen[id]; else seen[id] = 1;
       th.dataset.cid = id;
       return id;

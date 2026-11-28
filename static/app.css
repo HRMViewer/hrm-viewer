@@ -1690,3 +1690,13 @@ table.data.cl-fixed td, table.data.cl-fixed th { overflow: hidden; text-overflow
 .fin-sect-h { display: flex; align-items: baseline; gap: 10px; }
 .fin-sect-h h2 { margin: 0; font-size: var(--fs-lg, 18px); }
 .fin-sect .fin-range { margin: 0; }
+
+/* 16.8.4: a horse's trial times: the distance filter, and its best against every horse's trials at that distance */
+.tr-filter { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 0 0 10px; }
+.tr-filter select { font: inherit; padding: 4px 8px; border: 1px solid var(--line); border-radius: 7px; background: var(--panel); color: inherit; }
+.tr-vs { display: inline-block; min-width: 52px; padding: 2px 8px; border-radius: 999px; font-weight: 700; font-variant-numeric: tabular-nums; text-align: center; font-size: var(--fs-sm); }
+.tr-vs.good { background: #d8f3e6; color: #0f6b3e; }
+.tr-vs.bad { background: #fde3cf; color: #a8480c; }
+html.dark .tr-vs.good { background: rgba(46,190,120,.22); color: #7ee2b0; }
+html.dark .tr-vs.bad { background: rgba(245,140,60,.22); color: #f7b27a; }
+table.tr-grid td.tr-g, table.tr-grid th.tr-g { background: rgba(62,110,158,.05); }

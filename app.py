@@ -2801,7 +2801,28 @@ def api_horse_trials(con, hid):
         t["field"] = len(times)
         t["best"] = times[0] if times else None
         t["place"] = (sum(1 for x in times if x < t["time"]) + 1) if times and t["time"] else None
-    return {"trials": trials}
+    # 16.8.4: every horse's trial times at the distances it has trialled over (the average, best and slowest in the game),
+    # and its own best race time at each of those distances
+    dists = sorted({t["distance"] for t in trials if t["distance"]})
+    game, race = {}, {}
+    if dists:
+        qd = ",".join("?" * len(dists))
+        for dist, n, avg, best, slow in con.execute("""select tt_distance, count(*), avg(tt_time_result), min(tt_time_result), max(tt_time_result)
+                from timing_trials where tt_time_result > 0 and tt_distance in (%s) group by tt_distance""" % qd, dists):
+            game[dist] = {"n": n, "avg": avg, "best": best, "slowest": slow, "horses": 0}
+        for dist, hn in con.execute("select tt_distance, count(distinct tt_horse_id) from timing_trials where tt_time_result > 0 and tt_distance in (%s) group by 1" % qd, dists):
+            if dist in game:
+                game[dist]["horses"] = hn
+        for dist, hid_, hname in con.execute("""select t.tt_distance, t.tt_horse_id, h.horse_name from timing_trials t left join horses h on h.horse_horse_id=t.tt_horse_id
+                where t.tt_time_result > 0 and t.tt_distance in (%s) and t.tt_time_result = (select min(z.tt_time_result) from timing_trials z
+                where z.tt_distance=t.tt_distance and z.tt_time_result > 0)""" % qd, dists):
+            if dist in game and "best_horse_id" not in game[dist]:
+                game[dist].update(best_horse_id=hid_, best_horse=hname)
+        if has_table(con, "race_results") and has_table(con, "races"):
+            for dist, best, n in con.execute("""select x.races_distance, min(r.race_result_time), count(*) from race_results r join races x on x.races_race_id=r.race_result_race_id
+                    where r.race_result_horse_id=? and r.race_result_time > 0 and x.races_distance in (%s) group by 1""" % qd, [hid] + dists):
+                race[dist] = {"best": best, "n": n}
+    return {"trials": trials, "game": {"%g" % k: v for k, v in game.items()}, "race": {"%g" % k: v for k, v in race.items()}}
 
 
 def api_course_trials(con, cid, q):
@@ -8941,7 +8962,7 @@ class Handler(BaseHTTPRequestHandler):
 
 # --------------------------------------------------------------------------- in-app updates
 
-VERSION = "16.8.3"
+VERSION = "16.8.4"
 BACKUP_DIR = os.path.join(APP_DIR, "backups")
 UPDATE_PENDING = os.path.join(DATA_DIR, "update_pending.json")
 UPDATE_RESULT = os.path.join(DATA_DIR, "update_result.json")
