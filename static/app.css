@@ -1684,3 +1684,9 @@ table.data.cl-fixed td, table.data.cl-fixed th { overflow: hidden; text-overflow
 .tbl-wrap.fin-scroll table.data thead th { position: sticky; top: 0; z-index: 2; background: var(--panel); }
 .tbl-wrap.fin-scroll table.data tfoot td { position: sticky; bottom: 0; z-index: 2; background: var(--panel); }
 .tbl-wrap.fc-scroll table.fc-table td.fc-name, .tbl-wrap.fc-scroll table.fc-table thead th:first-child, .tbl-wrap.fc-scroll table.fc-table tfoot td:first-child { position: sticky; left: 0; z-index: 3; background: var(--panel); box-shadow: 1px 0 0 var(--line); }
+
+/* 16.8.2: a stable's Financials in sections (Yearly, Monthly), each with its own range */
+.fin-sect { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin: 22px 0 10px; padding-top: 14px; border-top: 1px solid var(--line); }
+.fin-sect-h { display: flex; align-items: baseline; gap: 10px; }
+.fin-sect-h h2 { margin: 0; font-size: var(--fs-lg, 18px); }
+.fin-sect .fin-range { margin: 0; }

@@ -4129,15 +4129,22 @@ async function stableFinancePage(route) {
   const yearsAll = (fin.years || []).map((y) => ({ ...y, net: (y.income_total || 0) - (y.expense_total || 0) }));
   const last = yearsAll[yearsAll.length - 1], prev = yearsAll[yearsAll.length - 2];
   if (!yearsAll.length && !(monthly || []).length) return html + `<div class="empty">No financial records for this stable.</div>`;
-  // 16.8.2: show the last few years (starts on the charts' setting in Settings), for the charts and the yearly tables
+  // 16.8.2: the yearly reports show the last few years (q.yrs) and the monthly charts the last few months or years (q.mrs);
+  // both start on the charts' setting in Settings. Month by month and the payment detail always show everything.
   const yrsQ = q.yrs || finYearsDefault(), nY = yrsQ === "all" ? 0 : +yrsQ || 0;
   const lastY = last ? last.year : new Date().getUTCFullYear(), fromY = nY ? lastY - nY + 1 : -Infinity;
   const years = yearsAll.filter((y) => y.year >= fromY);
-  const monthlyAll = monthly;
-  monthly = monthlyAll.filter((f) => new Date(f.date * 1000).getUTCFullYear() >= fromY);
   const spanYears = yearsAll.length ? lastY - yearsAll[0].year + 1 : 0;
-  html += `<div class="fin-range"><span class="small muted">Show</span>${seg("yrs", { yrs: yrsQ }, [["all", "All years"]].concat([10, 5, 3, 2, 1].filter((n) => n < spanYears || String(n) === yrsQ).map((n) => [String(n), n === 1 ? "Last year" : `Last ${n} years`])), "all")}
-    <span class="small muted">for the charts and yearly tables · Month by month and the payment detail aren't affected · starts on <a href="#/settings?s=pages">your chart setting</a></span></div>`;
+  const mrsQ = q.mrs || chartDefaultRange(), mR = RANGES.find((r) => r[0] === mrsQ) || RANGES[0];
+  const monthlyAll = monthly, lastM = monthlyAll.length ? monthlyAll[monthlyAll.length - 1].date : 0;
+  monthly = mR[2] ? monthlyAll.filter((f) => f.date > lastM - mR[2] * 86400) : monthlyAll;
+  const spanDays = monthlyAll.length ? (lastM - monthlyAll[0].date) / 86400 : 0;
+  const rangeBar = (name, cur, opts, about) => `<div class="fin-range">${seg(name, { [name]: cur }, opts, opts[0][0])}<span class="small muted">${about}</span></div>`;
+  const yearsBar = rangeBar("yrs", yrsQ, [["all", "All years"]].concat([10, 5, 3, 2, 1].filter((n) => n < spanYears || String(n) === yrsQ).map((n) => [String(n), n === 1 ? "Last year" : `Last ${n} years`])),
+    `Starts on <a href="#/settings?s=pages">your chart setting</a>`);
+  const monthsBar = rangeBar("mrs", mrsQ, RANGES.filter((r) => !r[2] || r[2] < spanDays + 31 || r[0] === mrsQ).filter((r) => ["all", "10y", "5y", "3y", "2y", "1y", "6m", "3m"].includes(r[0]) || r[0] === mrsQ)
+    .map((r) => [r[0], r[2] ? `Last ${r[1]}` : "All"]), `Starts on <a href="#/settings?s=pages">your chart setting</a>`);
+  const sect = (title, sub, bar) => `<div class="fin-sect"><div class="fin-sect-h"><h2>${title}</h2><span class="muted small">${sub}</span></div>${bar}</div>`;
   if (last) html += tiles([
     [`Income ${last.year}`, fMoneyShort(last.income_total), prev ? `${finChange(last.income_total, prev.income_total)} on ${prev.year}` : ""],
     [`Expenses ${last.year}`, fMoneyShort(last.expense_total), prev ? `${finChange(last.expense_total, prev.expense_total, true)} on ${prev.year}` : ""],
@@ -4145,11 +4152,6 @@ async function stableFinancePage(route) {
     ["Cash", fMoneyShort(lf.snapshot_cash), lf.snapshot_date ? "at " + fDate(lf.snapshot_date) : ""],
     ["Net worth", fMoneyShort(lf.snapshot_net_worth)],
   ]);
-  // the two charts that used to be on the Overview tab, with the same data
-  html += `<div class="grid cols-2">${panel("Net worth & cash", lineChart([
-    { name: "Net worth", points: monthly.map((f) => [f.date, f.net_worth]) }, { name: "Cash", points: monthly.map((f) => [f.date, f.cash]) }], STABLE_LOG))}
-    ${panel("Income vs expenses", lineChart([
-      { name: "Income", color: "#1f5240", points: monthly.map((f) => [f.date, f.income]) }, { name: "Expenses", color: "#c0504d", points: monthly.map((f) => [f.date, f.expenses]) }], STABLE_LOG), lf.snapshot_date ? "Monthly · latest " + fDate(lf.snapshot_date) : "Monthly")}</div>`;
   const amt = finAmt, pill = finPill;
   const yrRows = years.slice().reverse().map((y) => {
     const pv0 = finPrev(yearsAll, y), pv = pv0 && { income: pv0.income_total, expenses: pv0.expense_total, label: pv0.label };
@@ -4162,7 +4164,8 @@ async function stableFinancePage(route) {
   }).join("");
   const yearTable = years.length ? `<div class="tbl-wrap fin-scroll"><table class="data fy"><thead><tr><th>Year</th><th class="num">Income</th><th class="num">Expenses</th><th class="num">Net</th></tr></thead>
     <tbody>${yrRows}</tbody></table></div>` : '<div class="empty">No yearly figures.</div>';
-  html += `<div class="grid cols-2" style="margin-top:16px">${panel("Year by year", yearTable, "▲▼ vs the year before · hover for exact amounts")}
+  html += sect("Yearly", "Each year's totals, and both broken down by category", yearsBar);
+  html += `<div class="grid cols-2">${panel("Year by year", yearTable, "▲▼ vs the year before · hover for exact amounts")}
     ${years.length >= 2 ? panel("Income vs expenses by year", lineChart([
       { name: "Income", color: "#1f5240", dots: true, points: years.map((y) => [yearStart(y.year) + YEAR_S / 2, y.income_total]) },
       { name: "Expenses", color: "#c0504d", dots: true, points: years.map((y) => [yearStart(y.year) + YEAR_S / 2, y.expense_total]) },
@@ -4171,7 +4174,12 @@ async function stableFinancePage(route) {
       years.some((y) => y.months < 12) ? "One dot per year · hollow dots are part years" : "One dot per year") : ""}</div>`;
   html += `<div style="margin-top:16px">${panel("Income by category", finYearTable(years, fin.income_cats || [], "income", "income_total"))}</div>
     <div style="margin-top:16px">${panel("Expenses by category", finYearTable(years, fin.expense_cats || [], "expenses", "expense_total", true), "The game's own expense categories · the detail below breaks them down")}</div>`;
-  html += `<div style="margin-top:16px">${panel("Month by month", finMonthly(fin.months || []), "Each month's income and expenses · ▸ shows the categories")}</div>`;
+  // the two charts that used to be on the Overview tab, with the same data
+  html += sect("Monthly", "Cash, net worth, income and expenses month by month", monthsBar);
+  html += `<div class="grid cols-2">${panel("Net worth & cash", lineChart([
+    { name: "Net worth", points: monthly.map((f) => [f.date, f.net_worth]) }, { name: "Cash", points: monthly.map((f) => [f.date, f.cash]) }], STABLE_LOG))}
+    ${panel("Income vs expenses", lineChart([
+      { name: "Income", color: "#1f5240", points: monthly.map((f) => [f.date, f.income]) }, { name: "Expenses", color: "#c0504d", points: monthly.map((f) => [f.date, f.expenses]) }], STABLE_LOG), lf.snapshot_date ? "Monthly · latest " + fDate(lf.snapshot_date) : "Monthly")}</div>`;
   // detail: the transaction log, one year at a time: category → type → each payment
   const det = fin.detail, dys = fin.detail_years || [];
   const inc = fin.detail_dir === "in";
@@ -4260,8 +4268,10 @@ async function stableFinancePage(route) {
       <div class="tbl-wrap"><table class="data fin-detail nosort${inc ? " is-in" : ""}"><thead><tr><th>Category / type</th><th class="num">Payments</th><th class="num">Total</th><th class="num">Average</th><th class="fd-share">Share</th></tr></thead>
       <tbody>${rowsHtml}</tbody><tfoot><tr><td>${W.total}</td><td class="num">${fNum(nPay)}</td><td class="num">${finAmt(det.total)}</td><td class="num">${nPay ? finAmt(det.total / nPay) : "—"}</td><td></td></tr></tfoot></table></div>`;
   }
-  html += `<div style="margin-top:16px">${panel(`${W.what} detail${allYears.length ? " · " + esc(period) : ""}`, body,
+  html += sect("Payments &amp; months", "Every payment for the year or month you pick, and each month's figures", "");
+  html += `<div>${panel(`${W.what} detail${allYears.length ? " · " + esc(period) : ""}`, body,
     fromLog ? "From the game's payment log, so it can differ a little from the monthly totals above · ▸ shows each payment" : "From the game's monthly figures, by category")}</div>`;
+  html += `<div style="margin-top:16px">${panel("Month by month", finMonthly(fin.months || []), "Each month's income and expenses · ▸ shows the categories")}</div>`;
   return html;
 }
 // breeding money received, one more level down: each horse (the stable's stallions), its covers, total and average fee
