@@ -138,9 +138,11 @@ function axisMoney(v, step) {
   const c = v * fxRate(), a = Math.abs(c);
   if (a < 0.5) return withSym(false, "0");
   const u = a >= 1e9 ? [1e9, "B"] : a >= 1e6 ? [1e6, "M"] : a >= 1e3 ? [1e3, "K"] : [1, ""];
-  const st = step ? step * fxRate() / u[0] : 0;
-  const dp = st ? Math.max(0, Math.min(2, Math.ceil(-Math.log10(st) - 1e-9))) : 2;
-  let t = numFmt(dp).format(a / u[0]);
+  // the fewest decimals (up to 2) that show this gridline's value exactly: $1.25B stays $1.25B, $1.00B becomes $1B
+  const x = a / u[0];
+  let dp = [0, 1, 2].find((d) => Math.abs(Math.round(x * 10 ** d) - x * 10 ** d) < 1e-6 * 10 ** d);
+  if (dp === undefined) dp = 2;
+  let t = numFmt(dp).format(x);
   if (dp) { const dec = numFmt(1).format(1.5).replace(/[0-9]/g, "")[0] || "."; t = t.replace(new RegExp("\\" + dec + "?0+$"), ""); }
   return withSym(c < 0, t + u[1]);
 }
