@@ -1,5 +1,13 @@
 [
   {
+    "version": "16.8.2",
+    "date": "2026-11-28",
+    "title": "Stables held through a person's stables",
+    "changes": [
+      "A person's Stables they own has a new Through their stables view: every stable that the stables they hold shares in hold shares in (and those stables' holdings in turn), with the stable holding it, its stake, shares and since when, and what that works out to for the person (their stake in the holder times the holder's stake)."
+    ]
+  },
+  {
     "version": "16.8.1",
     "date": "2026-11-28",
     "title": "Shareholders, a person's stables and traits",

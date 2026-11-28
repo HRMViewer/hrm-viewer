@@ -5503,6 +5503,31 @@ def api_person(con, pid):
         where i.investor_person_id=? and coalesce(i.investor_holder_stable_id, 0) <= 0 group by i.investor_stable_id
         having sum(i.investor_shares_owned) > 0 order by 1.0 * sum(i.investor_shares_owned) / max(s.stable_total_shares, 1) desc""", (pid,)) \
         if has_table(con, "stable_investors") else []
+    # 16.8.2: and what those stables hold in turn (and what those hold…), with the person's share worked through
+    via, seen = [], {r["id"] for r in out["shares_held"]}
+    level = [(r["id"], r["name"], (r["shares"] / r["total"]) if r["total"] else 0, [r["id"]]) for r in out["shares_held"]]
+    for depth in range(1, 5):
+        if not level or not has_table(con, "stable_investors"):
+            break
+        frac = {h: (f, path, name) for h, name, f, path in level}
+        q = ",".join(str(int(h)) for h in frac)
+        nxt = []
+        for r in rows(con, """select i.investor_holder_stable_id as holder_id, i.investor_stable_id as id, s.stable_name as name, sum(i.investor_shares_owned) as shares,
+                s.stable_total_shares as total, min(i.investor_purchase_date) as since, s.stable_liquidated as closed
+                from stable_investors i join stables s on s.stable_stable_id=i.investor_stable_id
+                where i.investor_holder_stable_id in (%s) and i.investor_stable_id <> i.investor_holder_stable_id
+                group by 1, 2 having sum(i.investor_shares_owned) > 0""" % q):
+            f, path, hname = frac[r["holder_id"]]
+            if r["id"] in path:
+                continue
+            pct = (r["shares"] / r["total"]) if r["total"] else 0
+            via.append(dict(r, holder=hname, depth=depth, stake=pct, eff=f * pct, path=path))
+            if r["id"] not in seen:
+                seen.add(r["id"])
+                nxt.append((r["id"], r["name"], f * pct, path + [r["id"]]))
+        level = nxt
+    first = {r["id"]: i for i, r in enumerate(out["shares_held"])}      # their biggest holdings first, as on All shares
+    out["shares_via"] = sorted(via, key=lambda r: (first.get(r["path"][0], 1e9), r["path"], -r["stake"]))
     out.update(person_more(con, pid))
     return out
 
@@ -8888,7 +8913,7 @@ class Handler(BaseHTTPRequestHandler):
 
 # --------------------------------------------------------------------------- in-app updates
 
-VERSION = "16.8.1"
+VERSION = "16.8.2"
 BACKUP_DIR = os.path.join(APP_DIR, "backups")
 UPDATE_PENDING = os.path.join(DATA_DIR, "update_pending.json")
 UPDATE_RESULT = os.path.join(DATA_DIR, "update_result.json")

@@ -5445,8 +5445,20 @@ async function personPage(id) {
       <ul class="grp-list small">${g.stables.map((s) => `<li class="${s.parent_id ? "sub" : ""}">${L.stable(s.id, s.name)} <span class="muted">${fNum(s.pct, s.pct % 1 ? 1 : 0)}% ${s.holder_kind === "person" ? "owned by" : "held by"} ${esc(s.holder || "")}${s.closed ? " · closed" : ""}</span></li>`).join("")}</ul></div>`;
   }).join("") : '<div class="empty">They don\'t own or hold a majority of any stable.</div>';
   const nMaj = og.reduce((a, g) => a + g.stables.length, 0);
-  const ownPanel = panel("Stables they own", `<div class="seg po-own-seg" role="tablist"><button data-pown="all" class="on">All shares (${fNum(sh.length)})</button><button data-pown="major">Owned &amp; majority (${fNum(nMaj)})</button></div>
-    <div data-pown-v="all">${shareTbl}</div><div data-pown-v="major" hidden>${groupsHtml}</div>`, "Every stable they hold shares in, even a few");
+  // 16.8.2: what the stables they hold shares in hold in turn (and so on), with the person's own share worked through
+  const via = d.shares_via || [];
+  const effPct = (x) => (x >= 0.0995 ? fNum(100 * x, 1) : x >= 0.000995 ? fNum(100 * x, 2) : x > 0 ? "<0.01" : "0") + "%";
+  const viaTbl = via.length ? table([
+    { h: "Held by", f: (r) => `${r.depth > 1 ? `<span class="muted small">${"↳ ".repeat(r.depth - 1)}</span>` : ""}${L.stable(r.holder_id, r.holder)}` },
+    { h: "Stable", f: (r) => `${L.stable(r.id, r.name)}${r.closed ? ' <span class="badge dead">Closed</span>' : ""}` },
+    { h: "Its stake", cls: "num", f: (r) => effPct(r.stake) },
+    { h: "Shares", cls: "num", f: (r) => fNum(r.shares) },
+    { h: "Since", cls: "nowrap", f: (r) => fDate(r.since) },
+    { h: "Works out to", cls: "num", f: (r) => `<span title="${esc(p.person_full_name)}'s share of this stable through their holdings">${effPct(r.eff)}</span>` },
+  ], via, { noOwn: true }) + `<p class="help">“Works out to” is ${esc(p.person_name || (p.person_full_name || "").split(" ")[0])}'s share of the stable through these holdings: their stake in the holder times the holder's stake (and on down for stables held further along).</p>`
+    : '<div class="empty">None of the stables they hold shares in hold shares in other stables.</div>';
+  const ownPanel = panel("Stables they own", `<div class="seg po-own-seg" role="tablist"><button data-pown="all" class="on">All shares (${fNum(sh.length)})</button><button data-pown="via">Through their stables (${fNum(via.length)})</button><button data-pown="major">Owned &amp; majority (${fNum(nMaj)})</button></div>
+    <div data-pown-v="all">${shareTbl}</div><div data-pown-v="via" hidden>${viaTbl}</div><div data-pown-v="major" hidden>${groupsHtml}</div>`, "Every stable they hold shares in, even a few");
   html += `<div class="grid cols-2" style="margin-top:16px">${panel("Jobs", table([
     { h: "Role", f: (r) => esc(r.role) }, { h: "Stable", f: (r) => L.stable(r.stable_id, r.stable) },
     { h: "From", cls: "nowrap", f: (r) => fDate(r.start) }, { h: "To", cls: "nowrap", f: (r) => (r.end ? fDate(r.end) : "Now") }, { h: "Salary", cls: "num", f: (r) => fMoney(r.salary) },
