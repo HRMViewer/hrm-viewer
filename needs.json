@@ -1,0 +1,17 @@
+{
+  "check": {
+    "result": "success",
+    "outputs": {
+      "version": "16.8.6",
+      "new": "yes"
+    }
+  },
+  "mac-linux": {
+    "result": "success",
+    "outputs": {}
+  },
+  "release": {
+    "result": "success",
+    "outputs": {}
+  }
+}
