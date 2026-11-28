@@ -1,5 +1,15 @@
 [
   {
+    "version": "16.8.3",
+    "date": "2026-11-28",
+    "title": "Faster Financials ranges, cleaner chart axes",
+    "changes": [
+      "A stable's Financials: the Yearly and Monthly range buttons now redraw just their own section straight away, instead of reloading the whole tab (which could hang on a big save). The range you pick is still remembered if you reload.",
+      "The Monthly charts no longer have range buttons of their own: the Monthly range above them picks the months. Charts without range buttons now always show everything they're given (before, they could still cut to the range in Settings).",
+      "Money on chart axes is cleaner everywhere: only the decimals the gridlines need ($250M, $500M, $12.5M rather than $250.00M), with the scale fitted to what's shown."
+    ]
+  },
+  {
     "version": "16.8.2",
     "date": "2026-11-28",
     "title": "Stables held through a person's stables, a stable's ownership, and Financials by years",

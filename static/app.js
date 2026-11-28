@@ -132,6 +132,18 @@ function fMoneyShort(v) {
   if (a >= 1e4) return withSym(c < 0, numFmt(0).format(a / 1e3) + "K");
   return withSym(c < 0, numFmt(0).format(Math.round(a)));
 }
+// money on a chart axis (16.8.3): $1B, $750M, $12.5M, $250K, $0, with only the decimals the gridline gap needs
+function axisMoney(v, step) {
+  if (!isNum(v)) return "";
+  const c = v * fxRate(), a = Math.abs(c);
+  if (a < 0.5) return withSym(false, "0");
+  const u = a >= 1e9 ? [1e9, "B"] : a >= 1e6 ? [1e6, "M"] : a >= 1e3 ? [1e3, "K"] : [1, ""];
+  const st = step ? step * fxRate() / u[0] : 0;
+  const dp = st ? Math.max(0, Math.min(2, Math.ceil(-Math.log10(st) - 1e-9))) : 2;
+  let t = numFmt(dp).format(a / u[0]);
+  if (dp) { const dec = numFmt(1).format(1.5).replace(/[0-9]/g, "")[0] || "."; t = t.replace(new RegExp("\\" + dec + "?0+$"), ""); }
+  return withSym(c < 0, t + u[1]);
+}
 function fTime(sec) {
   if (!isNum(sec) || sec <= 0) return "—";
   // Match the game's display: it keeps times at single precision and cuts (not rounds) to 3 decimals.
@@ -1073,7 +1085,7 @@ let CHART_SEQ = 0;
 const YEAR_S = 365.25 * 86400;
 function lineChart(series, opts = {}) {
   const id = "ch" + ++CHART_SEQ;
-  CHARTS[id] = { series, opts: Object.assign({ yFmt: (v) => fNum(v), height: 220, invert: false, yInt: false, yMin: null, yMax: null, width: 680 }, opts), hidden: new Set(), range: chartDefaultRange() };
+  CHARTS[id] = { series, opts: Object.assign({ yFmt: (v) => fNum(v), height: 220, invert: false, yInt: false, yMin: null, yMax: null, width: 680 }, opts), hidden: new Set(), range: opts.ranges === false ? "all" : chartDefaultRange() };      // no range buttons: show all it's given (16.8.3)
   if (opts.scale === "auto") CHARTS[id].opts.scale = autoScale(series);
   const ok = series.some((s) => s.points.filter((p) => isNum(p[1])).length) && series.flatMap((s) => s.points.filter((p) => isNum(p[1]))).length >= 2;
   if (!ok) { delete CHARTS[id]; return `<div class="empty">Not enough history to chart.</div>`; }
@@ -1177,7 +1189,10 @@ function chartInner(id) {
     for (const v of order) if (kept.every((k) => Math.abs(Y(k) - Y(v)) >= 13)) kept.push(v);
     yt = kept.sort((a, b) => a - b);
   }
-  for (const v of yt) g += `<line x1="${l}" x2="${W - r}" y1="${Y(v)}" y2="${Y(v)}" stroke="${LOG && v === 0 ? "#b9bfca" : "#ece9e2"}"/><text x="${l - 6}" y="${Y(v) + 4}" text-anchor="end">${o.yFmt(v)}</text>`;
+  // 16.8.3: cleaner axis numbers: only as many decimals as the gap between gridlines needs ($250M, $500M… not $250.00M)
+  const ystep = yt.length > 1 ? Math.min(...yt.slice(1).map((v, i) => Math.abs(v - yt[i])).filter((d) => d > 0)) : 0;
+  const yLab = (v) => (o.yFmt === fMoneyShort ? axisMoney(v, LOG ? 0 : ystep) : o.yFmt(v));
+  for (const v of yt) g += `<line x1="${l}" x2="${W - r}" y1="${Y(v)}" y2="${Y(v)}" stroke="${LOG && v === 0 ? "#b9bfca" : "#ece9e2"}"/><text x="${l - 6}" y="${Y(v) + 4}" text-anchor="end">${yLab(v)}</text>`;
   const ya = yearOf(x0), yb = yearOf(x1), span = (x1 - x0) / 86400;
   const ticks = [];
   const PM = (o.years && o.partialYears) || {};   // { year: months } for years with fewer than 12 months on record
@@ -4069,6 +4084,16 @@ document.addEventListener("click", (e) => {
 
 // an ownership group (stables a person owns outright, and the stables those, or a parent stable, hold a majority of):
 // the switch between one stable and the whole group on Financials and Horse finances
+let FIN_VIEW = null;
+document.addEventListener("click", (e) => {
+  const b = e.target.closest("[data-fsel]");
+  if (!b || !FIN_VIEW) return;
+  const k = b.dataset.fsel, box = document.getElementById("fin-" + k);
+  if (!box || !FIN_VIEW[k]) return;
+  box.innerHTML = FIN_VIEW[k](b.dataset.v);
+  const r = parseHash();
+  history.replaceState(null, "", hashFor(r.parts, Object.assign({}, r.q, { [k]: b.dataset.v })));
+});
 // 16.8.2: how many years a stable's Financials starts on: the charts' setting in Settings (months count as the last year)
 function finYearsDefault() {
   const r = chartDefaultRange();
@@ -4129,21 +4154,15 @@ async function stableFinancePage(route) {
   const yearsAll = (fin.years || []).map((y) => ({ ...y, net: (y.income_total || 0) - (y.expense_total || 0) }));
   const last = yearsAll[yearsAll.length - 1], prev = yearsAll[yearsAll.length - 2];
   if (!yearsAll.length && !(monthly || []).length) return html + `<div class="empty">No financial records for this stable.</div>`;
-  // 16.8.2: the yearly reports show the last few years (q.yrs) and the monthly charts the last few months or years (q.mrs);
-  // both start on the charts' setting in Settings. Month by month and the payment detail always show everything.
-  const yrsQ = q.yrs || finYearsDefault(), nY = yrsQ === "all" ? 0 : +yrsQ || 0;
-  const lastY = last ? last.year : new Date().getUTCFullYear(), fromY = nY ? lastY - nY + 1 : -Infinity;
-  const years = yearsAll.filter((y) => y.year >= fromY);
+  // 16.8.2: the yearly reports show the last few years (yrs) and the monthly charts the last few months or years (mrs); both start
+  // on the charts' setting in Settings, and switch in place (16.8.3: no reload of the whole tab, which was slow on a big save).
+  // Month by month and the payment detail always show everything.
+  const lastY = last ? last.year : new Date().getUTCFullYear();
   const spanYears = yearsAll.length ? lastY - yearsAll[0].year + 1 : 0;
-  const mrsQ = q.mrs || chartDefaultRange(), mR = RANGES.find((r) => r[0] === mrsQ) || RANGES[0];
   const monthlyAll = monthly, lastM = monthlyAll.length ? monthlyAll[monthlyAll.length - 1].date : 0;
-  monthly = mR[2] ? monthlyAll.filter((f) => f.date > lastM - mR[2] * 86400) : monthlyAll;
   const spanDays = monthlyAll.length ? (lastM - monthlyAll[0].date) / 86400 : 0;
-  const rangeBar = (name, cur, opts, about) => `<div class="fin-range">${seg(name, { [name]: cur }, opts, opts[0][0])}<span class="small muted">${about}</span></div>`;
-  const yearsBar = rangeBar("yrs", yrsQ, [["all", "All years"]].concat([10, 5, 3, 2, 1].filter((n) => n < spanYears || String(n) === yrsQ).map((n) => [String(n), n === 1 ? "Last year" : `Last ${n} years`])),
-    `Starts on <a href="#/settings?s=pages">your chart setting</a>`);
-  const monthsBar = rangeBar("mrs", mrsQ, RANGES.filter((r) => !r[2] || r[2] < spanDays + 31 || r[0] === mrsQ).filter((r) => ["all", "10y", "5y", "3y", "2y", "1y", "6m", "3m"].includes(r[0]) || r[0] === mrsQ)
-    .map((r) => [r[0], r[2] ? `Last ${r[1]}` : "All"]), `Starts on <a href="#/settings?s=pages">your chart setting</a>`);
+  const rangeBar = (name, cur, opts) => `<div class="fin-range"><div class="seg">${opts.map(([v, t]) => `<button data-fsel="${name}" data-v="${v}" class="${cur === v ? "on" : ""}">${t}</button>`).join("")}</div>
+    <span class="small muted">Starts on <a href="#/settings?s=pages">your chart setting</a></span></div>`;
   const sect = (title, sub, bar) => `<div class="fin-sect"><div class="fin-sect-h"><h2>${title}</h2><span class="muted small">${sub}</span></div>${bar}</div>`;
   if (last) html += tiles([
     [`Income ${last.year}`, fMoneyShort(last.income_total), prev ? `${finChange(last.income_total, prev.income_total)} on ${prev.year}` : ""],
@@ -4153,33 +4172,45 @@ async function stableFinancePage(route) {
     ["Net worth", fMoneyShort(lf.snapshot_net_worth)],
   ]);
   const amt = finAmt, pill = finPill;
-  const yrRows = years.slice().reverse().map((y) => {
-    const pv0 = finPrev(yearsAll, y), pv = pv0 && { income: pv0.income_total, expenses: pv0.expense_total, label: pv0.label };
-    const margin = y.income_total ? (100 * y.net) / y.income_total : null;
-    return `<tr class="${y === last ? "fy-latest" : ""}">
-      <td class="fy-year">${y.year}${y.months < 12 ? ` <span class="fy-part" data-tip="Only ${y.months} of 12 months recorded so far${pv ? ` · changes compare with ${esc(pv.label)}` : ""}">${y.months} mo</span>` : ""}</td>
-      <td class="num">${amt(y.income_total)}${pv ? pill(y.income_total, pv.income, false, pv.label) : ""}</td>
-      <td class="num">${amt(y.expense_total)}${pv ? pill(y.expense_total, pv.expenses, true, pv.label) : ""}</td>
-      <td class="num">${amt(y.net, y.net >= 0 ? "pos" : "neg")}${isNum(margin) ? `<span class="fy-margin" data-tip="Net as a share of income">${fNum(margin, 0)}% margin</span>` : ""}</td></tr>`;
-  }).join("");
-  const yearTable = years.length ? `<div class="tbl-wrap fin-scroll"><table class="data fy"><thead><tr><th>Year</th><th class="num">Income</th><th class="num">Expenses</th><th class="num">Net</th></tr></thead>
-    <tbody>${yrRows}</tbody></table></div>` : '<div class="empty">No yearly figures.</div>';
-  html += sect("Yearly", "Each year's totals, and both broken down by category", yearsBar);
-  html += `<div class="grid cols-2">${panel("Year by year", yearTable, "▲▼ vs the year before · hover for exact amounts")}
-    ${years.length >= 2 ? panel("Income vs expenses by year", lineChart([
-      { name: "Income", color: "#1f5240", dots: true, points: years.map((y) => [yearStart(y.year) + YEAR_S / 2, y.income_total]) },
-      { name: "Expenses", color: "#c0504d", dots: true, points: years.map((y) => [yearStart(y.year) + YEAR_S / 2, y.expense_total]) },
-      { name: "Net", color: "#3e6e9e", dash: true, dots: true, points: years.map((y) => [yearStart(y.year) + YEAR_S / 2, y.net]) }],
-      { ...STABLE_LOG, ranges: false, years: true, height: 240, partialYears: Object.fromEntries(years.filter((y) => y.months < 12).map((y) => [y.year, y.months])) }),
-      years.some((y) => y.months < 12) ? "One dot per year · hollow dots are part years" : "One dot per year") : ""}</div>`;
-  html += `<div style="margin-top:16px">${panel("Income by category", finYearTable(years, fin.income_cats || [], "income", "income_total"))}</div>
-    <div style="margin-top:16px">${panel("Expenses by category", finYearTable(years, fin.expense_cats || [], "expenses", "expense_total", true), "The game's own expense categories · the detail below breaks them down")}</div>`;
-  // the two charts that used to be on the Overview tab, with the same data
-  html += sect("Monthly", "Cash, net worth, income and expenses month by month", monthsBar);
-  html += `<div class="grid cols-2">${panel("Net worth & cash", lineChart([
-    { name: "Net worth", points: monthly.map((f) => [f.date, f.net_worth]) }, { name: "Cash", points: monthly.map((f) => [f.date, f.cash]) }], STABLE_LOG))}
-    ${panel("Income vs expenses", lineChart([
-      { name: "Income", color: "#1f5240", points: monthly.map((f) => [f.date, f.income]) }, { name: "Expenses", color: "#c0504d", points: monthly.map((f) => [f.date, f.expenses]) }], STABLE_LOG), lf.snapshot_date ? "Monthly · latest " + fDate(lf.snapshot_date) : "Monthly")}</div>`;
+  const yearlyHtml = (yrsQ) => {
+    const nY = yrsQ === "all" ? 0 : +yrsQ || 0, fromY = nY ? lastY - nY + 1 : -Infinity;
+    const years = yearsAll.filter((y) => y.year >= fromY);
+    const bar = rangeBar("yrs", yrsQ, [["all", "All years"]].concat([10, 5, 3, 2, 1].filter((n) => n < spanYears || String(n) === yrsQ).map((n) => [String(n), n === 1 ? "Last year" : `Last ${n} years`])));
+    const yrRows = years.slice().reverse().map((y) => {
+      const pv0 = finPrev(yearsAll, y), pv = pv0 && { income: pv0.income_total, expenses: pv0.expense_total, label: pv0.label };
+      const margin = y.income_total ? (100 * y.net) / y.income_total : null;
+      return `<tr class="${y === last ? "fy-latest" : ""}">
+        <td class="fy-year">${y.year}${y.months < 12 ? ` <span class="fy-part" data-tip="Only ${y.months} of 12 months recorded so far${pv ? ` · changes compare with ${esc(pv.label)}` : ""}">${y.months} mo</span>` : ""}</td>
+        <td class="num">${amt(y.income_total)}${pv ? pill(y.income_total, pv.income, false, pv.label) : ""}</td>
+        <td class="num">${amt(y.expense_total)}${pv ? pill(y.expense_total, pv.expenses, true, pv.label) : ""}</td>
+        <td class="num">${amt(y.net, y.net >= 0 ? "pos" : "neg")}${isNum(margin) ? `<span class="fy-margin" data-tip="Net as a share of income">${fNum(margin, 0)}% margin</span>` : ""}</td></tr>`;
+    }).join("");
+    const yearTable = years.length ? `<div class="tbl-wrap fin-scroll"><table class="data fy"><thead><tr><th>Year</th><th class="num">Income</th><th class="num">Expenses</th><th class="num">Net</th></tr></thead>
+      <tbody>${yrRows}</tbody></table></div>` : '<div class="empty">No yearly figures.</div>';
+    return sect("Yearly", "Each year's totals, and both broken down by category", bar) + `<div class="grid cols-2">${panel("Year by year", yearTable, "▲▼ vs the year before · hover for exact amounts")}
+      ${years.length >= 2 ? panel("Income vs expenses by year", lineChart([
+        { name: "Income", color: "#1f5240", dots: true, points: years.map((y) => [yearStart(y.year) + YEAR_S / 2, y.income_total]) },
+        { name: "Expenses", color: "#c0504d", dots: true, points: years.map((y) => [yearStart(y.year) + YEAR_S / 2, y.expense_total]) },
+        { name: "Net", color: "#3e6e9e", dash: true, dots: true, points: years.map((y) => [yearStart(y.year) + YEAR_S / 2, y.net]) }],
+        { ...STABLE_LOG, ranges: false, years: true, height: 240, partialYears: Object.fromEntries(years.filter((y) => y.months < 12).map((y) => [y.year, y.months])) }),
+        years.some((y) => y.months < 12) ? "One dot per year · hollow dots are part years" : "One dot per year") : ""}</div>
+      <div style="margin-top:16px">${panel("Income by category", finYearTable(years, fin.income_cats || [], "income", "income_total"))}</div>
+      <div style="margin-top:16px">${panel("Expenses by category", finYearTable(years, fin.expense_cats || [], "expenses", "expense_total", true), "The game's own expense categories · the detail below breaks them down")}</div>`;
+  };
+  const monthlyHtml = (mrsQ) => {
+    const mR = RANGES.find((r) => r[0] === mrsQ) || RANGES[0];
+    const m = mR[2] ? monthlyAll.filter((f) => f.date > lastM - mR[2] * 86400) : monthlyAll;
+    const bar = rangeBar("mrs", mR[0], RANGES.filter((r) => !r[2] || r[2] < spanDays + 31 || r[0] === mR[0]).filter((r) => ["all", "10y", "5y", "3y", "2y", "1y", "6m", "3m"].includes(r[0]) || r[0] === mR[0])
+      .map((r) => [r[0], r[2] ? `Last ${r[1]}` : "All"]));
+    // the section's range picks the months, so the charts don't have range buttons of their own
+    const MO = { ...STABLE_LOG, ranges: false };
+    return sect("Monthly", "Cash, net worth, income and expenses month by month", bar) + `<div class="grid cols-2">${panel("Net worth & cash", lineChart([
+      { name: "Net worth", points: m.map((f) => [f.date, f.net_worth]) }, { name: "Cash", points: m.map((f) => [f.date, f.cash]) }], MO))}
+      ${panel("Income vs expenses", lineChart([
+        { name: "Income", color: "#1f5240", points: m.map((f) => [f.date, f.income]) }, { name: "Expenses", color: "#c0504d", points: m.map((f) => [f.date, f.expenses]) }], MO), lf.snapshot_date ? "Monthly · latest " + fDate(lf.snapshot_date) : "Monthly")}</div>`;
+  };
+  FIN_VIEW = { yrs: (v) => yearlyHtml(v), mrs: (v) => monthlyHtml(v) };
+  html += `<div id="fin-yrs">${yearlyHtml(q.yrs || finYearsDefault())}</div><div id="fin-mrs">${monthlyHtml(q.mrs || chartDefaultRange())}</div>`;
   // detail: the transaction log, one year at a time: category → type → each payment
   const det = fin.detail, dys = fin.detail_years || [];
   const inc = fin.detail_dir === "in";
