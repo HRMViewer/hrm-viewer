@@ -1,5 +1,17 @@
 [
   {
+    "version": "16.8.1",
+    "date": "2026-11-28",
+    "title": "Shareholders, a person's stables and traits",
+    "changes": [
+      "A stable's Top shareholders now names a stable that holds shares (marked Stable), where it used to show nothing.",
+      "Racecourses owned is gone from a stable's Overview; they're on its Racecourses tab.",
+      "A person's traits sit under their name and details, as on a horse's page, instead of in a box of their own.",
+      "Stables they own sits next to Jobs and opens on All shares: every stable the person holds shares in, however few, with their stake, shares, since when and what they paid. Owned & majority shows the stables they own outright or hold a majority of, with the group financials buttons as before.",
+      "The Group & Listed wins lists are gone from As a jockey, As a trainer and As a manager on a person's Overview. The Group + Listed count and a link above the races open the Awards tab showing just those race wins in that role (the Awards tab has a Role filter of its own now, and counts race wins as the horse's trainer as well as head trainer)."
+    ]
+  },
+  {
     "version": "16.8.0",
     "date": "2026-11-28",
     "title": "Move and resize columns, Custom tables, Settings in a new order",

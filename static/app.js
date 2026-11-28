@@ -3933,10 +3933,9 @@ async function stablePage(id) {
     { h: "Salary", cls: "num", f: (r) => fMoney(r.salary) },
   ], d.staff, { empty: "No staff." }))}
     ${panel("Top shareholders", table([
-      { h: "Investor", f: (r) => L.person(r.id, r.name) }, { h: "Shares", cls: "num", f: (r) => fNum(r.shares) },
+      { h: "Investor", f: (r) => (r.kind === "stable" ? `${L.stable(r.id, r.name)} <span class="badge">Stable</span>` : L.person(r.id, r.name)) }, { h: "Shares", cls: "num", f: (r) => fNum(r.shares) },
       { h: "Stake", cls: "num", f: (r) => (s.stable_total_shares ? ((100 * r.shares) / s.stable_total_shares).toFixed(1) + "%" : "—") },
-    ], d.investors, { empty: "No shareholders." }))}
-    ${d.courses && d.courses.length ? panel("Racecourses owned", d.courses.map((c) => L.course(c.id, c.name)).join("<br>")) : ""}</div>`;
+    ], d.investors, { empty: "No shareholders.", noOwn: true }))}</div>`;      // racecourses it owns: on its Racecourses tab (16.8.1)
   html += `<div style="margin-top:16px">
     ${panel("Recent results", table([
       { h: "Date", cls: "nowrap", f: (r) => fDate(r.date) }, { h: "Horse", f: (r) => L.horse(r.horse_id, r.horse) },
@@ -5002,12 +5001,12 @@ async function entityAwardsPage(kind, route) {
     tl.push([`As ${r.toLowerCase()}`, fNum(l.length), [ho ? `${fNum(ho)} horse award${ho === 1 ? "" : "s"}` : "", st ? `${fNum(st)} stable award${st === 1 ? "" : "s"}` : "", rw ? `${fNum(rw)} race win${rw === 1 ? "" : "s"}` : ""].filter(Boolean).join(" · ")]); });
   html += tiles(tl);
   const years = [...new Set(all.map((a) => a.year).filter(Boolean))].sort((a, b) => b - a);
-  const type = q.type || "all", res = q.result || "all", yr = q.year || "", term = (q.q || "").toLowerCase();
+  const type = q.type || "all", res = q.result || "all", yr = q.year || "", term = (q.q || "").toLowerCase(), role = kind === "person" ? q.role || "" : "";
   const typeOpts = kind === "person"
     ? [["all", `Everything (${all.length})`], ["season", `Own awards (${season.length})`], ["horse", `Horse & stable awards (${horseAw.length})`], ["race", `Race wins (${races.length})`]]
-      .concat(roles.length > 1 ? roles.map((r) => [r, `As ${r.toLowerCase()} (${all.filter((a) => hasRole(a, r)).length})`]) : [])
+
     : [["all", `Everything (${all.length})`], ["season", `Season awards (${season.length})`], ["race", `Race wins (${races.length})`]];
-  const rows = all.filter((a) => (type === "all" || grp(a) === type || hasRole(a, type)) && (res === "all" || result(a) === "won") && (!yr || String(a.year) === String(yr))
+  const rows = all.filter((a) => (type === "all" || grp(a) === type || hasRole(a, type)) && (!role || role.split("|").some((r) => hasRole(a, r))) && (res === "all" || result(a) === "won") && (!yr || String(a.year) === String(yr))
     && (!term || `${a.label || ""} ${a.description || ""} ${a.horse || ""} ${a.stable || ""} ${a.jockey || ""}`.toLowerCase().includes(term)));
   const badge = (a) => ({ won: `<span class="badge good">${a.kind === "race" ? "Won" : a.cat === "hall_of_fame" ? "Inducted" : "Winner"}</span>`,
     placed: `<span class="badge">Runner-up · ${ord(a.rank)}</span>`, nominee: `<span class="badge">Nominated</span>`, worst: `<span class="badge dead">Worst of the year</span>` }[result(a)]);
@@ -5023,6 +5022,8 @@ async function entityAwardsPage(kind, route) {
   html += `<section class="panel"><div class="filters">
     ${viewSeg("type", q, typeOpts, "all")}${searchBox(q, kind === "person" ? "Search awards, horses or stables" : "Search awards, jockeys or stables")}
     ${seg("result", q, [["won", "Wins only"], ["all", "Wins and places"]], "all")}
+    ${kind === "person" && roles.length ? select("role", q, [["", "Any role"]].concat(roles.map((r) => [r, `As ${r.toLowerCase()} (${all.filter((a) => hasRole(a, r)).length})`]),
+      role.includes("|") || (roles.includes("Trainer") && roles.includes("Head trainer")) ? [["Trainer|Head trainer", `As trainer or head trainer (${all.filter((a) => hasRole(a, "Trainer") || hasRole(a, "Head trainer")).length})`]] : []), "Only awards and race wins in this role") : ""}
     ${select("year", q, yearOptions(years), "Only this year's awards")}</div>
     ${table(cols, rows, { rowClass: (a) => (result(a) === "won" ? "win" : ""), empty: "No awards match these filters." })}
     <div class="help">The stable is the one ${kind === "horse" ? "the horse raced for" : "they worked for"} at the time.${kind === "person" ? " Horse awards and race wins are those of horses they rode, trained, managed or looked after; stable awards (Stable of the Year, the Thravang Award, Breeder of the Year) go to the stable's managers and its owner. A manager shares in every one won while they managed the stable (the game names only one manager on each)." : ""} <a href="#/awards">All season awards</a></div></section>`;
@@ -5335,7 +5336,7 @@ function personHead(d, on) {
     <div class="sub">${fNum(age(p.person_birth_date, p.person_deceased_date))} years old · ${esc(p.person_sex || "")}${d.city ? ` · ${esc(d.city.city)}, ${esc(d.city.country)}` : ""}
     ${current.length ? " · " + current.map((j) => `${esc(j.role)} at ${L.stable(j.stable_id, j.stable)}`).join(", ") : ""}
     ${d.owns && d.owns.length ? " · Owns " + d.owns.map((s) => L.stable(s.id, s.name)).join(", ") : ""}</div>
-    ${(d.languages || []).length ? `<div class="sub langs">Speaks ${langChips(d.languages)}</div>` : ""}${removedNote(d)}</div></div>
+    ${(d.languages || []).length ? `<div class="sub langs">Speaks ${langChips(d.languages)}</div>` : ""}${(d.traits || []).length ? `<div class="hp-traits">${chips(d.traits)}</div>` : ""}${removedNote(d)}</div></div>
     <div class="subtabs"><a href="#/person/${id}" class="${on === "overview" ? "on" : ""}">Overview</a><a href="#/person/${id}/awards" class="${on === "awards" ? "on" : ""}">Awards</a>
       <a href="#/person/${id}/family" class="${on === "family" ? "on" : ""}">Family tree</a><a href="#/person/${id}/tree" class="${on === "tree" ? "on" : ""}">Tree chart</a><a href="#/person/${id}/lifespans" class="${on === "lifespans" ? "on" : ""}">Lifespans</a><a href="#/person/${id}/dynasty" class="${on === "dynasty" ? "on" : ""}">${esc(p.person_last_name || "Family")} dynasty</a>${p.person_jockey_starts > 0 || on === "season" ? `<a href="#/person/${id}/season" class="${on === "season" ? "on" : ""}">Jockey season</a>` : ""}<a href="#/compare?kind=person&a=${id}" class="st-cmp">Compare…</a></div>`;
 }
@@ -5343,9 +5344,9 @@ function personHead(d, on) {
 // Part 1: one section per role (jockey, trainer, manager), all drawn by roleRecordSection().
 // Part 2: their latest awards and news as compact panels (compactPanel(), shared with People → Overview).
 const ROLE_META = {
-  jockey: { title: "As a jockey", noun: "jockey", races: "rides", none: "No rides recorded." },
-  trainer: { title: "As a trainer", noun: "trainer or head trainer", races: "runners trained", none: "No runners trained." },
-  manager: { title: "As a manager", noun: "manager", races: "runners for stables they managed", none: "No runners while managing a stable.",
+  jockey: { title: "As a jockey", role: "Jockey", noun: "jockey", races: "rides", none: "No rides recorded." },
+  trainer: { title: "As a trainer", role: "Trainer|Head trainer", noun: "trainer or head trainer", races: "runners trained", none: "No runners trained." },
+  manager: { title: "As a manager", role: "Manager", noun: "manager", races: "runners for stables they managed", none: "No runners while managing a stable.",
     note: "Every race their stable ran while they were a manager there, shared with any co-manager. (The game itself writes only one manager on each race.)" },
 };
 const ROLE_SHOW = 6;     // races shown before "Show all"
@@ -5358,10 +5359,12 @@ function roleRecordSection(key, rec, person) {
       <div class="empty">${m.none}</div></section>`;
   }
   const stat = (lbl, val, sub) => `<div class="rr-stat"><span class="lbl">${lbl}</span><b>${val}</b>${sub ? `<span class="sub">${sub}</span>` : ""}</div>`;
+  // 16.8.1: the Group and Listed races won in this role are listed on the Awards tab, filtered to them
+  const bigHref = `#/person/${person.person_person_id}/awards?type=race&role=${encodeURIComponent(m.role)}`;
   const split = [["G1", rec.G1], ["G2", rec.G2], ["G3", rec.G3]].filter(([, n]) => n).map(([g, n]) => `${n}×${g}`).join(" ");
   const stats = `<div class="rr-stats">${stat("Races", fNum(rec.starts), m.races)}${stat("Wins", fNum(rec.wins), rec.starts ? pct(rec.wins, rec.starts) + " strike rate" : "")}
     ${stat("Placed (top 3)", fNum(rec.places), rec.starts ? pct(rec.places, rec.starts) : "")}${stat("Prize money", fMoneyShort(rec.prize), "from these races")}
-    ${stat("Group wins", fNum(rec.group), split)}${stat("Listed wins", fNum(rec.listed))}${stat("Group + Listed", fNum(rec.group + rec.listed), "")}</div>${m.note ? `<p class="help">${m.note}</p>` : ""}`;
+    ${stat("Group wins", fNum(rec.group), split)}${stat("Listed wins", fNum(rec.listed))}${stat("Group + Listed", rec.group + rec.listed ? `<a href="${bigHref}">${fNum(rec.group + rec.listed)}</a>` : "0", rec.group + rec.listed ? `<a href="${bigHref}">See them on the Awards tab</a>` : "")}</div>${m.note ? `<p class="help">${m.note}</p>` : ""}`;
   const races = rec.races || [];
   const racesHtml = races.length ? expandable(table([
     { h: "Date", cls: "nowrap", f: (r) => fDate(r.date) },
@@ -5371,19 +5374,8 @@ function roleRecordSection(key, rec, person) {
     { h: "Pos", cls: "num", f: (r) => (r.rank ? ord(r.rank) : "—") }, { h: "Prize", cls: "num", f: (r) => fMoneyShort(r.prize) },
   ], races.map((r, i) => Object.assign({ _i: i }, r)), { rowClass: (r) => `${r.rank === 1 ? "win" : ""} ${r._i >= ROLE_SHOW ? "more-row" : ""}` }), races.length, ROLE_SHOW)
     : `<div class="empty">${m.none}</div>`;
-  // Group and Listed wins: separately, or all together
-  const bw = rec.big_wins || [];
-  const grp = bw.filter((w) => w.type !== "listed"), lst = bw.filter((w) => w.type === "listed");
-  const winRow = (w) => `<li data-k="${w.type === "listed" ? "listed" : "group"}"><span class="muted small">${fDate(w.date)}</span> ${grade(w.type)} ${L.race(w.race_id, w.race)}
-    <span class="muted small">·</span> ${L.horse(w.horse_id, w.horse)}</li>`;
-  const winsHtml = bw.length ? `<div class="seg rr-seg" role="tablist">
-      <button data-rr="all" class="on">All ${fNum(bw.length)}</button><button data-rr="group">Group ${fNum(grp.length)}</button><button data-rr="listed">Listed ${fNum(lst.length)}</button></div>
-      <ul class="po-wins rr-wins" data-show="all">${bw.map(winRow).join("")}</ul>
-      <div class="empty rr-none" data-none="group" hidden>No Group wins.</div><div class="empty rr-none" data-none="listed" hidden>No Listed wins.</div>`
-    : `<div class="empty">No Group or Listed wins as a ${m.noun} yet.</div>`;
   return `<section class="panel rr"><div class="panel-head"><h2>${m.title}</h2><span class="note">${note}</span></div>${stats}
-    <div class="rr-grid"><div><h3 class="rr-h">Latest races <span class="muted small">${fNum(rec.starts)} in all</span></h3>${racesHtml}</div>
-      <div><h3 class="rr-h">Group &amp; Listed wins</h3>${winsHtml}</div></div></section>`;
+    <h3 class="rr-h">Latest races <span class="muted small">${fNum(rec.starts)} in all${rec.group + rec.listed ? ` · <a href="${bigHref}">Group &amp; Listed wins ${m.title.toLowerCase()} (${fNum(rec.group + rec.listed)})</a>` : ""}</span></h3>${racesHtml}</section>`;
 }
 document.addEventListener("click", (e) => {
   const b = e.target.closest("[data-rr]");
@@ -5435,27 +5427,43 @@ async function personPage(id) {
     row: (n) => `<div class="cp-d">${fDate(n.date)}</div><div class="small">${esc(n.text || n.type)}</div>` });
   html += `<div class="po-layout" style="margin-top:16px"><div class="po-main">${roles}</div><aside class="po-side">${awards}${news}
     <div class="small"><a href="#/person/${p.person_person_id}/awards">Awards tab · every award and race win</a></div></aside></div>`;
-  // stables they own outright (with the stables those hold a majority of), and other stables of theirs with sub-stables:
-  // one click to the group's combined financials and horse finances
-  if ((d.owned_groups || []).length) {
-    html += `<div style="margin-top:16px">${panel("Stables they own", d.owned_groups.map((g) => {
-      const many = g.stables.length > 1, k = g.key, qs = many ? "?group=1" : "";
-      return `<div class="og">
-        <div class="og-h"><b>${g.full ? "Owned outright" : `Majority owner of ${esc(g.stables[0].name)}`}</b>${many ? ` <span class="muted small">· ${fNum(g.stables.length)} stables, with the stables they hold a majority of</span>` : ""}
-          <span class="og-btns"><a class="btn sm" href="#/stable/${k}/financials${qs}">${many ? "Group financials" : "Financials"}</a> <a class="btn sm" href="#/stable/${k}/horse-money${qs}">${many ? "Group horse finances" : "Horse finances"}</a></span></div>
-        <ul class="grp-list small">${g.stables.map((s) => `<li class="${s.parent_id ? "sub" : ""}">${L.stable(s.id, s.name)} <span class="muted">${fNum(s.pct, s.pct % 1 ? 1 : 0)}% ${s.holder_kind === "person" ? "owned by" : "held by"} ${esc(s.holder || "")}${s.closed ? " · closed" : ""}</span></li>`).join("")}</ul></div>`;
-    }).join(""), "Financials and horse finances added up for each group")}</div>`;
-  }
+  // stables they own (16.8.1): every stable they hold shares in, however few, or only those they own outright or hold a majority of
+  // (with the stables those hold a majority of, and one click to the group's combined financials and horse finances)
+  const sh = d.shares_held || [], og = d.owned_groups || [];
+  const shareTbl = sh.length ? table([
+    { h: "Stable", f: (r) => `${L.stable(r.id, r.name)}${r.closed ? ' <span class="badge dead">Closed</span>' : ""}` },
+    { h: "Stake", cls: "num", f: (r) => (r.total ? fNum((100 * r.shares) / r.total, (100 * r.shares) / r.total < 10 ? 2 : 1) + "%" : "—") },
+    { h: "Shares", cls: "num", f: (r) => fNum(r.shares) },
+    { h: "Since", cls: "nowrap", f: (r) => fDate(r.since) },
+    { h: "Paid", cls: "num", f: (r) => (r.paid ? fMoney(r.paid) : '<span class="muted">—</span>') },
+  ], sh, { noOwn: true }) : '<div class="empty">They don\'t hold shares in any stable.</div>';
+  const groupsHtml = og.length ? og.map((g) => {
+    const many = g.stables.length > 1, k = g.key, qs = many ? "?group=1" : "";
+    return `<div class="og">
+      <div class="og-h"><b>${g.full ? "Owned outright" : `Majority owner of ${esc(g.stables[0].name)}`}</b>${many ? ` <span class="muted small">· ${fNum(g.stables.length)} stables, with the stables they hold a majority of</span>` : ""}
+        <span class="og-btns"><a class="btn sm" href="#/stable/${k}/financials${qs}">${many ? "Group financials" : "Financials"}</a> <a class="btn sm" href="#/stable/${k}/horse-money${qs}">${many ? "Group horse finances" : "Horse finances"}</a></span></div>
+      <ul class="grp-list small">${g.stables.map((s) => `<li class="${s.parent_id ? "sub" : ""}">${L.stable(s.id, s.name)} <span class="muted">${fNum(s.pct, s.pct % 1 ? 1 : 0)}% ${s.holder_kind === "person" ? "owned by" : "held by"} ${esc(s.holder || "")}${s.closed ? " · closed" : ""}</span></li>`).join("")}</ul></div>`;
+  }).join("") : '<div class="empty">They don\'t own or hold a majority of any stable.</div>';
+  const nMaj = og.reduce((a, g) => a + g.stables.length, 0);
+  const ownPanel = panel("Stables they own", `<div class="seg po-own-seg" role="tablist"><button data-pown="all" class="on">All shares (${fNum(sh.length)})</button><button data-pown="major">Owned &amp; majority (${fNum(nMaj)})</button></div>
+    <div data-pown-v="all">${shareTbl}</div><div data-pown-v="major" hidden>${groupsHtml}</div>`, "Every stable they hold shares in, even a few");
   html += `<div class="grid cols-2" style="margin-top:16px">${panel("Jobs", table([
     { h: "Role", f: (r) => esc(r.role) }, { h: "Stable", f: (r) => L.stable(r.stable_id, r.stable) },
     { h: "From", cls: "nowrap", f: (r) => fDate(r.start) }, { h: "To", cls: "nowrap", f: (r) => (r.end ? fDate(r.end) : "Now") }, { h: "Salary", cls: "num", f: (r) => fMoney(r.salary) },
   ], d.jobs, { empty: "No jobs on record." }))}
-    ${panel("Traits", chips(d.traits))}</div>`;
+    ${ownPanel}</div>`;
   html += personMorePanels(d);
   html += `<div style="margin-top:16px">${allFields(p)}</div>`;
   return html;
 }
 
+document.addEventListener("click", (e) => {
+  const b = e.target.closest("[data-pown]");
+  if (!b) return;
+  const box = b.closest(".panel");
+  box.querySelectorAll("[data-pown]").forEach((x) => x.classList.toggle("on", x === b));
+  box.querySelectorAll("[data-pown-v]").forEach((x) => (x.hidden = x.dataset.pownV !== b.dataset.pown));
+});
 // ------------------------------------------------------------------ racecourses
 async function coursesPage(route) {
   const data = await api("courses?" + new URLSearchParams(withSize(route.q)));

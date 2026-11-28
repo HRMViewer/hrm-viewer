@@ -2023,13 +2023,14 @@ def api_awards_of(con, kind, eid):
     if kind == "horse":
         who = "r.race_result_horse_id=?"
     else:     # rode, head-trained or managed (by the result, or by managing the stable that day)
-        who = "(" + " or ".join("r.%s=?1" % c for c in ("race_result_person_jockey_id", "race_result_stable_head_trainer_id", "race_result_stable_manager_id") if c in rcols)
+        who = "(" + " or ".join("r.%s=?1" % c for c in ("race_result_person_jockey_id", "race_result_stable_head_trainer_id", "race_result_trainer_id", "race_result_stable_manager_id") if c in rcols)
         mgr = [(st, a, b) for st, a, b in manager_tenures(con)[1].get(eid, ())]
         if mgr:
             who += " or r.race_result_stable_id in (%s)" % ",".join(str(int(st)) for st in {m[0] for m in mgr})
         who += ")"
     extra = ", r.race_result_stable_head_trainer_id as ht_id" if "race_result_stable_head_trainer_id" in rcols else ", null as ht_id"
     extra += ", r.race_result_stable_manager_id as mg_id" if "race_result_stable_manager_id" in rcols else ", null as mg_id"
+    extra += ", r.race_result_trainer_id as tr_id" if "race_result_trainer_id" in rcols else ", null as tr_id"
     for w in rows(con, """select r.race_result_date as date, r.race_result_cash_received as value, x.races_race_name as description,
             x.races_race_id as race_id, x.races_type_of_race as race_type, r.race_result_horse_id as horse_id,
             r.race_result_person_jockey_id as jockey_id, r.race_result_stable_id as stable_id%s
@@ -2037,13 +2038,15 @@ def api_awards_of(con, kind, eid):
             where %s and r.race_result_rank=1 and x.races_type_of_race in ('G1','G2','G3','listed')""" % (extra, who), params) if "race_result_stable_id" in rcols else []:
         if w["race_id"] in have:
             continue
-        ht, mg = w.pop("ht_id"), w.pop("mg_id")
+        ht, mg, tr = w.pop("ht_id"), w.pop("mg_id"), w.pop("tr_id")
         if kind == "person":
             rs = set()
             if mg == eid or any(st == w["stable_id"] and a <= (w["date"] or 0) <= b for st, a, b in mgr):
                 rs.add("Manager")
             if ht == eid:
                 rs.add("Head trainer")
+            if tr == eid:       # 16.8.1: the horse's own trainer too, as on the Overview's "As a trainer"
+                rs.add("Trainer")
             if w["jockey_id"] == eid:
                 rs.add("Jockey")
             if not rs:
@@ -3985,9 +3988,14 @@ def api_stable(con, sid):
         left join persons j on j.person_person_id=r.race_result_person_jockey_id
         where r.race_result_stable_id=? order by r.race_result_date desc limit 100""", (sid,))
     if has_table(con, "stable_investors"):
-        out["investors"] = rows(con, """select i.investor_person_id as id, p.person_full_name as name, sum(i.investor_shares_owned) as shares
+        # a holder is a person or (16.8.1) another stable: the game leaves the person empty when a stable holds the shares
+        out["investors"] = rows(con, """select case when coalesce(i.investor_holder_stable_id, 0) > 0 then 'stable' else 'person' end as kind,
+            case when coalesce(i.investor_holder_stable_id, 0) > 0 then i.investor_holder_stable_id else i.investor_person_id end as id,
+            coalesce(case when coalesce(i.investor_holder_stable_id, 0) > 0 then hs.stable_name else p.person_full_name end, '—') as name,
+            sum(i.investor_shares_owned) as shares
             from stable_investors i left join persons p on p.person_person_id=i.investor_person_id
-            where i.investor_stable_id=? group by i.investor_person_id order by shares desc limit 15""", (sid,))
+            left join stables hs on hs.stable_stable_id=i.investor_holder_stable_id
+            where i.investor_stable_id=? group by 1, 2 order by shares desc limit 15""", (sid,))
     out["courses"] = rows(con, "select racecourse_racecourse_id as id, racecourse_name as name from racecourses where racecourse_owner_stable_id=?", (sid,))
     return out
 
@@ -5488,6 +5496,13 @@ def api_person(con, pid):
             a["label"] = award_label(a["category"], concepts)
     out["roles"] = person_roles(con, pid, p)
     out["owned_groups"] = person_owned_groups(con, pid)
+    # 16.8.1: every stable they hold shares in, however few (their own, not through a stable of theirs)
+    out["shares_held"] = rows(con, """select i.investor_stable_id as id, s.stable_name as name, sum(i.investor_shares_owned) as shares,
+        s.stable_total_shares as total, min(i.investor_purchase_date) as since, sum(i.investor_total_paid) as paid, s.stable_liquidated as closed
+        from stable_investors i join stables s on s.stable_stable_id=i.investor_stable_id
+        where i.investor_person_id=? and coalesce(i.investor_holder_stable_id, 0) <= 0 group by i.investor_stable_id
+        having sum(i.investor_shares_owned) > 0 order by 1.0 * sum(i.investor_shares_owned) / max(s.stable_total_shares, 1) desc""", (pid,)) \
+        if has_table(con, "stable_investors") else []
     out.update(person_more(con, pid))
     return out
 
@@ -8873,7 +8888,7 @@ class Handler(BaseHTTPRequestHandler):
 
 # --------------------------------------------------------------------------- in-app updates
 
-VERSION = "16.8.0"
+VERSION = "16.8.1"
 BACKUP_DIR = os.path.join(APP_DIR, "backups")
 UPDATE_PENDING = os.path.join(DATA_DIR, "update_pending.json")
 UPDATE_RESULT = os.path.join(DATA_DIR, "update_result.json")
